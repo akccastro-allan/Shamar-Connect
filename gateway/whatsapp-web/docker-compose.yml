@@ -1,0 +1,14 @@
+services:
+  shamar-whatsapp-web-gateway:
+    build: .
+    container_name: shamar-whatsapp-web-gateway
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    env_file:
+      - .env
+    volumes:
+      - shamar_whatsapp_session:/data/.wwebjs_auth
+
+volumes:
+  shamar_whatsapp_session:
