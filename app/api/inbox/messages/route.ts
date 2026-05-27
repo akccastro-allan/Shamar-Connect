@@ -1,15 +1,22 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const conversationId = request.nextUrl.searchParams.get("conversationId");
     const client = createSupabaseServerClient();
 
-    const { data, error } = await client
+    let query = client
       .from("whatsapp_messages")
-      .select("id, external_message_id, direction, from_id, to_id, body, message_type, created_at, crm_contacts(name, phone), whatsapp_conversations(name, external_chat_id, is_group)")
-      .order("created_at", { ascending: false })
-      .limit(100);
+      .select("id, external_message_id, provider, conversation_id, contact_id, direction, from_id, to_id, body, message_type, raw_payload, created_at, crm_contacts(id, name, phone)")
+      .order("created_at", { ascending: true })
+      .limit(200);
+
+    if (conversationId) {
+      query = query.eq("conversation_id", conversationId);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
