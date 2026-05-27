@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Download, RefreshCcw, Save, Users, MessageSquareText } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Download, RefreshCcw, Save, Users, MessageSquareText, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,6 +24,7 @@ type OperationResult = {
   ok: boolean;
   error?: string;
   total?: number;
+  mode?: string;
   scanned?: number;
   savedMessages?: number;
   totalParticipants?: number;
@@ -72,8 +73,7 @@ export function WhatsappImportLabPanel() {
       const data = await readJson<{ ok: boolean; chats?: Chat[] }>("/api/whatsapp-web/chats");
       const list = data.chats || [];
       setChats(list);
-      if (!selectedChatId && list[0]?.id) setSelectedChatId(list[0].id);
-      return { ok: true, total: list.length };
+      return { ok: true, total: list.length, mode: "list_only_no_database_write" };
     });
   }
 
@@ -82,14 +82,20 @@ export function WhatsappImportLabPanel() {
       const data = await readJson<{ ok: boolean; groups?: Group[] }>("/api/whatsapp-web/groups");
       const list = data.groups || [];
       setGroups(list);
-      if (!selectedGroupId && list[0]?.id) setSelectedGroupId(list[0].id);
-      return { ok: true, total: list.length };
+      return { ok: true, total: list.length, mode: "list_only_no_database_write" };
     });
   }
 
-  async function syncChats() {
-    await runOperation("sync-chats", () => readJson<OperationResult>("/api/whatsapp-web/sync-chats", { method: "POST" }));
-    await loadChats();
+  async function saveSelectedChatOnly() {
+    if (!selectedChatId) {
+      setError("Escolha uma conversa antes de salvar no banco.");
+      return;
+    }
+
+    await runOperation("sync-selected-chat", () => readJson<OperationResult>("/api/whatsapp-web/sync-chats", {
+      method: "POST",
+      body: JSON.stringify({ chatIds: [selectedChatId] }),
+    }));
   }
 
   async function syncSelectedChatMessages() {
@@ -116,11 +122,6 @@ export function WhatsappImportLabPanel() {
     }));
   }
 
-  useEffect(() => {
-    loadChats();
-    loadGroups();
-  }, []);
-
   return (
     <Card>
       <CardHeader>
@@ -128,22 +129,27 @@ export function WhatsappImportLabPanel() {
           <div>
             <CardTitle>Operação WhatsApp Web estilo WaSeller</CardTitle>
             <CardDescription>
-              Sincronize conversas visíveis no aparelho, salve histórico no Supabase, exporte contatos de grupos e alimente o CRM.
+              Liste dados do WhatsApp Web sem salvar tudo. Só entra no banco aquilo que você escolher manualmente.
             </CardDescription>
           </div>
-          <Badge variant="warning">WhatsApp Web Lab</Badge>
+          <Badge variant="warning">Manual • Seleção obrigatória</Badge>
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+          <div className="flex items-center gap-2 font-medium"><ShieldCheck className="h-4 w-4" />Modo seguro ativado</div>
+          <p className="mt-1">Listar conversas e listar grupos não grava nada no Supabase. O banco só recebe dados quando você clica em salvar a conversa selecionada, salvar mensagens da conversa selecionada ou exportar contatos do grupo selecionado.</p>
+        </div>
+
         <div className="grid gap-4 lg:grid-cols-3">
           <div className="rounded-2xl border bg-slate-50 p-4">
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
               <MessageSquareText className="h-4 w-4" /> Conversas do aparelho
             </div>
-            <p className="mt-2 text-sm text-muted-foreground">Busca os chats que aparecem no WhatsApp Web conectado e salva as conversas no banco.</p>
+            <p className="mt-2 text-sm text-muted-foreground">Carrega os chats visíveis no WhatsApp Web apenas para escolha. Não salva automaticamente.</p>
             <div className="mt-4 flex flex-wrap gap-2">
-              <Button onClick={syncChats} disabled={Boolean(loading)} size="sm"><RefreshCcw className="mr-2 h-4 w-4" />Sincronizar conversas</Button>
-              <Button onClick={loadChats} disabled={Boolean(loading)} size="sm" variant="outline">Atualizar lista</Button>
+              <Button onClick={loadChats} disabled={Boolean(loading)} size="sm" variant="outline"><RefreshCcw className="mr-2 h-4 w-4" />Listar conversas</Button>
+              <Button onClick={saveSelectedChatOnly} disabled={Boolean(loading) || !selectedChatId} size="sm">Salvar conversa selecionada</Button>
             </div>
           </div>
 
@@ -151,14 +157,14 @@ export function WhatsappImportLabPanel() {
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
               <Save className="h-4 w-4" /> Salvar mensagens
             </div>
-            <p className="mt-2 text-sm text-muted-foreground">Escolha uma conversa e salve as últimas mensagens que estão visíveis no histórico do WhatsApp Web.</p>
+            <p className="mt-2 text-sm text-muted-foreground">Escolha uma conversa e salve somente as últimas mensagens dessa conversa.</p>
             <div className="mt-4 space-y-3">
               <select value={selectedChatId} onChange={(event) => setSelectedChatId(event.target.value)} className="w-full rounded-xl border bg-white px-3 py-2 text-sm">
                 <option value="">Escolha uma conversa</option>
                 {chats.map((chat) => <option key={chat.id} value={chat.id}>{chat.name || chat.id}{chat.isGroup ? " • Grupo" : ""}</option>)}
               </select>
               <input type="number" min={10} max={200} value={messageLimit} onChange={(event) => setMessageLimit(Number(event.target.value))} className="w-full rounded-xl border bg-white px-3 py-2 text-sm" />
-              <Button onClick={syncSelectedChatMessages} disabled={Boolean(loading) || !selectedChatId} size="sm" className="w-full">Salvar mensagens da conversa</Button>
+              <Button onClick={syncSelectedChatMessages} disabled={Boolean(loading) || !selectedChatId} size="sm" className="w-full">Salvar mensagens da conversa selecionada</Button>
             </div>
           </div>
 
@@ -166,7 +172,7 @@ export function WhatsappImportLabPanel() {
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
               <Users className="h-4 w-4" /> Grupos e contatos
             </div>
-            <p className="mt-2 text-sm text-muted-foreground">Liste os grupos, exporte participantes, remova duplicados e salve os contatos no CRM.</p>
+            <p className="mt-2 text-sm text-muted-foreground">Liste grupos sem salvar. Exporte contatos apenas do grupo escolhido.</p>
             <div className="mt-4 space-y-3">
               <select value={selectedGroupId} onChange={(event) => setSelectedGroupId(event.target.value)} className="w-full rounded-xl border bg-white px-3 py-2 text-sm">
                 <option value="">Escolha um grupo</option>
@@ -174,7 +180,7 @@ export function WhatsappImportLabPanel() {
               </select>
               <div className="flex flex-wrap gap-2">
                 <Button onClick={loadGroups} disabled={Boolean(loading)} size="sm" variant="outline">Listar grupos</Button>
-                <Button onClick={exportSelectedGroupContacts} disabled={Boolean(loading) || !selectedGroupId} size="sm"><Download className="mr-2 h-4 w-4" />Exportar para CRM</Button>
+                <Button onClick={exportSelectedGroupContacts} disabled={Boolean(loading) || !selectedGroupId} size="sm"><Download className="mr-2 h-4 w-4" />Exportar grupo selecionado</Button>
               </div>
             </div>
           </div>
@@ -206,6 +212,7 @@ export function WhatsappImportLabPanel() {
               {typeof result.uniqueContacts === "number" ? <span>Contatos únicos: {result.uniqueContacts}</span> : null}
               {typeof result.duplicatesRemoved === "number" ? <span>Duplicados removidos: {result.duplicatesRemoved}</span> : null}
               {result.groupName ? <span>Grupo: {result.groupName}</span> : null}
+              {result.mode ? <span>Modo: {result.mode}</span> : null}
             </div>
           </div>
         ) : null}
