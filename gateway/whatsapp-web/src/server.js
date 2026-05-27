@@ -71,6 +71,30 @@ function normalizePhoneFromWid(id = "") {
   return id.replace("@c.us", "").replace("@g.us", "");
 }
 
+function getMessageDirection(message) {
+  return message.fromMe ? "outbound" : "inbound";
+}
+
+async function mapMessage(message, chat) {
+  const contact = await message.getContact().catch(() => null);
+  const from = message.from;
+  const to = message.to;
+  return {
+    id: message.id?._serialized,
+    chatId: chat?.id?._serialized || from,
+    chatName: chat?.name,
+    isGroup: Boolean(chat?.isGroup || from?.endsWith("@g.us")),
+    from,
+    to,
+    body: message.body,
+    timestamp: message.timestamp,
+    direction: getMessageDirection(message),
+    contactName: contact?.pushname || contact?.name,
+    phone: normalizePhoneFromWid(message.fromMe ? to : from),
+    type: message.type || "text",
+  };
+}
+
 function getClient() {
   if (client) return client;
 
@@ -174,6 +198,24 @@ app.get("/chats", requireToken, async (_req, res) => {
     unreadCount: chat.unreadCount,
     lastMessageAt: chat.timestamp ? new Date(chat.timestamp * 1000).toISOString() : undefined,
   })));
+});
+
+app.get("/chats/:chatId/messages", requireToken, async (req, res) => {
+  if (!client || status.status !== "ready") {
+    return res.status(409).json({ error: "WhatsApp client is not ready." });
+  }
+
+  const chatId = decodeURIComponent(req.params.chatId);
+  const limit = Math.min(Number(req.query.limit || 50), 200);
+  const chat = await client.getChatById(chatId).catch(() => null);
+
+  if (!chat) {
+    return res.status(404).json({ error: "Chat not found." });
+  }
+
+  const messages = await chat.fetchMessages({ limit });
+  const mapped = await Promise.all(messages.map((message) => mapMessage(message, chat)));
+  res.json(mapped);
 });
 
 app.get("/groups", requireToken, async (_req, res) => {
