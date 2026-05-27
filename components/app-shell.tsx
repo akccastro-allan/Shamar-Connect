@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { MessageCircle, Users, KanbanSquare, Megaphone, Bot, Settings, LayoutDashboard, Tags, Zap, FileText, ShieldCheck, FlaskConical } from "lucide-react";
+import { BrandIcon } from "@/components/brand/brand-logo";
 import { cn } from "@/lib/utils";
 
 const navigation = [
@@ -22,10 +23,12 @@ export function AppShell({ children, active }: { children: React.ReactNode; acti
     <div className="min-h-screen bg-slate-50">
       <aside className="fixed inset-y-0 left-0 hidden w-72 border-r bg-white p-5 lg:block">
         <Link href="/dashboard" className="mb-8 flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-lg font-bold text-primary-foreground">S</div>
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-slate-100">
+            <BrandIcon className="h-10 w-10 object-contain" />
+          </div>
           <div>
-            <p className="font-semibold">ShamarConnect</p>
-            <p className="text-xs text-muted-foreground">ShamarHub • Moriah Systems</p>
+            <p className="font-semibold text-slate-950">ShamarConnect</p>
+            <p className="text-xs text-muted-foreground">WhatsApp • CRM • IA</p>
           </div>
         </Link>
         <nav className="space-y-1">
