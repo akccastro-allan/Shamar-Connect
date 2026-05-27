@@ -113,18 +113,44 @@ alter table public.group_contact_list_items enable row level security;
 alter table public.provider_events enable row level security;
 alter table public.audit_logs enable row level security;
 
-create policy if not exists "public_read_crm_contacts" on public.crm_contacts for select using (true);
-create policy if not exists "public_read_whatsapp_conversations" on public.whatsapp_conversations for select using (true);
-create policy if not exists "public_read_whatsapp_messages" on public.whatsapp_messages for select using (true);
-create policy if not exists "public_read_whatsapp_groups" on public.whatsapp_groups for select using (true);
-create policy if not exists "public_read_group_contact_lists" on public.group_contact_lists for select using (true);
-create policy if not exists "public_read_group_contact_list_items" on public.group_contact_list_items for select using (true);
+drop policy if exists "public_read_crm_contacts" on public.crm_contacts;
+create policy "public_read_crm_contacts" on public.crm_contacts for select using (true);
 
-create policy if not exists "service_all_crm_contacts" on public.crm_contacts for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
-create policy if not exists "service_all_whatsapp_conversations" on public.whatsapp_conversations for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
-create policy if not exists "service_all_whatsapp_messages" on public.whatsapp_messages for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
-create policy if not exists "service_all_whatsapp_groups" on public.whatsapp_groups for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
-create policy if not exists "service_all_group_contact_lists" on public.group_contact_lists for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
-create policy if not exists "service_all_group_contact_list_items" on public.group_contact_list_items for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
-create policy if not exists "service_all_provider_events" on public.provider_events for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
-create policy if not exists "service_all_audit_logs" on public.audit_logs for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+drop policy if exists "public_read_whatsapp_conversations" on public.whatsapp_conversations;
+create policy "public_read_whatsapp_conversations" on public.whatsapp_conversations for select using (true);
+
+drop policy if exists "public_read_whatsapp_messages" on public.whatsapp_messages;
+create policy "public_read_whatsapp_messages" on public.whatsapp_messages for select using (true);
+
+drop policy if exists "public_read_whatsapp_groups" on public.whatsapp_groups;
+create policy "public_read_whatsapp_groups" on public.whatsapp_groups for select using (true);
+
+drop policy if exists "public_read_group_contact_lists" on public.group_contact_lists;
+create policy "public_read_group_contact_lists" on public.group_contact_lists for select using (true);
+
+drop policy if exists "public_read_group_contact_list_items" on public.group_contact_list_items;
+create policy "public_read_group_contact_list_items" on public.group_contact_list_items for select using (true);
+
+drop policy if exists "service_all_crm_contacts" on public.crm_contacts;
+create policy "service_all_crm_contacts" on public.crm_contacts for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+
+drop policy if exists "service_all_whatsapp_conversations" on public.whatsapp_conversations;
+create policy "service_all_whatsapp_conversations" on public.whatsapp_conversations for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+
+drop policy if exists "service_all_whatsapp_messages" on public.whatsapp_messages;
+create policy "service_all_whatsapp_messages" on public.whatsapp_messages for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+
+drop policy if exists "service_all_whatsapp_groups" on public.whatsapp_groups;
+create policy "service_all_whatsapp_groups" on public.whatsapp_groups for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+
+drop policy if exists "service_all_group_contact_lists" on public.group_contact_lists;
+create policy "service_all_group_contact_lists" on public.group_contact_lists for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+
+drop policy if exists "service_all_group_contact_list_items" on public.group_contact_list_items;
+create policy "service_all_group_contact_list_items" on public.group_contact_list_items for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+
+drop policy if exists "service_all_provider_events" on public.provider_events;
+create policy "service_all_provider_events" on public.provider_events for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+
+drop policy if exists "service_all_audit_logs" on public.audit_logs;
+create policy "service_all_audit_logs" on public.audit_logs for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
