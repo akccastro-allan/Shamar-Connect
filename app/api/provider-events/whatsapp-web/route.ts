@@ -10,6 +10,10 @@ function normalizePhone(value?: string) {
   return String(value || "").replace(/\D/g, "");
 }
 
+function isAutomaticMessageSavingEnabled() {
+  return process.env.WHATSAPP_AUTO_SAVE_INCOMING_MESSAGES === "true";
+}
+
 async function upsertContact(client: ReturnType<typeof createSupabaseWriteClient>, payload: any) {
   const phone = normalizePhone(payload?.phone || payload?.from);
   if (!phone) return null;
@@ -17,7 +21,7 @@ async function upsertContact(client: ReturnType<typeof createSupabaseWriteClient
   const name = payload?.contactName || payload?.name || phone;
   const { data, error } = await client
     .from("crm_contacts")
-    .upsert({ phone, name, source: "whatsapp_web" }, { onConflict: "phone" })
+    .upsert({ phone, name, source: "whatsapp_web_auto" }, { onConflict: "phone" })
     .select("id")
     .single();
 
@@ -107,17 +111,22 @@ export async function POST(request: NextRequest) {
 
     if (eventError) throw eventError;
 
-    if (event === "message.received") {
+    if (event === "message.received" && isAutomaticMessageSavingEnabled()) {
       const contact = await upsertContact(client, payload);
       const conversation = await upsertConversation(client, payload, contact?.id);
       await saveMessage(client, payload, conversation?.id, contact?.id);
     }
 
-    if (event === "group.participants.extracted") {
+    if (event === "group.participants.extracted" && process.env.WHATSAPP_AUTO_SAVE_GROUP_EVENTS === "true") {
       await saveGroup(client, payload);
     }
 
-    return NextResponse.json({ ok: true, event });
+    return NextResponse.json({
+      ok: true,
+      event,
+      persisted: event === "message.received" ? isAutomaticMessageSavingEnabled() : false,
+      mode: "manual_selection_first",
+    });
   } catch (error) {
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Webhook processing failed" }, { status: 500 });
   }
