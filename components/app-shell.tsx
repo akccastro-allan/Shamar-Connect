@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 const navigation = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/feature-lab", label: "Feature Lab", icon: FlaskConical },
+  { href: "/whatsapp-messages", label: "Mensagens WhatsApp", icon: MessageCircle },
   { href: "/whatsapp-import", label: "Importação WhatsApp", icon: Download },
   { href: "/contact-import", label: "Importar contatos", icon: Upload },
   { href: "/group-import-lists", label: "Listas importadas", icon: ListChecks },
