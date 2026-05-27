@@ -41,6 +41,21 @@ export interface ProviderGroupParticipant {
   sourceGroupName: string;
 }
 
+export interface ProviderSyncedMessage {
+  id: string;
+  chatId: string;
+  chatName?: string;
+  isGroup?: boolean;
+  from?: string;
+  to?: string;
+  body?: string;
+  timestamp?: number;
+  direction: "inbound" | "outbound";
+  contactName?: string;
+  phone?: string;
+  type?: string;
+}
+
 export interface MessagingProviderClient {
   getStatus(): Promise<ProviderStatus>;
   connect(): Promise<ProviderStatus>;
@@ -49,5 +64,6 @@ export interface MessagingProviderClient {
   listChats(): Promise<ProviderChatSummary[]>;
   listGroups(): Promise<ProviderGroupSummary[]>;
   listGroupParticipants(groupId: string): Promise<ProviderGroupParticipant[]>;
+  listChatMessages(chatId: string, limit?: number): Promise<ProviderSyncedMessage[]>;
   logout(): Promise<ProviderStatus>;
 }
