@@ -26,6 +26,12 @@ export interface ProviderChatSummary {
   lastMessageAt?: string;
 }
 
+export interface ProviderGroupSummary {
+  id: string;
+  name: string;
+  participantCount?: number;
+}
+
 export interface ProviderGroupParticipant {
   id: string;
   name?: string;
@@ -41,6 +47,7 @@ export interface MessagingProviderClient {
   getQr(): Promise<ProviderStatus>;
   sendMessage(payload: ProviderMessagePayload): Promise<{ id: string; status: "queued" | "sent" }>;
   listChats(): Promise<ProviderChatSummary[]>;
+  listGroups(): Promise<ProviderGroupSummary[]>;
   listGroupParticipants(groupId: string): Promise<ProviderGroupParticipant[]>;
   logout(): Promise<ProviderStatus>;
 }
