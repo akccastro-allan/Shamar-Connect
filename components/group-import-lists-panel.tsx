@@ -116,7 +116,11 @@ export function GroupImportListsPanel() {
             <select value={selectedListId} onChange={(event) => { setSelectedListId(event.target.value); loadItems(event.target.value); }} className="w-full rounded-xl border bg-white px-3 py-2 text-sm">
               {lists.map((list) => <option key={list.id} value={list.id}>{list.name} • {list.unique_contacts} contatos</option>)}
             </select>
-            {selectedListId ? <Button asChild variant="outline"><a href={`/api/group-contact-lists/${selectedListId}/export.csv`}><Download className="mr-2 h-4 w-4" />Exportar CSV</a></Button> : null}
+            {selectedListId ? (
+              <a href={`/api/group-contact-lists/${selectedListId}/export.csv`} className="inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-background px-4 py-2 text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground">
+                <Download className="h-4 w-4" />Exportar CSV
+              </a>
+            ) : null}
           </div>
         </CardContent>
       </Card>
@@ -144,7 +148,7 @@ export function GroupImportListsPanel() {
                     <td className="px-4 py-3 font-medium">{item.name}</td>
                     <td className="px-4 py-3">{item.phone}</td>
                     <td className="px-4 py-3">{item.source_group_name || "—"}</td>
-                    <td className="px-4 py-3"><Badge variant={item.review_status === "approved" ? "success" : item.review_status === "rejected" ? "destructive" : "secondary"}>{item.review_status}</Badge></td>
+                    <td className="px-4 py-3"><Badge variant={item.review_status === "approved" ? "secondary" : item.review_status === "rejected" ? "destructive" : "secondary"}>{item.review_status}</Badge></td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-2">
                         <Button size="sm" variant="outline" onClick={() => updateReview(item.id, "approved")}><Check className="mr-1 h-3 w-3" />Aprovar</Button>
