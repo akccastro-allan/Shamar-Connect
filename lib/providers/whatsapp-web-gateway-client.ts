@@ -1,4 +1,4 @@
-import type { MessagingProviderClient, ProviderChatSummary, ProviderGroupParticipant, ProviderMessagePayload, ProviderStatus } from "@/types/messaging-provider";
+import type { MessagingProviderClient, ProviderChatSummary, ProviderGroupParticipant, ProviderGroupSummary, ProviderMessagePayload, ProviderStatus } from "@/types/messaging-provider";
 
 function getGatewayBaseUrl() {
   return process.env.WHATSAPP_WEB_GATEWAY_URL?.replace(/\/$/, "") || "";
@@ -54,6 +54,10 @@ export const whatsappWebGatewayClient: MessagingProviderClient = {
 
   listChats() {
     return gatewayFetch<ProviderChatSummary[]>("/chats");
+  },
+
+  listGroups() {
+    return gatewayFetch<ProviderGroupSummary[]>("/groups");
   },
 
   listGroupParticipants(groupId: string) {
