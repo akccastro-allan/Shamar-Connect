@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { RefreshCcw, Save, Smartphone } from "lucide-react";
+import { RefreshCcw, Save, Send, Smartphone } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,7 +22,7 @@ type SyncedMessage = {
   type?: string;
 };
 
-type Result = { ok: boolean; saved?: number; received?: number; error?: string };
+type Result = { ok: boolean; saved?: number; received?: number; id?: string; status?: string; error?: string };
 
 async function readJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, { ...init, cache: "no-store" });
@@ -50,6 +50,7 @@ export function WhatsappReaderPanel() {
   const [messages, setMessages] = useState<SyncedMessage[]>([]);
   const [selectedChatId, setSelectedChatId] = useState("");
   const [selectedMessageIds, setSelectedMessageIds] = useState<string[]>([]);
+  const [replyText, setReplyText] = useState("");
   const [limit, setLimit] = useState(50);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -120,6 +121,32 @@ export function WhatsappReaderPanel() {
     }
   }
 
+  async function sendReply() {
+    if (!selectedChatId || !replyText.trim()) return;
+    setLoading(true);
+    setError(null);
+    setResult(null);
+
+    try {
+      const data = await readJson<Result>("/api/whatsapp-web/messages/send", {
+        method: "POST",
+        body: JSON.stringify({
+          to: selectedChatId,
+          body: replyText,
+          chatName: selectedChat?.name || selectedChatId,
+          isGroup: Boolean(selectedChat?.isGroup),
+        }),
+      });
+      setResult(data);
+      setReplyText("");
+      await loadMessages(selectedChatId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao enviar mensagem");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
     loadChats();
   }, []);
@@ -131,7 +158,7 @@ export function WhatsappReaderPanel() {
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <CardTitle className="flex items-center gap-2"><Smartphone className="h-5 w-5" />WhatsApp Web Reader</CardTitle>
-              <CardDescription>Leia mensagens visíveis no WhatsApp Web e salve manualmente apenas o que fizer sentido para o CRM.</CardDescription>
+              <CardDescription>Leia, converse em chats privados ou grupos e salve manualmente o que fizer sentido para o CRM.</CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button onClick={loadChats} disabled={loading} variant="outline"><RefreshCcw className="mr-2 h-4 w-4" />Atualizar conversas</Button>
@@ -144,10 +171,10 @@ export function WhatsappReaderPanel() {
             <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Conversas</p><p className="text-2xl font-semibold">{chats.length}</p></div>
             <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Mensagens lidas</p><p className="text-2xl font-semibold">{messages.length}</p></div>
             <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Selecionadas</p><p className="text-2xl font-semibold">{selectedMessages.length}</p></div>
-            <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Modo</p><p className="text-2xl font-semibold">Manual</p></div>
+            <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Modo</p><p className="text-2xl font-semibold">Chat</p></div>
           </div>
           {error ? <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</div> : null}
-          {result ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">Mensagens salvas: {result.saved || 0}.</div> : null}
+          {result ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">Operação concluída. {result.saved !== undefined ? `Mensagens salvas: ${result.saved}. ` : ""}{result.status ? `Envio: ${result.status}.` : ""}</div> : null}
         </CardContent>
       </Card>
 
@@ -155,7 +182,7 @@ export function WhatsappReaderPanel() {
         <Card>
           <CardHeader>
             <CardTitle>Conversas do aparelho</CardTitle>
-            <CardDescription>Escolha uma conversa para carregar o histórico recente.</CardDescription>
+            <CardDescription>Escolha uma conversa privada ou grupo.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <select value={limit} onChange={(event) => setLimit(Number(event.target.value))} className="w-full rounded-xl border bg-white px-3 py-2 text-sm">
@@ -169,9 +196,9 @@ export function WhatsappReaderPanel() {
                 <button key={chat.id} onClick={() => { setSelectedChatId(chat.id); loadMessages(chat.id); }} className={`w-full rounded-2xl border p-3 text-left text-sm hover:bg-slate-50 ${selectedChatId === chat.id ? "border-emerald-300 bg-emerald-50" : "bg-white"}`}>
                   <div className="flex items-start justify-between gap-2">
                     <p className="font-medium text-slate-950">{chat.name || chat.id}</p>
-                    {chat.isGroup ? <Badge variant="secondary">Grupo</Badge> : null}
+                    {chat.isGroup ? <Badge variant="secondary">Grupo</Badge> : <Badge variant="outline">Privado</Badge>}
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground">Não salvas automaticamente</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Ler, responder e salvar manualmente</p>
                 </button>
               ))}
             </div>
@@ -183,7 +210,7 @@ export function WhatsappReaderPanel() {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <CardTitle>{selectedChat?.name || "Mensagens"}</CardTitle>
-                <CardDescription>Marque uma ou mais mensagens e salve apenas as selecionadas.</CardDescription>
+                <CardDescription>Converse por aqui e marque mensagens para salvar no CRM.</CardDescription>
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button onClick={selectAll} disabled={messages.length === 0} variant="outline" size="sm">Selecionar todas</Button>
@@ -192,7 +219,7 @@ export function WhatsappReaderPanel() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="max-h-[720px] space-y-3 overflow-auto pr-1">
+            <div className="max-h-[560px] space-y-3 overflow-auto pr-1">
               {messages.map((message) => {
                 const checked = selectedMessageIds.includes(message.id);
                 const outbound = message.direction === "outbound";
@@ -212,6 +239,14 @@ export function WhatsappReaderPanel() {
                 );
               })}
               {messages.length === 0 ? <div className="rounded-2xl border border-dashed p-8 text-center text-sm text-muted-foreground">Nenhuma mensagem carregada ainda.</div> : null}
+            </div>
+
+            <div className="mt-4 rounded-2xl border bg-slate-50 p-3">
+              <label className="text-sm font-medium text-slate-800">Responder nesta conversa</label>
+              <textarea value={replyText} onChange={(event) => setReplyText(event.target.value)} rows={3} className="mt-2 w-full rounded-xl border bg-white p-3 text-sm" placeholder="Digite sua mensagem..." />
+              <div className="mt-3 flex justify-end">
+                <Button onClick={sendReply} disabled={loading || !selectedChatId || !replyText.trim()}><Send className="mr-2 h-4 w-4" />Enviar mensagem</Button>
+              </div>
             </div>
           </CardContent>
         </Card>
