@@ -1,0 +1,22 @@
+<svg width="1200" height="420" viewBox="0 0 1200 420" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="420" rx="40" fill="#F8FAFC"/>
+  <g transform="translate(480 32) scale(0.62)">
+    <path d="M143 139L256 104L369 139V227C369 306 324 374 256 409C188 374 143 306 143 227V139Z" stroke="#001F4E" stroke-width="28" stroke-linejoin="round"/>
+    <path d="M204 227L256 197L308 227M204 285L256 315L308 285M256 166V346" stroke="#008F8B" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="256" cy="166" r="21" fill="#F8FAFC" stroke="#008F8B" stroke-width="16"/>
+    <circle cx="204" cy="227" r="21" fill="#F8FAFC" stroke="#008F8B" stroke-width="16"/>
+    <circle cx="308" cy="227" r="21" fill="#F8FAFC" stroke="#008F8B" stroke-width="16"/>
+    <circle cx="204" cy="285" r="21" fill="#F8FAFC" stroke="#008F8B" stroke-width="16"/>
+    <circle cx="308" cy="285" r="21" fill="#F8FAFC" stroke="#008F8B" stroke-width="16"/>
+    <circle cx="256" cy="346" r="21" fill="#F8FAFC" stroke="#008F8B" stroke-width="16"/>
+    <circle cx="256" cy="256" r="63" fill="#F8FAFC" stroke="#D9A300" stroke-width="22"/>
+    <path d="M237 270L223 284C212 295 194 295 183 284C172 273 172 255 183 244L207 220C218 209 236 209 247 220" stroke="#008F8B" stroke-width="19" stroke-linecap="round"/>
+    <path d="M275 242L289 228C300 217 318 217 329 228C340 239 340 257 329 268L305 292C294 303 276 303 265 292" stroke="#008F8B" stroke-width="19" stroke-linecap="round"/>
+    <path d="M196 82C232 58 280 58 316 82" stroke="#D9A300" stroke-width="18" stroke-linecap="round"/>
+    <path d="M220 111C243 98 269 98 292 111" stroke="#D9A300" stroke-width="16" stroke-linecap="round"/>
+  </g>
+  <text x="600" y="295" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="90" font-weight="800" letter-spacing="-4">
+    <tspan fill="#001F4E">Shamar</tspan><tspan fill="#008F8B">Connect</tspan>
+  </text>
+  <text x="600" y="350" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="34" font-weight="500" letter-spacing="12" fill="#001F4E">WhatsApp • CRM • IA</text>
+</svg>
