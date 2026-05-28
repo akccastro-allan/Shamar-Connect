@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { MessageCircle, Users, KanbanSquare, Megaphone, Bot, Settings, LayoutDashboard, Tags, Zap, FileText, ShieldCheck, FlaskConical, Download, Upload, ListChecks } from "lucide-react";
+import { MessageCircle, Users, KanbanSquare, Megaphone, Bot, Settings, LayoutDashboard, Tags, Zap, FileText, ShieldCheck, FlaskConical, Download, Upload, ListChecks, Activity } from "lucide-react";
 import { BrandIcon } from "@/components/brand/brand-logo";
 import { cn } from "@/lib/utils";
 
 const navigation = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/system-test", label: "Teste do sistema", icon: Activity },
   { href: "/feature-lab", label: "Feature Lab", icon: FlaskConical },
   { href: "/whatsapp-messages", label: "Mensagens WhatsApp", icon: MessageCircle },
   { href: "/whatsapp-import", label: "Importação WhatsApp", icon: Download },
