@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { Bot, Clock, Download, MessageCircle, RefreshCcw, Search, UserPlus, Users } from "lucide-react";
+import { Bot, Clock, Download, MessageCircle, RefreshCcw, Search, Send, UserPlus, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -56,9 +56,12 @@ export function WhatsappServiceCenter() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState("");
   const [query, setQuery] = useState("");
+  const [replyBody, setReplyBody] = useState("");
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const selectedConversation = useMemo(() => conversations.find((conversation) => conversation.id === selectedConversationId) || conversations[0], [conversations, selectedConversationId]);
 
@@ -97,6 +100,8 @@ export function WhatsappServiceCenter() {
 
   async function selectConversation(conversationId: string) {
     setSelectedConversationId(conversationId);
+    setReplyBody("");
+    setNotice(null);
     await loadMessages(conversationId);
   }
 
@@ -104,16 +109,39 @@ export function WhatsappServiceCenter() {
     if (!selectedConversation?.external_chat_id) return;
     setSyncing(true);
     setError(null);
+    setNotice(null);
     try {
       await readJson("/api/whatsapp-web/chats/import-history", {
         method: "POST",
         body: JSON.stringify({ chatId: selectedConversation.external_chat_id, limit: 100 }),
       });
       await loadConversations();
+      setNotice("Histórico sincronizado com sucesso.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao sincronizar histórico");
     } finally {
       setSyncing(false);
+    }
+  }
+
+  async function sendReply() {
+    if (!selectedConversation?.id || !replyBody.trim()) return;
+    setSending(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const data = await readJson<{ ok: boolean; message: Message }>(`/api/whatsapp-messages/conversations/${selectedConversation.id}/send`, {
+        method: "POST",
+        body: JSON.stringify({ body: replyBody.trim() }),
+      });
+      setMessages((current) => [...current, data.message]);
+      setReplyBody("");
+      setNotice("Mensagem enviada e registrada no Supabase.");
+      await loadConversations();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao enviar mensagem");
+    } finally {
+      setSending(false);
     }
   }
 
@@ -128,7 +156,7 @@ export function WhatsappServiceCenter() {
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <CardTitle className="flex items-center gap-2 text-2xl"><MessageCircle className="h-6 w-6 text-emerald-700" />Central de atendimento WhatsApp</CardTitle>
-              <CardDescription className="mt-2 max-w-3xl">Visualize conversas salvas, leia mensagens, veja dados do contato e sincronize históricos do WhatsApp Web.</CardDescription>
+              <CardDescription className="mt-2 max-w-3xl">Visualize conversas salvas, leia mensagens, envie respostas e mantenha tudo registrado no CRM/Supabase.</CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button onClick={loadConversations} disabled={loading} variant="outline"><RefreshCcw className="mr-2 h-4 w-4" />Atualizar</Button>
@@ -144,10 +172,11 @@ export function WhatsappServiceCenter() {
             <div className="rounded-2xl border bg-white p-4"><p className="text-xs text-muted-foreground">Modo</p><p className="text-2xl font-semibold">Atendimento</p></div>
           </div>
           {error ? <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</div> : null}
+          {notice ? <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">{notice}</div> : null}
         </CardContent>
       </Card>
 
-      <div className="grid min-h-[720px] gap-6 xl:grid-cols-[360px_1fr_320px]">
+      <div className="grid min-h-[760px] gap-6 xl:grid-cols-[360px_1fr_320px]">
         <Card className="overflow-hidden">
           <CardHeader className="border-b">
             <CardTitle className="text-base">Conversas</CardTitle>
@@ -157,7 +186,7 @@ export function WhatsappServiceCenter() {
             </div>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="max-h-[640px] divide-y overflow-auto">
+            <div className="max-h-[680px] divide-y overflow-auto">
               {filteredConversations.map((conversation) => {
                 const selected = selectedConversation?.id === conversation.id;
                 return (
@@ -192,7 +221,7 @@ export function WhatsappServiceCenter() {
             </div>
           </CardHeader>
           <CardContent className="bg-slate-50 p-4">
-            <div className="max-h-[610px] space-y-3 overflow-auto pr-2">
+            <div className="max-h-[540px] space-y-3 overflow-auto pr-2">
               {messages.map((message) => {
                 const outbound = message.direction === "outbound";
                 return (
@@ -205,6 +234,14 @@ export function WhatsappServiceCenter() {
                 );
               })}
               {messages.length === 0 ? <div className="rounded-2xl border border-dashed bg-white p-8 text-center text-sm text-muted-foreground">Nenhuma mensagem salva para esta conversa. Use “Sincronizar histórico”.</div> : null}
+            </div>
+            <div className="mt-4 rounded-2xl border bg-white p-3">
+              <label className="text-xs font-medium text-muted-foreground">Responder pela central</label>
+              <textarea value={replyBody} onChange={(event) => setReplyBody(event.target.value)} rows={4} maxLength={4000} placeholder="Digite a mensagem para enviar pelo WhatsApp conectado..." className="mt-2 w-full resize-none rounded-xl border bg-white p-3 text-sm outline-none focus:ring-2 focus:ring-emerald-200" />
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <span className="text-xs text-muted-foreground">{replyBody.length}/4000 caracteres</span>
+                <Button onClick={sendReply} disabled={sending || !selectedConversation || !replyBody.trim()}><Send className="mr-2 h-4 w-4" />Enviar mensagem</Button>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -232,7 +269,7 @@ export function WhatsappServiceCenter() {
               <Button variant="outline" className="w-full justify-start" disabled>Gerar resposta com IA</Button>
               <Button variant="outline" className="w-full justify-start" disabled>Aplicar resposta rápida</Button>
               <Button variant="outline" className="w-full justify-start" disabled>Criar tarefa de follow-up</Button>
-              <div className="rounded-2xl border bg-amber-50 p-3 text-xs text-amber-900">Envio de mensagens pela central será liberado depois de validarmos leitura, sincronização e CRM.</div>
+              <div className="rounded-2xl border bg-emerald-50 p-3 text-xs text-emerald-900">Envio manual liberado. Toda mensagem enviada é registrada em whatsapp_messages e provider_events.</div>
             </CardContent>
           </Card>
 
@@ -244,7 +281,7 @@ export function WhatsappServiceCenter() {
               <p>1. Sincronize o histórico da conversa.</p>
               <p>2. Confira se o contato está no CRM.</p>
               <p>3. Revise consentimento e origem.</p>
-              <p>4. Só depois avance para resposta ou campanha.</p>
+              <p>4. Envie resposta individual pela central.</p>
             </CardContent>
           </Card>
         </div>
