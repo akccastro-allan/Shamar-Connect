@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { MessageCircle, Users, KanbanSquare, Megaphone, Bot, Settings, LayoutDashboard, Tags, Zap, FileText, ShieldCheck, FlaskConical, Download, Upload, ListChecks, Activity, Palette } from "lucide-react";
+import { MessageCircle, Users, KanbanSquare, Megaphone, Bot, Settings, LayoutDashboard, Tags, Zap, FileText, ShieldCheck, FlaskConical, Download, Upload, ListChecks, Activity, Palette, GitBranch } from "lucide-react";
 import { BrandIcon } from "@/components/brand/brand-logo";
 import { cn } from "@/lib/utils";
 
@@ -9,6 +9,7 @@ const navigation = [
   { href: "/ui-lab", label: "UI Lab", icon: Palette },
   { href: "/feature-lab", label: "Feature Lab", icon: FlaskConical },
   { href: "/whatsapp-messages", label: "Mensagens WhatsApp", icon: MessageCircle },
+  { href: "/conversation-flows", label: "Fluxos de conversa", icon: GitBranch },
   { href: "/whatsapp-import", label: "Importação WhatsApp", icon: Download },
   { href: "/contact-import", label: "Importar contatos", icon: Upload },
   { href: "/group-import-lists", label: "Listas importadas", icon: ListChecks },
