@@ -53,8 +53,9 @@ export function ConversationFlowsManager() {
     setError(null);
     try {
       const data = await readJson<{ ok: boolean; flows: ConversationFlow[] }>("/api/conversation-flows");
-      setFlows(data.flows || []);
-      if (!selectedFlowId && data.flows?.[0]?.id) setSelectedFlowId(data.flows[0].id);
+      const loadedFlows = data.flows || [];
+      setFlows(loadedFlows);
+      if (!selectedFlowId && loadedFlows[0]?.id) setSelectedFlowId(loadedFlows[0].id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao carregar fluxos");
     } finally {
@@ -63,6 +64,7 @@ export function ConversationFlowsManager() {
   }
 
   async function createFlow() {
+    if (!name.trim() || !firstMessage.trim()) return;
     setLoading(true);
     setError(null);
     setNotice(null);
@@ -84,7 +86,7 @@ export function ConversationFlowsManager() {
   }
 
   async function addStep() {
-    if (!selectedFlow?.id) return;
+    if (!selectedFlow?.id || !stepTitle.trim() || !stepBody.trim()) return;
     setLoading(true);
     setError(null);
     setNotice(null);
@@ -115,6 +117,7 @@ export function ConversationFlowsManager() {
 
   async function archiveFlow(id: string) {
     setError(null);
+    setNotice(null);
     try {
       await readJson("/api/conversation-flows", {
         method: "PATCH",
@@ -183,6 +186,7 @@ export function ConversationFlowsManager() {
                     <div className="mt-2 flex flex-wrap gap-2"><Badge variant="secondary">{flow.status}</Badge><Badge variant="outline">{flow.trigger_type}</Badge></div>
                   </button>
                 ))}
+                {flows.length === 0 ? <div className="rounded-2xl border border-dashed p-6 text-center text-sm text-muted-foreground">Nenhum fluxo cadastrado.</div> : null}
               </div>
 
               <div className="space-y-4">
