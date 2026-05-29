@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { Bot, Clock, Download, FileText, MessageCircle, RefreshCcw, Search, Send, UserPlus, Users } from "lucide-react";
+import { Bot, Clock, Download, FileText, GitBranch, MessageCircle, RefreshCcw, Search, Send, UserPlus, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,6 +39,25 @@ type QuickReply = {
   usage_count?: number;
 };
 
+type FlowStep = {
+  id: string;
+  step_order: number;
+  title: string;
+  message_body: string;
+  wait_minutes: number;
+  step_type: string;
+};
+
+type ConversationFlow = {
+  id: string;
+  name: string;
+  description?: string | null;
+  trigger_type: string;
+  status: string;
+  tags?: string[];
+  conversation_flow_steps?: FlowStep[];
+};
+
 async function readJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, { ...init, cache: "no-store" });
   const data = await response.json();
@@ -60,13 +79,22 @@ function getConversationName(conversation?: Conversation | null) {
   return conversation.crm_contacts?.name || conversation.name || conversation.external_chat_id;
 }
 
+function personalize(text: string, conversation?: Conversation | null) {
+  return text
+    .replaceAll("{nome}", getConversationName(conversation))
+    .replaceAll("{telefone}", conversation?.crm_contacts?.phone || conversation?.external_chat_id || "")
+    .replaceAll("{empresa}", conversation?.crm_contacts?.company || "");
+}
+
 export function WhatsappServiceCenter() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [quickReplies, setQuickReplies] = useState<QuickReply[]>([]);
+  const [conversationFlows, setConversationFlows] = useState<ConversationFlow[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState("");
   const [query, setQuery] = useState("");
   const [quickReplyQuery, setQuickReplyQuery] = useState("");
+  const [flowQuery, setFlowQuery] = useState("");
   const [replyBody, setReplyBody] = useState("");
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -87,6 +115,13 @@ export function WhatsappServiceCenter() {
     if (!term) return quickReplies.slice(0, 8);
     return quickReplies.filter((reply) => [reply.title, reply.body, reply.category, ...(reply.tags || [])].join(" ").toLowerCase().includes(term)).slice(0, 8);
   }, [quickReplies, quickReplyQuery]);
+
+  const filteredFlows = useMemo(() => {
+    const term = flowQuery.trim().toLowerCase();
+    const activeFlows = conversationFlows.filter((flow) => flow.status === "active");
+    if (!term) return activeFlows.slice(0, 5);
+    return activeFlows.filter((flow) => [flow.name, flow.description, flow.trigger_type, ...(flow.tags || [])].filter(Boolean).join(" ").toLowerCase().includes(term)).slice(0, 5);
+  }, [conversationFlows, flowQuery]);
 
   async function loadConversations() {
     setLoading(true);
@@ -110,6 +145,15 @@ export function WhatsappServiceCenter() {
       setQuickReplies(data.quickReplies || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao carregar respostas rápidas");
+    }
+  }
+
+  async function loadConversationFlows() {
+    try {
+      const data = await readJson<{ ok: boolean; flows: ConversationFlow[] }>("/api/conversation-flows");
+      setConversationFlows(data.flows || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao carregar fluxos de conversa");
     }
   }
 
@@ -151,7 +195,7 @@ export function WhatsappServiceCenter() {
   }
 
   async function applyQuickReply(reply: QuickReply) {
-    setReplyBody((current) => current ? `${current}\n\n${reply.body}` : reply.body);
+    setReplyBody((current) => current ? `${current}\n\n${personalize(reply.body, selectedConversation)}` : personalize(reply.body, selectedConversation));
     setNotice(`Resposta rápida aplicada: ${reply.title}`);
     try {
       await readJson("/api/quick-replies/use", {
@@ -161,6 +205,24 @@ export function WhatsappServiceCenter() {
       setQuickReplies((current) => current.map((item) => item.id === reply.id ? { ...item, usage_count: Number(item.usage_count || 0) + 1 } : item));
     } catch {
       // uso não é crítico para o envio; não bloquear a operação
+    }
+  }
+
+  async function applyFlowStep(flow: ConversationFlow, step: FlowStep) {
+    if (!selectedConversation?.id) return;
+    setReplyBody((current) => current ? `${current}\n\n${personalize(step.message_body, selectedConversation)}` : personalize(step.message_body, selectedConversation));
+    setNotice(`Fluxo aplicado: ${flow.name} • etapa ${step.step_order}`);
+    try {
+      await readJson(`/api/conversation-flows/${flow.id}/start`, {
+        method: "POST",
+        body: JSON.stringify({
+          conversationId: selectedConversation.id,
+          contactId: selectedConversation.crm_contacts?.id || null,
+          metadata: { appliedStepId: step.id, appliedFrom: "whatsapp_service_center" },
+        }),
+      });
+    } catch {
+      // iniciar sessão é útil, mas não deve bloquear a aplicação da mensagem
     }
   }
 
@@ -188,6 +250,7 @@ export function WhatsappServiceCenter() {
   useEffect(() => {
     loadConversations();
     loadQuickReplies();
+    loadConversationFlows();
   }, []);
 
   return (
@@ -197,7 +260,7 @@ export function WhatsappServiceCenter() {
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <CardTitle className="flex items-center gap-2 text-2xl"><MessageCircle className="h-6 w-6 text-emerald-700" />Central de atendimento WhatsApp</CardTitle>
-              <CardDescription className="mt-2 max-w-3xl">Visualize conversas salvas, leia mensagens, use respostas rápidas e envie respostas registradas no CRM/Supabase.</CardDescription>
+              <CardDescription className="mt-2 max-w-3xl">Visualize conversas salvas, leia mensagens, use respostas rápidas, aplique fluxos e envie respostas registradas no CRM/Supabase.</CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button onClick={loadConversations} disabled={loading} variant="outline"><RefreshCcw className="mr-2 h-4 w-4" />Atualizar</Button>
@@ -206,11 +269,12 @@ export function WhatsappServiceCenter() {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-3 sm:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-5">
             <div className="rounded-2xl border bg-white p-4"><p className="text-xs text-muted-foreground">Conversas</p><p className="text-2xl font-semibold">{conversations.length}</p></div>
             <div className="rounded-2xl border bg-white p-4"><p className="text-xs text-muted-foreground">Grupos</p><p className="text-2xl font-semibold">{conversations.filter((item) => item.is_group).length}</p></div>
-            <div className="rounded-2xl border bg-white p-4"><p className="text-xs text-muted-foreground">Mensagens na conversa</p><p className="text-2xl font-semibold">{messages.length}</p></div>
-            <div className="rounded-2xl border bg-white p-4"><p className="text-xs text-muted-foreground">Respostas rápidas</p><p className="text-2xl font-semibold">{quickReplies.length}</p></div>
+            <div className="rounded-2xl border bg-white p-4"><p className="text-xs text-muted-foreground">Mensagens</p><p className="text-2xl font-semibold">{messages.length}</p></div>
+            <div className="rounded-2xl border bg-white p-4"><p className="text-xs text-muted-foreground">Respostas</p><p className="text-2xl font-semibold">{quickReplies.length}</p></div>
+            <div className="rounded-2xl border bg-white p-4"><p className="text-xs text-muted-foreground">Fluxos</p><p className="text-2xl font-semibold">{conversationFlows.length}</p></div>
           </div>
           {error ? <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</div> : null}
           {notice ? <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">{notice}</div> : null}
@@ -262,7 +326,7 @@ export function WhatsappServiceCenter() {
             </div>
           </CardHeader>
           <CardContent className="bg-slate-50 p-4">
-            <div className="max-h-[480px] space-y-3 overflow-auto pr-2">
+            <div className="max-h-[460px] space-y-3 overflow-auto pr-2">
               {messages.map((message) => {
                 const outbound = message.direction === "outbound";
                 return (
@@ -306,6 +370,40 @@ export function WhatsappServiceCenter() {
 
           <Card>
             <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base"><GitBranch className="h-5 w-5" />Fluxos de conversa</CardTitle>
+              <CardDescription>Aplique etapas do fluxo no campo de resposta.</CardDescription>
+              <div className="relative mt-2">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <input value={flowQuery} onChange={(event) => setFlowQuery(event.target.value)} placeholder="Buscar fluxo" className="w-full rounded-xl border bg-white py-2 pl-9 pr-3 text-sm" />
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {filteredFlows.map((flow) => (
+                <div key={flow.id} className="rounded-2xl border bg-white p-3 text-sm">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="font-medium text-slate-950">{flow.name}</p>
+                      <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{flow.description || "Sem descrição"}</p>
+                    </div>
+                    <Badge variant="outline">{flow.conversation_flow_steps?.length || 0}</Badge>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {(flow.conversation_flow_steps || []).slice(0, 3).map((step) => (
+                      <button key={step.id} onClick={() => applyFlowStep(flow, step)} className="w-full rounded-xl border bg-slate-50 p-2 text-left text-xs transition hover:bg-emerald-50">
+                        <span className="font-medium">{step.step_order}. {step.title}</span>
+                        <span className="block text-muted-foreground">{step.step_type} • aguarda {step.wait_minutes} min</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {filteredFlows.length === 0 ? <div className="rounded-2xl border border-dashed p-4 text-center text-xs text-muted-foreground">Nenhum fluxo encontrado.</div> : null}
+              <Button asChild variant="outline" className="w-full justify-start"><Link href="/conversation-flows"><GitBranch className="mr-2 h-4 w-4" />Gerenciar fluxos</Link></Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base"><FileText className="h-5 w-5" />Respostas rápidas</CardTitle>
               <CardDescription>Clique para aplicar no campo de resposta.</CardDescription>
               <div className="relative mt-2">
@@ -336,8 +434,8 @@ export function WhatsappServiceCenter() {
             <CardContent className="space-y-2 text-sm text-muted-foreground">
               <p>1. Sincronize o histórico da conversa.</p>
               <p>2. Confira se o contato está no CRM.</p>
-              <p>3. Aplique uma resposta rápida ou escreva manualmente.</p>
-              <p>4. Envie resposta individual pela central.</p>
+              <p>3. Aplique um fluxo, resposta rápida ou escreva manualmente.</p>
+              <p>4. Revise e envie resposta individual pela central.</p>
             </CardContent>
           </Card>
         </div>
