@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { Bot, Clock, Download, MessageCircle, RefreshCcw, Search, Send, UserPlus, Users } from "lucide-react";
+import { Bot, Clock, Download, FileText, MessageCircle, RefreshCcw, Search, Send, UserPlus, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,6 +30,15 @@ type Message = {
   created_at: string;
 };
 
+type QuickReply = {
+  id: string;
+  title: string;
+  body: string;
+  category: string;
+  tags?: string[];
+  usage_count?: number;
+};
+
 async function readJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, { ...init, cache: "no-store" });
   const data = await response.json();
@@ -54,8 +63,10 @@ function getConversationName(conversation?: Conversation | null) {
 export function WhatsappServiceCenter() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [quickReplies, setQuickReplies] = useState<QuickReply[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState("");
   const [query, setQuery] = useState("");
+  const [quickReplyQuery, setQuickReplyQuery] = useState("");
   const [replyBody, setReplyBody] = useState("");
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -71,6 +82,12 @@ export function WhatsappServiceCenter() {
     return conversations.filter((conversation) => [conversation.name, conversation.external_chat_id, conversation.crm_contacts?.name, conversation.crm_contacts?.phone, conversation.latest_message?.body].filter(Boolean).join(" ").toLowerCase().includes(term));
   }, [conversations, query]);
 
+  const filteredQuickReplies = useMemo(() => {
+    const term = quickReplyQuery.trim().toLowerCase();
+    if (!term) return quickReplies.slice(0, 8);
+    return quickReplies.filter((reply) => [reply.title, reply.body, reply.category, ...(reply.tags || [])].join(" ").toLowerCase().includes(term)).slice(0, 8);
+  }, [quickReplies, quickReplyQuery]);
+
   async function loadConversations() {
     setLoading(true);
     setError(null);
@@ -84,6 +101,15 @@ export function WhatsappServiceCenter() {
       setError(err instanceof Error ? err.message : "Erro ao carregar conversas");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadQuickReplies() {
+    try {
+      const data = await readJson<{ ok: boolean; quickReplies: QuickReply[] }>("/api/quick-replies");
+      setQuickReplies(data.quickReplies || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao carregar respostas rápidas");
     }
   }
 
@@ -124,6 +150,20 @@ export function WhatsappServiceCenter() {
     }
   }
 
+  async function applyQuickReply(reply: QuickReply) {
+    setReplyBody((current) => current ? `${current}\n\n${reply.body}` : reply.body);
+    setNotice(`Resposta rápida aplicada: ${reply.title}`);
+    try {
+      await readJson("/api/quick-replies/use", {
+        method: "POST",
+        body: JSON.stringify({ id: reply.id }),
+      });
+      setQuickReplies((current) => current.map((item) => item.id === reply.id ? { ...item, usage_count: Number(item.usage_count || 0) + 1 } : item));
+    } catch {
+      // uso não é crítico para o envio; não bloquear a operação
+    }
+  }
+
   async function sendReply() {
     if (!selectedConversation?.id || !replyBody.trim()) return;
     setSending(true);
@@ -147,6 +187,7 @@ export function WhatsappServiceCenter() {
 
   useEffect(() => {
     loadConversations();
+    loadQuickReplies();
   }, []);
 
   return (
@@ -156,7 +197,7 @@ export function WhatsappServiceCenter() {
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <CardTitle className="flex items-center gap-2 text-2xl"><MessageCircle className="h-6 w-6 text-emerald-700" />Central de atendimento WhatsApp</CardTitle>
-              <CardDescription className="mt-2 max-w-3xl">Visualize conversas salvas, leia mensagens, envie respostas e mantenha tudo registrado no CRM/Supabase.</CardDescription>
+              <CardDescription className="mt-2 max-w-3xl">Visualize conversas salvas, leia mensagens, use respostas rápidas e envie respostas registradas no CRM/Supabase.</CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button onClick={loadConversations} disabled={loading} variant="outline"><RefreshCcw className="mr-2 h-4 w-4" />Atualizar</Button>
@@ -169,7 +210,7 @@ export function WhatsappServiceCenter() {
             <div className="rounded-2xl border bg-white p-4"><p className="text-xs text-muted-foreground">Conversas</p><p className="text-2xl font-semibold">{conversations.length}</p></div>
             <div className="rounded-2xl border bg-white p-4"><p className="text-xs text-muted-foreground">Grupos</p><p className="text-2xl font-semibold">{conversations.filter((item) => item.is_group).length}</p></div>
             <div className="rounded-2xl border bg-white p-4"><p className="text-xs text-muted-foreground">Mensagens na conversa</p><p className="text-2xl font-semibold">{messages.length}</p></div>
-            <div className="rounded-2xl border bg-white p-4"><p className="text-xs text-muted-foreground">Modo</p><p className="text-2xl font-semibold">Atendimento</p></div>
+            <div className="rounded-2xl border bg-white p-4"><p className="text-xs text-muted-foreground">Respostas rápidas</p><p className="text-2xl font-semibold">{quickReplies.length}</p></div>
           </div>
           {error ? <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</div> : null}
           {notice ? <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">{notice}</div> : null}
@@ -221,7 +262,7 @@ export function WhatsappServiceCenter() {
             </div>
           </CardHeader>
           <CardContent className="bg-slate-50 p-4">
-            <div className="max-h-[540px] space-y-3 overflow-auto pr-2">
+            <div className="max-h-[480px] space-y-3 overflow-auto pr-2">
               {messages.map((message) => {
                 const outbound = message.direction === "outbound";
                 return (
@@ -236,7 +277,10 @@ export function WhatsappServiceCenter() {
               {messages.length === 0 ? <div className="rounded-2xl border border-dashed bg-white p-8 text-center text-sm text-muted-foreground">Nenhuma mensagem salva para esta conversa. Use “Sincronizar histórico”.</div> : null}
             </div>
             <div className="mt-4 rounded-2xl border bg-white p-3">
-              <label className="text-xs font-medium text-muted-foreground">Responder pela central</label>
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-xs font-medium text-muted-foreground">Responder pela central</label>
+                <Link href="/quick-replies" className="text-xs font-medium text-emerald-700">Gerenciar respostas</Link>
+              </div>
               <textarea value={replyBody} onChange={(event) => setReplyBody(event.target.value)} rows={4} maxLength={4000} placeholder="Digite a mensagem para enviar pelo WhatsApp conectado..." className="mt-2 w-full resize-none rounded-xl border bg-white p-3 text-sm outline-none focus:ring-2 focus:ring-emerald-200" />
               <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <span className="text-xs text-muted-foreground">{replyBody.length}/4000 caracteres</span>
@@ -262,14 +306,26 @@ export function WhatsappServiceCenter() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base"><Bot className="h-5 w-5" />Ações rápidas</CardTitle>
-              <CardDescription>Preparado para respostas rápidas e IA.</CardDescription>
+              <CardTitle className="flex items-center gap-2 text-base"><FileText className="h-5 w-5" />Respostas rápidas</CardTitle>
+              <CardDescription>Clique para aplicar no campo de resposta.</CardDescription>
+              <div className="relative mt-2">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <input value={quickReplyQuery} onChange={(event) => setQuickReplyQuery(event.target.value)} placeholder="Buscar resposta" className="w-full rounded-xl border bg-white py-2 pl-9 pr-3 text-sm" />
+              </div>
             </CardHeader>
             <CardContent className="space-y-2">
-              <Button variant="outline" className="w-full justify-start" disabled>Gerar resposta com IA</Button>
-              <Button variant="outline" className="w-full justify-start" disabled>Aplicar resposta rápida</Button>
+              {filteredQuickReplies.map((reply) => (
+                <button key={reply.id} onClick={() => applyQuickReply(reply)} className="w-full rounded-2xl border bg-white p-3 text-left text-sm transition hover:bg-emerald-50">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="font-medium text-slate-950">{reply.title}</p>
+                    <Badge variant="outline">{reply.category}</Badge>
+                  </div>
+                  <p className="mt-2 line-clamp-3 text-xs leading-5 text-muted-foreground">{reply.body}</p>
+                </button>
+              ))}
+              {filteredQuickReplies.length === 0 ? <div className="rounded-2xl border border-dashed p-4 text-center text-xs text-muted-foreground">Nenhuma resposta rápida encontrada.</div> : null}
+              <Button variant="outline" className="w-full justify-start" disabled><Bot className="mr-2 h-4 w-4" />Gerar resposta com IA</Button>
               <Button variant="outline" className="w-full justify-start" disabled>Criar tarefa de follow-up</Button>
-              <div className="rounded-2xl border bg-emerald-50 p-3 text-xs text-emerald-900">Envio manual liberado. Toda mensagem enviada é registrada em whatsapp_messages e provider_events.</div>
             </CardContent>
           </Card>
 
@@ -280,7 +336,7 @@ export function WhatsappServiceCenter() {
             <CardContent className="space-y-2 text-sm text-muted-foreground">
               <p>1. Sincronize o histórico da conversa.</p>
               <p>2. Confira se o contato está no CRM.</p>
-              <p>3. Revise consentimento e origem.</p>
+              <p>3. Aplique uma resposta rápida ou escreva manualmente.</p>
               <p>4. Envie resposta individual pela central.</p>
             </CardContent>
           </Card>
