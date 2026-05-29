@@ -7,7 +7,8 @@ export async function GET() {
     const db = createSupabaseServerClient();
     const { data, error } = await db
       .from("quick_replies")
-      .select("id, title, body, category, is_active, created_at")
+      .select("id, title, body, category, tags, usage_count, is_active, created_at, updated_at")
+      .eq("is_active", true)
       .order("category", { ascending: true })
       .order("title", { ascending: true });
 
@@ -27,14 +28,20 @@ export async function POST(request: NextRequest) {
     const category = String(body?.category || "geral").trim() || "geral";
 
     if (!title || !replyBody) {
-      return NextResponse.json({ ok: false, error: "title and body are required" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Título e mensagem são obrigatórios." }, { status: 400 });
     }
 
     const db = createSupabaseWriteClient();
     const { data, error } = await db
       .from("quick_replies")
-      .insert({ title, body: replyBody, category, is_active: true })
-      .select("id, title, body, category, is_active, created_at")
+      .insert({
+        title,
+        body: replyBody,
+        category,
+        tags: Array.isArray(body?.tags) ? body.tags : [],
+        is_active: true,
+      })
+      .select("id, title, body, category, tags, usage_count, is_active, created_at, updated_at")
       .single();
 
     if (error) throw error;
@@ -54,6 +61,7 @@ export async function PATCH(request: NextRequest) {
     if (body?.title !== undefined) update.title = String(body.title).trim();
     if (body?.body !== undefined) update.body = String(body.body).trim();
     if (body?.category !== undefined) update.category = String(body.category).trim() || "geral";
+    if (body?.tags !== undefined) update.tags = Array.isArray(body.tags) ? body.tags : [];
     if (body?.is_active !== undefined) update.is_active = Boolean(body.is_active);
 
     const db = createSupabaseWriteClient();
@@ -61,7 +69,7 @@ export async function PATCH(request: NextRequest) {
       .from("quick_replies")
       .update(update)
       .eq("id", id)
-      .select("id, title, body, category, is_active, created_at")
+      .select("id, title, body, category, tags, usage_count, is_active, created_at, updated_at")
       .single();
 
     if (error) throw error;
