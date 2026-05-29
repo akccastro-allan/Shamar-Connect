@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Activity, CheckCircle2, Download, MessageCircle, RefreshCcw, TestTube2, Upload, Users } from "lucide-react";
+import { Activity, CheckCircle2, Download, MessageCircle, RefreshCcw, TestTube2, Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -114,7 +114,9 @@ export function DashboardOperationalPanel() {
                 <CardDescription>{action.description}</CardDescription>
               </CardHeader>
               <CardContent>
-                <Button asChild variant="outline" className="w-full"><Link href={action.href}>Abrir</Link></Button>
+                <Link href={action.href} className="inline-flex h-10 w-full items-center justify-center rounded-xl border bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
+                  Abrir
+                </Link>
               </CardContent>
             </Card>
           );
