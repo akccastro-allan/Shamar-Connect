@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { Bot, CheckCircle2, Download, LayoutDashboard, MessageCircle, Smartphone, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 const modules = [
@@ -34,6 +33,8 @@ const modules = [
     status: "Conceito",
   },
 ];
+
+const linkButtonClass = "inline-flex h-10 w-full items-center justify-center rounded-xl border border-input bg-background px-4 py-2 text-sm font-medium transition hover:bg-accent hover:text-accent-foreground";
 
 export function UiLabPanel() {
   return (
@@ -88,9 +89,7 @@ export function UiLabPanel() {
                 <CardDescription>{module.description}</CardDescription>
               </CardHeader>
               <CardContent>
-                <Button asChild variant="outline" className="w-full">
-                  <Link href={module.href}>Abrir referência</Link>
-                </Button>
+                <Link href={module.href} className={linkButtonClass}>Abrir referência</Link>
               </CardContent>
             </Card>
           );
@@ -121,8 +120,8 @@ export function UiLabPanel() {
             <div className="rounded-2xl border p-4">
               <p className="font-medium">Atalhos operacionais</p>
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                <Button asChild variant="outline"><Link href="/system-test"><CheckCircle2 className="mr-2 h-4 w-4" />Teste do sistema</Link></Button>
-                <Button asChild variant="outline"><Link href="/whatsapp-import"><Download className="mr-2 h-4 w-4" />Importar WhatsApp</Link></Button>
+                <Link href="/system-test" className={linkButtonClass}><CheckCircle2 className="mr-2 h-4 w-4" />Teste do sistema</Link>
+                <Link href="/whatsapp-import" className={linkButtonClass}><Download className="mr-2 h-4 w-4" />Importar WhatsApp</Link>
               </div>
             </div>
           </CardContent>
