@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 
 export async function GET() {
   try {
-    const db = createSupabaseServerClient();
+    const db = createSupabaseWriteClient();
     const { data, error } = await db
       .from("quick_replies")
       .select("id, title, body, category, tags, usage_count, is_active, created_at, updated_at")
