@@ -1,0 +1,1 @@
+export default function TermsPage(){return <main><h1>Termos de Uso do ShamarConnect</h1><p>Junho de 2026</p><p>Moriah Systems Serviços Ltda. CNPJ 66.912.118/0001-02. Foro: Rio de Janeiro, RJ.</p><p>Uso do serviço, responsabilidades, pagamento, cancelamento, propriedade intelectual e limitação de responsabilidade.</p><a href="/login">Voltar para login</a></main>}
