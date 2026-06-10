@@ -1,10 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { NextResponse } from "next/server";
 
-export async function GET(request: NextRequest) {
-  const requestUrl = new URL(request.url);
-  const next = requestUrl.searchParams.get("next") || "/dashboard";
-  const callbackUrl = new URL("/api/auth/callback", requestUrl.origin);
-  callbackUrl.searchParams.set("next", next);
+export async function GET() {
+  const loginUrl = new URL("/login", process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000");
+  loginUrl.searchParams.set("error", "Login OAuth em implantação.");
 
-  const supabase
+  return NextResponse.redirect(loginUrl);
+}
