@@ -1,10 +1,43 @@
 import { NextRequest, NextResponse } from "next/server";
-export function middleware(request: NextRequest) {
-  const p = request.nextUrl.pathname;
-  const pub = ["/login", "/terms", "/privacy", "/forgot-password"];
-  const open = pub.some(x => p.startsWith(x)) || p.startsWith("/api/auth/") || p.startsWith("/_next/") || p.startsWith("/favicon") || p.startsWith("/brand/");
-  if (open) return NextResponse.next();
-  const hasAuth = request.cookies.getAll().some(c => c.name.includes("auth-token"));
-  return hasAuth ? NextResponse.next() : NextResponse.redirect(new URL("/login", request.url));
+import { createServerClient } from "@supabase/ssr";
+
+export async function proxy(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  const isPublic =
+    pathname.startsWith("/login") ||
+    pathname.startsWith("/terms") ||
+    pathname.startsWith("/privacy") ||
+    pathname.startsWith("/forgot-password") ||
+    pathname.startsWith("/api/auth/") ||
+    pathname.startsWith("/_next/") ||
+    pathname.startsWith("/brand/") ||
+    pathname === "/favicon.ico";
+
+  if (isPublic) return NextResponse.next();
+
+  const response = NextResponse.next();
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll: () => request.cookies.getAll(),
+        setAll: (cookies) =>
+          cookies.forEach(({ name, value, options }) =>
+            response.cookies.set(name, value, options)
+          ),
+      },
+    }
+  );
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.redirect(new URL("/login", request.url));
+
+  return response;
 }
-export const config = { matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"] };
+
+export const config = {
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+};
