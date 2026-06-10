@@ -1,8 +1,13 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import type { Provider } from "@supabase/supabase-js";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-export async function GET() {
-  const loginUrl = new URL("/login", process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000");
-  loginUrl.searchParams.set("error", "Login OAuth em implantação.");
+const DEFAULT_PROVIDER: Provider = "google";
+const ALLOWED_PROVIDERS = new Set<Provider>(["google", "github", "azure"]);
 
-  return NextResponse.redirect(loginUrl);
-}
+function resolveProvider(value: string | null): Provider {
+  if (value && ALLOWED_PROVIDERS.has(value as Provider)) {
+    return value as Provider;
+  }
+
+  return DEFAULT_PROVIDER;
