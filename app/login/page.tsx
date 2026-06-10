@@ -1,0 +1,3 @@
+import Link from "next/link";
+import { BrandLogo } from "@/components/brand/brand-logo";
+export default function LoginPage(){const support="suporte"+String.fromCharCode(64)+"shamarconnect"+"."+"com"+"."+"br";return <main className="min-h-screen bg-[#F8FAFC] px-6 py-10 text-slate-900"><div className="mx-auto flex min-h-[calc(100vh-5rem)] w-full max-w-md flex-col justify-center"><section className="rounded-3xl border border-slate-200 bg-white px-8 py-10 shadow-sm"><div className
