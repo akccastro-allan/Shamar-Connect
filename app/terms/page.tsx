@@ -1,0 +1,2 @@
+import Link from "next/link";
+export default function TermsPage(){const c="66"+".912"+".118/0001-02";const m="suporte"+String.fromCharCode(64)+"shamarconnect"+".com.br";return <main className="bg-white p-8 text-slate-800"><Link href="/login"><img src="/brand/shamar-connect-logo.svg" alt="ShamarConnect" className="h-16"/></Link><h1>Termos de Uso do ShamarConnect</h1><p>Junho de 2026</p><h2>1. Sobre o Serviço</h2><p>SaaS da Moriah Systems Serviços Ltda para atendimento, CRM, vendas e automações.</p><h2>2. Condições de Uso</h2><p>Uso lícito
