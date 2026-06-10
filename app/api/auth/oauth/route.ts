@@ -11,3 +11,25 @@ function resolveProvider(value: string | null): Provider {
   }
 
   return DEFAULT_PROVIDER;
+}
+
+export async function GET(request: NextRequest) {
+  const { searchParams, origin } = new URL(request.url);
+  const provider = resolveProvider(searchParams.get("provider"));
+  const next = searchParams.get("next") ?? "/";
+
+  const supabase = await createSupabaseServerClient();
+
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider,
+    options: {
+      redirectTo: `${origin}/api/auth/callback?next=${encodeURIComponent(next)}`,
+    },
+  });
+
+  if (error || !data.url) {
+    return NextResponse.redirect(`${origin}/login?error=oauth_failed`);
+  }
+
+  return NextResponse.redirect(data.url);
+}
