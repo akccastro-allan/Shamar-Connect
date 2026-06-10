@@ -1,1 +1,3 @@
-export default function LoginPage(){return <main><h1>Entrar no ShamarConnect</h1><a href="/api/auth/oauth?provider=google">Entrar com Google</a><p>ou</p><form action="/api/auth/login" method="post"><input name="email"/><input name="password" type="password"/><button>Entrar</button></form><a href="/forgot-password">Esqueci minha senha</a><footer>© 2026 Moriah Systems Serviços Ltda</footer></main>}
+import Link from "next/link";
+import { BrandLogo } from "@/components/brand/brand-logo";
+export default function LoginPage(){return <main className="min-h-screen bg-[#F8FAFC] px-6 py-10 text-slate-900"><div className="mx-auto flex min-h-[calc(100vh-5rem)] w-full max-w-md flex-col justify-center"><section className="rounded-3xl border border-slate-200 bg-white p-8 shadow-xl"><div className="mx-auto mb-8 max-w-[260px]"><BrandLogo className="h-auto w-full"/></div><h1 className="text-center text-2
