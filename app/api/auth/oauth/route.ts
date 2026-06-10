@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { Provider } from "@supabase/supabase-js";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-const DEFAULT_PROVIDER: Provider = "google";
-const ALLOWED_PROVIDERS = new Set<Provider>(["google", "github", "azure"]);
+export async function GET(request: NextRequest) {
+  const requestUrl = new URL(request.url);
+  const next = requestUrl.searchParams.get("next") || "/dashboard";
+  const callbackUrl = new URL("/api/auth/callback", requestUrl.origin);
+  callbackUrl.searchParams.set("next", next);
 
-function resolveProvider(value: string | null): Provider {
-  if (value && AL
+  const supabase
