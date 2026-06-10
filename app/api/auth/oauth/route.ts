@@ -1,29 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { Provider } from "@supabase/supabase-js";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-const DEFAULT_PROVIDER = "google";
+const DEFAULT_PROVIDER: Provider = "google";
+const ALLOWED_PROVIDERS = new Set<Provider>(["google", "github", "azure"]);
 
-export async function GET(request: NextRequest) {
-  const requestUrl = new URL(request.url);
-  const provider = requestUrl.searchParams.get("provider") || DEFAULT_PROVIDER;
-  const next = requestUrl.searchParams.get("next") || "/dashboard";
-  const callbackUrl = new URL("/api/auth/callback", requestUrl.origin);
-
-  callbackUrl.searchParams.set("next", next);
-
-  const supabase = createSupabaseServerClient();
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider,
-    options: {
-      redirectTo: callbackUrl.toString(),
-    },
-  });
-
-  if (error || !data.url) {
-    const loginUrl = new URL("/login", requestUrl.origin);
-    loginUrl.searchParams.set("error", "Não foi possível iniciar o login com Supabase OAuth.");
-    return NextResponse.redirect(loginUrl);
+function resolveProvider(value: string | null): Provider {
+  if (value && ALLOWED_PROVIDERS.has(value as Provider)) {
+    return value as Provider;
   }
 
-  return NextResponse.redirect(data.url);
-}
+  return DEFAULT_PROVIDER;
