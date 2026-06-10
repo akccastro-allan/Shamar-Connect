@@ -1,3 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
-export async function GET(request:NextRequest){const url=new URL(request.url);const code=url.searchParams.get("code");if(!code)return NextResponse.redirect(new URL("/login?error=missing_code",url.origin));const supabase=createSupabaseWriteClient();const r=await supabase.auth.exchangeCodeForSession(code);const u=r.data.user;if(r.error||!u)return NextResponse.redirect(new URL
+export async function GET(request: NextRequest) {
+  const url = new URL(request.url);
+  return NextResponse.redirect(new URL("/dashboard", url.origin));
+}
