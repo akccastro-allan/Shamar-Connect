@@ -1,3 +1,2 @@
 import Link from "next/link";
-import { BrandLogo } from "@/components/brand/brand-logo";
-export default function LoginPage(){const support="suporte"+String.fromCharCode(64)+"shamarconnect"+"."+"com"+"."+"br";return <main className="min-h-screen bg-[#F8FAFC] px-6 py-10 text-slate-900"><div className="mx-auto flex min-h-[calc(100vh-5rem)] w-full max-w-md flex-col justify-center"><section className="rounded-3xl border border-slate-200 bg-white px-8 py-10 shadow-sm"><div className
+export default function LoginPage(){return <main className="min-h-screen bg-white p-8 text-slate-900"><section className="mx-auto max-w-md space-y-4"><img src="/brand/shamar-connect-logo.svg" alt="ShamarConnect" className="mx-auto h-20"/><h1>Entrar no ShamarConnect</h1><a href="/api/auth/oauth?provider=google">Entrar com Google</a><p>ou</p><form action="/api/auth/login" method="post"><input name="email"/><input name="password" type="password"/><button>Entrar</button
