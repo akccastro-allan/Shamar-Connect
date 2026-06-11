@@ -1,52 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@supabase/ssr";
 
-export async function proxy(request: NextRequest) {
-  const { pathname } = request.nextUrl;
+export function proxy(request: NextRequest) {
+  const hasCookies = request.cookies.getAll().length > 0;
 
-  const isPublic =
-    pathname === "/" ||
-    pathname.startsWith("/login") ||
-    pathname.startsWith("/planos") ||
-    pathname.startsWith("/terms") ||
-    pathname.startsWith("/privacy") ||
-    pathname.startsWith("/forgot-password") ||
-    pathname.startsWith("/sitemap.xml") ||
-    pathname.startsWith("/robots.txt") ||
-    pathname.startsWith("/api/auth/") ||
-    pathname.startsWith("/_next/") ||
-    pathname.startsWith("/brand/") ||
-    pathname === "/favicon.ico";
-
-  if (isPublic) return NextResponse.next();
-
-  const response = NextResponse.next();
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll: () => request.cookies.getAll(),
-        setAll: (cookies) =>
-          cookies.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
-          ),
-      },
-    }
-  );
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
+  if (!hasCookies) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  return response;
+  return NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: [
+    "/dashboard/:path*",
+    "/inbox/:path*",
+    "/crm/:path*",
+    "/settings/:path*",
+    "/contacts/:path*",
+    "/companies/:path*",
+  ],
 };
