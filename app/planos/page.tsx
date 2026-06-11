@@ -4,253 +4,411 @@ import { BrandLogo } from "@/components/brand/brand-logo";
 const plans = [
   {
     name: "Starter",
-    price: "R$ 97",
-    period: "/mês",
-    description: "Para pequenas empresas que querem organizar o atendimento.",
+    price: "149",
+    description: "Para empresas que querem sair da bagunça do WhatsApp e organizar contatos, histórico e oportunidades.",
+    target: "Ideal para começar com controle",
     highlight: false,
     features: [
       "1 empresa",
-      "2 usuários",
-      "CRM básico",
-      "Contatos e oportunidades",
+      "2 usuários/atendentes",
+      "WhatsApp Central com 1 número",
+      "CRM básico com contatos e histórico",
       "Respostas rápidas",
-      "Suporte em português",
+      "Importação de contatos",
+      "Suporte por e-mail",
     ],
   },
   {
     name: "Professional",
-    price: "R$ 197",
-    period: "/mês",
-    description: "Para equipes que precisam vender mais com multiatendimento.",
+    price: "297",
+    description: "Para equipes comerciais que precisam de multiatendimento, funil, fluxos e mais visibilidade sobre as vendas.",
+    target: "Mais escolhido para vender melhor",
     highlight: true,
     features: [
-      "Multiatendente",
-      "CRM completo",
-      "Funil de vendas",
-      "Histórico de conversas",
-      "Templates de atendimento",
-      "Relatórios comerciais",
+      "1 empresa",
+      "5 usuários/atendentes",
+      "WhatsApp Central com 1 número",
+      "CRM completo com funil e oportunidades",
+      "Respostas rápidas ilimitadas",
+      "Fluxos de conversa",
+      "Relatórios básicos",
+      "Suporte prioritário por e-mail",
     ],
   },
   {
     name: "Business",
-    price: "R$ 397",
-    period: "/mês",
-    description: "Para operações que precisam de automações e recursos avançados.",
+    price: "597",
+    description: "Para operações que precisam de automação, múltiplos números, catálogo, integração local e gestão avançada.",
+    target: "Para operações em expansão",
     highlight: false,
     features: [
-      "Agent",
-      "Catálogo",
-      "Automações",
-      "Gestão avançada",
-      "Integrações",
+      "3 empresas",
+      "15 usuários/atendentes",
+      "WhatsApp Central com até 3 números",
+      "CRM completo com vendas e oportunidades",
+      "Fluxos de conversa avançados",
+      "Shamar Agent para integração local",
+      "Catálogo de produtos sincronizado",
+      "Relatórios avançados",
       "Suporte prioritário",
     ],
   },
 ];
 
-const benefits = [
-  "Centralize o WhatsApp da equipe",
-  "Evite perder clientes por falta de resposta",
-  "Organize contatos e oportunidades",
-  "Acompanhe o funil de vendas",
-  "Padronize respostas comerciais",
-  "Prepare sua empresa para usar IA no atendimento",
+const comparison: Array<[string, string, string, string]> = [
+  ["Preço mensal", "R$ 149", "R$ 297", "R$ 597"],
+  ["Empresas", "1", "1", "3"],
+  ["Usuários", "2", "5", "15"],
+  ["WhatsApp", "1 número", "1 número", "até 3 números"],
+  ["CRM", "Básico", "Completo", "Completo"],
+  ["Fluxos de conversa", "—", "Incluído", "Avançado"],
+  ["Shamar Agent", "—", "—", "Incluído"],
+  ["Catálogo sincronizado", "—", "—", "Incluído"],
+  ["Relatórios", "—", "Básico", "Avançado"],
+  ["Suporte", "E-mail", "Prioritário", "Prioritário"],
+];
+
+const aiFeatures = [
+  "Sugestão de resposta para o atendente",
+  "Transcrição de áudio do cliente",
+  "Resumo automático de conversa",
+  "Classificação de intenção do cliente",
+  "Detecção de urgência",
+  "Pontuação de lead",
 ];
 
 const faqs = [
   [
-    "Preciso de número oficial?",
-    "Não. O ShamarConnect pode funcionar com operação baseada em WhatsApp Web.",
+    "Qual plano devo escolher?",
+    "Para a maioria das empresas, o Professional é o melhor ponto de partida porque une WhatsApp Central, CRM completo, funil, fluxos e relatórios.",
   ],
   [
-    "Quantos usuários posso ter?",
-    "Depende do plano contratado. O Starter atende operações menores, enquanto Professional e Business são indicados para equipes.",
+    "O ShamarConnect substitui meu WhatsApp?",
+    "Não. Ele organiza a operação comercial e o atendimento em torno do WhatsApp da sua empresa, trazendo CRM, histórico, equipe e controle.",
   ],
   [
-    "O plano Professional é o mais indicado?",
-    "Sim. Para a maioria das empresas, ele tem o melhor equilíbrio entre preço, atendimento e CRM completo.",
+    "O Módulo IA está incluso nos planos?",
+    "O Módulo IA é um add-on avulso de R$ 79,90/mês e pode ser contratado junto com qualquer plano.",
   ],
   [
-    "O Módulo IA está incluso?",
-    "O Módulo IA é um add-on por R$ 79/mês, com recursos como sugestões de resposta, transcrição e resumo de conversa.",
+    "O Business é indicado para qual empresa?",
+    "O Business é indicado para empresas com mais atendentes, mais números de WhatsApp, necessidade de catálogo sincronizado e integração com sistema local via Shamar Agent.",
   ],
   [
-    "Posso cancelar quando quiser?",
-    "Sim. A proposta é simples, sem fidelidade obrigatória.",
+    "Posso começar com um plano menor e evoluir depois?",
+    "Sim. Você pode começar com o plano mais adequado para o momento atual e evoluir conforme a operação comercial crescer.",
   ],
 ];
 
+function CheckIcon() {
+  return (
+    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#2ABFAB]/10 text-xs font-black text-[#2ABFAB]">
+      ✓
+    </span>
+  );
+}
+
 export default function PlanosPage() {
   return (
-    <main className="min-h-screen bg-[#F8FAFC] text-slate-900">
-      <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
-        <Link href="/" className="block w-48">
-          <BrandLogo className="h-auto w-full" />
-        </Link>
+    <main className="min-h-screen bg-slate-50 text-slate-950">
+      <header className="sticky top-0 z-40 border-b border-slate-200/70 bg-white/95 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 md:px-8">
+          <Link href="/" className="block w-44 md:w-56">
+            <BrandLogo className="h-auto w-full" />
+          </Link>
 
-        <Link
-          href="/login"
-          className="rounded-xl bg-[#1B2F5B] px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
-        >
-          Entrar
-        </Link>
+          <nav className="hidden items-center gap-8 text-sm font-semibold text-slate-600 md:flex">
+            <Link href="/" className="hover:text-[#1B2F5B]">
+              Início
+            </Link>
+            <a href="#planos" className="hover:text-[#1B2F5B]">
+              Planos
+            </a>
+            <a href="#comparativo" className="hover:text-[#1B2F5B]">
+              Comparativo
+            </a>
+            <a href="#faq" className="hover:text-[#1B2F5B]">
+              FAQ
+            </a>
+          </nav>
+
+          <Link
+            href="/login"
+            className="rounded-full bg-[#1B2F5B] px-5 py-2.5 text-sm font-black text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+          >
+            Entrar
+          </Link>
+        </div>
       </header>
 
-      <section className="mx-auto max-w-6xl px-6 py-16 text-center">
-        <p className="mx-auto mb-5 inline-flex rounded-full bg-white px-4 py-2 text-sm font-semibold text-[#2ABFAB] shadow-sm">
-          Planos do ShamarConnect
-        </p>
+      <section className="relative overflow-hidden bg-white">
+        <div className="absolute left-1/2 top-0 h-72 w-72 -translate-x-1/2 rounded-full bg-[#2ABFAB]/20 blur-3xl" />
+        <div className="absolute right-0 top-24 h-80 w-80 rounded-full bg-[#1B2F5B]/10 blur-3xl" />
 
-        <h1 className="mx-auto max-w-4xl text-4xl font-bold tracking-tight text-[#1B2F5B] md:text-6xl">
-          Escolha o plano ideal para organizar seu atendimento e vender mais
-        </h1>
+        <div className="relative mx-auto max-w-7xl px-5 py-20 text-center md:px-8 md:py-28">
+          <div className="mx-auto inline-flex items-center gap-2 rounded-full border border-[#2ABFAB]/20 bg-[#2ABFAB]/10 px-4 py-2 text-sm font-black text-[#13796D]">
+            Planos profissionais para empresas que vendem pelo WhatsApp
+          </div>
 
-        <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-slate-600">
-          Comece com CRM, WhatsApp centralizado e recursos para transformar conversas em oportunidades reais de venda.
-        </p>
+          <h1 className="mx-auto mt-7 max-w-5xl text-4xl font-black tracking-tight text-[#1B2F5B] md:text-6xl">
+            Atendimento, CRM, automação e IA para sua equipe vender com mais controle
+          </h1>
+
+          <p className="mx-auto mt-6 max-w-3xl text-base leading-8 text-slate-600 md:text-xl">
+            O ShamarConnect centraliza conversas, organiza contatos, acompanha oportunidades comerciais e prepara sua empresa para uma operação mais profissional.
+          </p>
+
+          <div className="mt-9 flex flex-col justify-center gap-4 sm:flex-row">
+            <a
+              href="#planos"
+              className="rounded-full bg-[#2ABFAB] px-7 py-4 text-base font-black text-white shadow-lg shadow-[#2ABFAB]/20 transition hover:-translate-y-0.5 hover:shadow-xl"
+            >
+              Ver planos
+            </a>
+
+            <Link
+              href="/login"
+              className="rounded-full border border-slate-300 bg-white px-7 py-4 text-base font-black text-[#1B2F5B] shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+            >
+              Falar com especialista
+            </Link>
+          </div>
+        </div>
       </section>
 
-      <section className="mx-auto max-w-6xl px-6 pb-16">
-        <div className="grid gap-6 md:grid-cols-3">
+      <section id="planos" className="mx-auto max-w-7xl px-5 py-20 md:px-8">
+        <div className="mx-auto max-w-3xl text-center">
+          <p className="text-sm font-black uppercase tracking-[0.25em] text-[#C9952A]">
+            Planos
+          </p>
+
+          <h2 className="mt-3 text-3xl font-black tracking-tight text-[#1B2F5B] md:text-5xl">
+            Escolha o plano certo para o momento da sua empresa
+          </h2>
+
+          <p className="mt-5 text-lg leading-8 text-slate-600">
+            Os valores públicos posicionam o ShamarConnect como uma solução profissional. Condições de implantação podem ser negociadas conforme o projeto.
+          </p>
+        </div>
+
+        <div className="mt-14 grid gap-7 lg:grid-cols-3">
           {plans.map((plan) => (
             <article
               key={plan.name}
               className={
                 plan.highlight
-                  ? "relative rounded-3xl border-2 border-[#2ABFAB] bg-white p-8 shadow-lg"
-                  : "rounded-3xl border border-slate-200 bg-white p-8 shadow-sm"
+                  ? "relative rounded-[2rem] border-2 border-[#2ABFAB] bg-white p-7 shadow-2xl shadow-[#2ABFAB]/10"
+                  : "rounded-[2rem] border border-slate-200 bg-white p-7 shadow-sm"
               }
             >
               {plan.highlight && (
-                <span className="absolute -top-4 left-1/2 -translate-x-1/2 rounded-full bg-[#C9952A] px-4 py-2 text-xs font-bold uppercase tracking-wide text-white">
+                <div className="absolute -top-4 left-1/2 -translate-x-1/2 rounded-full bg-[#C9952A] px-5 py-2 text-xs font-black uppercase tracking-wide text-white shadow-lg">
                   Mais popular
-                </span>
+                </div>
               )}
 
-              <h2 className="text-2xl font-bold text-[#1B2F5B]">{plan.name}</h2>
+              <div className="flex min-h-40 flex-col">
+                <p className="text-sm font-black uppercase tracking-wide text-[#2ABFAB]">
+                  {plan.target}
+                </p>
 
-              <p className="mt-3 min-h-12 text-sm leading-6 text-slate-600">
-                {plan.description}
-              </p>
+                <h3 className="mt-3 text-3xl font-black text-[#1B2F5B]">
+                  {plan.name}
+                </h3>
 
-              <div className="mt-6 flex items-end gap-1">
-                <span className="text-4xl font-bold text-[#2ABFAB]">
-                  {plan.price}
-                </span>
-                <span className="mb-1 text-slate-500">{plan.period}</span>
+                <p className="mt-4 text-sm leading-6 text-slate-600">
+                  {plan.description}
+                </p>
+              </div>
+
+              <div className="mt-7 rounded-3xl bg-slate-50 p-5">
+                <div className="flex items-end gap-1">
+                  <span className="text-lg font-black text-slate-500">R$</span>
+                  <span className="text-5xl font-black tracking-tight text-[#1B2F5B]">
+                    {plan.price}
+                  </span>
+                  <span className="mb-2 text-sm font-bold text-slate-500">/mês</span>
+                </div>
+
+                <p className="mt-2 text-xs font-semibold text-slate-500">
+                  Plano mensal para operar com previsibilidade.
+                </p>
               </div>
 
               <Link
                 href="/login"
                 className={
                   plan.highlight
-                    ? "mt-6 flex w-full justify-center rounded-xl bg-[#2ABFAB] px-5 py-3 font-semibold text-white hover:opacity-90"
-                    : "mt-6 flex w-full justify-center rounded-xl bg-[#1B2F5B] px-5 py-3 font-semibold text-white hover:opacity-90"
+                    ? "mt-7 flex w-full justify-center rounded-2xl bg-[#2ABFAB] px-5 py-4 text-sm font-black text-white shadow-lg shadow-[#2ABFAB]/20 transition hover:-translate-y-0.5 hover:shadow-xl"
+                    : "mt-7 flex w-full justify-center rounded-2xl bg-[#1B2F5B] px-5 py-4 text-sm font-black text-white shadow-md transition hover:-translate-y-0.5 hover:shadow-lg"
                 }
               >
-                Começar agora
+                Escolher plano
               </Link>
 
-              <ul className="mt-6 space-y-3 text-sm text-slate-700">
-                {plan.features.map((feature) => (
-                  <li key={feature} className="flex gap-2">
-                    <span className="font-bold text-[#2ABFAB]">✓</span>
-                    <span>{feature}</span>
-                  </li>
-                ))}
-              </ul>
+              <div className="mt-7 border-t border-slate-100 pt-7">
+                <p className="mb-4 text-sm font-black text-[#1B2F5B]">
+                  Inclui:
+                </p>
+
+                <ul className="space-y-3">
+                  {plan.features.map((feature) => (
+                    <li key={feature} className="flex items-start gap-3 text-sm text-slate-700">
+                      <CheckIcon />
+                      <span>{feature}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </article>
           ))}
         </div>
       </section>
 
-      <section className="bg-white py-16">
-        <div className="mx-auto max-w-6xl px-6">
-          <div className="grid gap-10 md:grid-cols-2 md:items-center">
-            <div>
-              <p className="font-semibold text-[#C9952A]">Add-on de IA</p>
+      <section className="bg-white py-20">
+        <div className="mx-auto grid max-w-7xl gap-10 px-5 md:px-8 lg:grid-cols-[1fr_0.9fr] lg:items-center">
+          <div>
+            <p className="text-sm font-black uppercase tracking-[0.25em] text-[#C9952A]">
+              Módulo IA
+            </p>
 
-              <h2 className="mt-2 text-3xl font-bold text-[#1B2F5B] md:text-4xl">
-                Turbine o atendimento com inteligência artificial
-              </h2>
+            <h2 className="mt-3 text-3xl font-black tracking-tight text-[#1B2F5B] md:text-5xl">
+              Inteligência artificial como plano avulso para acelerar o atendimento
+            </h2>
 
-              <p className="mt-5 text-lg leading-8 text-slate-600">
-                Adicione o Módulo IA por R$ 79/mês e tenha sugestões de resposta,
-                transcrição de áudio e resumo de conversas para sua equipe ganhar tempo.
-              </p>
+            <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600">
+              O Módulo IA pode ser contratado junto com qualquer plano. Ele ajuda o atendente com respostas, transcrição, resumo e classificação comercial das conversas.
+            </p>
+
+            <div className="mt-8 grid gap-4 sm:grid-cols-3">
+              <div className="rounded-2xl bg-slate-50 p-5">
+                <p className="font-black text-[#1B2F5B]">Sugestões</p>
+                <p className="mt-2 text-sm text-slate-500">Respostas mais rápidas</p>
+              </div>
+
+              <div className="rounded-2xl bg-slate-50 p-5">
+                <p className="font-black text-[#1B2F5B]">Resumo</p>
+                <p className="mt-2 text-sm text-slate-500">Contexto sem retrabalho</p>
+              </div>
+
+              <div className="rounded-2xl bg-slate-50 p-5">
+                <p className="font-black text-[#1B2F5B]">Áudio</p>
+                <p className="mt-2 text-sm text-slate-500">Transcrição de mensagens</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-[2rem] border border-slate-200 bg-slate-50 p-8 shadow-sm">
+            <p className="text-sm font-black uppercase tracking-wide text-[#2ABFAB]">
+              Plano avulso de IA
+            </p>
+
+            <div className="mt-5 flex items-end gap-1">
+              <span className="text-lg font-black text-slate-500">+</span>
+              <span className="text-lg font-black text-slate-500">R$</span>
+              <span className="text-5xl font-black text-[#1B2F5B]">79,90</span>
+              <span className="mb-2 text-sm font-bold text-slate-500">/mês</span>
             </div>
 
-            <div className="rounded-3xl bg-[#F8FAFC] p-8">
-              <p className="text-sm font-semibold text-slate-500">Módulo IA</p>
-              <p className="mt-3 text-4xl font-bold text-[#2ABFAB]">
-                + R$ 79/mês
-              </p>
-              <ul className="mt-6 space-y-3 text-sm text-slate-700">
-                <li>✓ Sugestões de resposta</li>
-                <li>✓ Transcrição de áudio</li>
-                <li>✓ Resumo de conversa</li>
-                <li>✓ Apoio ao atendimento comercial</li>
-              </ul>
-            </div>
+            <p className="mt-4 text-sm leading-6 text-slate-600">
+              Add-on disponível para todos os planos do ShamarConnect.
+            </p>
+
+            <ul className="mt-7 space-y-3 text-sm text-slate-700">
+              {aiFeatures.map((item) => (
+                <li key={item} className="flex items-start gap-3">
+                  <CheckIcon />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
           </div>
         </div>
       </section>
 
-      <section className="mx-auto max-w-6xl px-6 py-16">
-        <div className="max-w-2xl">
-          <p className="font-semibold text-[#C9952A]">Benefícios</p>
-          <h2 className="mt-2 text-3xl font-bold text-[#1B2F5B] md:text-4xl">
-            Mais controle para sua equipe comercial
+      <section id="comparativo" className="mx-auto max-w-7xl px-5 py-20 md:px-8">
+        <div className="mx-auto max-w-3xl text-center">
+          <p className="text-sm font-black uppercase tracking-[0.25em] text-[#C9952A]">
+            Comparativo
+          </p>
+
+          <h2 className="mt-3 text-3xl font-black tracking-tight text-[#1B2F5B] md:text-5xl">
+            Compare os recursos antes de contratar
           </h2>
         </div>
 
-        <div className="mt-10 grid gap-5 md:grid-cols-3">
-          {benefits.map((benefit) => (
-            <div key={benefit} className="rounded-2xl bg-white p-6 shadow-sm">
-              <p className="font-semibold text-[#1B2F5B]">{benefit}</p>
+        <div className="mt-12 overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm">
+          <div className="grid grid-cols-4 bg-[#1B2F5B] px-5 py-4 text-sm font-black text-white">
+            <div>Recurso</div>
+            <div className="text-center">Starter</div>
+            <div className="text-center">Professional</div>
+            <div className="text-center">Business</div>
+          </div>
+
+          {comparison.map(([feature, starter, professional, business]) => (
+            <div
+              key={feature}
+              className="grid grid-cols-4 border-t border-slate-100 px-5 py-4 text-sm"
+            >
+              <div className="font-bold text-slate-700">{feature}</div>
+              <div className="text-center text-slate-600">{starter}</div>
+              <div className="text-center text-slate-600">{professional}</div>
+              <div className="text-center text-slate-600">{business}</div>
             </div>
           ))}
         </div>
       </section>
 
-      <section className="mx-auto max-w-4xl px-6 py-16">
-        <div className="text-center">
-          <p className="font-semibold text-[#C9952A]">FAQ</p>
-          <h2 className="mt-2 text-3xl font-bold text-[#1B2F5B] md:text-4xl">
-            Perguntas frequentes
-          </h2>
-        </div>
+      <section id="faq" className="bg-white py-20">
+        <div className="mx-auto max-w-4xl px-5 md:px-8">
+          <div className="text-center">
+            <p className="text-sm font-black uppercase tracking-[0.25em] text-[#C9952A]">
+              FAQ
+            </p>
 
-        <div className="mt-10 space-y-3">
-          {faqs.map(([question, answer]) => (
-            <details key={question} className="rounded-2xl bg-white p-5 shadow-sm">
-              <summary className="cursor-pointer font-semibold text-[#1B2F5B]">
-                {question}
-              </summary>
-              <p className="mt-3 text-sm leading-6 text-slate-600">
-                {answer}
-              </p>
-            </details>
-          ))}
+            <h2 className="mt-3 text-3xl font-black tracking-tight text-[#1B2F5B] md:text-5xl">
+              Perguntas frequentes
+            </h2>
+          </div>
+
+          <div className="mt-12 space-y-4">
+            {faqs.map(([question, answer]) => (
+              <details
+                key={question}
+                className="group rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"
+              >
+                <summary className="cursor-pointer list-none text-base font-black text-[#1B2F5B]">
+                  {question}
+                </summary>
+
+                <p className="mt-4 text-sm leading-7 text-slate-600">
+                  {answer}
+                </p>
+              </details>
+            ))}
+          </div>
         </div>
       </section>
 
-      <section className="px-6 py-16">
-        <div className="mx-auto max-w-5xl rounded-3xl bg-[#1B2F5B] px-6 py-12 text-center text-white">
-          <h2 className="text-3xl font-bold md:text-4xl">
-            Pronto para começar?
+      <section className="px-5 py-20 md:px-8">
+        <div className="mx-auto max-w-6xl overflow-hidden rounded-[2rem] bg-[#1B2F5B] px-6 py-16 text-center text-white shadow-2xl md:px-12">
+          <p className="text-sm font-black uppercase tracking-[0.25em] text-[#2ABFAB]">
+            ShamarConnect
+          </p>
+
+          <h2 className="mx-auto mt-4 max-w-3xl text-3xl font-black tracking-tight md:text-5xl">
+            Sua empresa não precisa atender no improviso
           </h2>
 
-          <p className="mt-4 text-white/75">
-            Organize seu atendimento e transforme conversas em vendas.
+          <p className="mx-auto mt-5 max-w-2xl text-base leading-8 text-white/70">
+            Organize contatos, conversas, oportunidades e integrações em uma estrutura profissional para vender melhor pelo WhatsApp.
           </p>
 
           <Link
             href="/login"
-            className="mt-8 inline-flex rounded-xl bg-[#2ABFAB] px-6 py-3 font-semibold text-white hover:opacity-90"
+            className="mt-9 inline-flex rounded-full bg-[#2ABFAB] px-8 py-4 text-sm font-black text-white shadow-lg shadow-black/10 transition hover:-translate-y-0.5 hover:shadow-xl"
           >
-            Criar minha conta
+            Falar com especialista
           </Link>
         </div>
       </section>
