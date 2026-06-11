@@ -1,1 +1,11 @@
-export default function TermsPage(){return <main><h1>Termos de Uso do ShamarConnect</h1><p>Junho de 2026</p><p>Moriah Systems Serviços Ltda. CNPJ 66.912.118/0001-02. Foro: Rio de Janeiro, RJ.</p><p>Uso do serviço, responsabilidades, pagamento, cancelamento, propriedade intelectual e limitação de responsabilidade.</p><a href="/login">Voltar para login</a></main>}
+import Link from "next/link";
+import { BrandLogo } from "@/components/brand/brand-logo";
+
+const sections = [
+  {
+    title: "1. Aceitação dos Termos",
+    text: "Ao acessar, contratar ou utilizar o ShamarConnect, o usuário declara que leu, compreendeu e concorda com estes Termos de Uso. Caso não concorde com qualquer condição, o usuário não deverá utilizar a plataforma.",
+  },
+  {
+    title: "2. Sobre o ShamarConnect",
+    text: "O ShamarConnect é uma
