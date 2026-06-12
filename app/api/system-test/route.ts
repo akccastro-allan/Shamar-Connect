@@ -34,6 +34,7 @@ function testEnv() {
     { key: "NEXT_PUBLIC_SUPABASE_URL", ok: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL) },
     { key: "NEXT_PUBLIC_SUPABASE_ANON_KEY", ok: Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) },
     { key: "SUPABASE_SERVICE_ROLE_KEY", ok: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY) },
+    { key: "INTERNAL_API_KEY", ok: Boolean(process.env.INTERNAL_API_KEY) },
     { key: "WHATSAPP_WEB_GATEWAY_URL", ok: Boolean(process.env.WHATSAPP_WEB_GATEWAY_URL) },
     { key: "WHATSAPP_WEB_GATEWAY_TOKEN", ok: Boolean(process.env.WHATSAPP_WEB_GATEWAY_TOKEN) },
     { key: "SHAMARCONNECT_WEBHOOK_TOKEN", ok: Boolean(process.env.SHAMARCONNECT_WEBHOOK_TOKEN) },
