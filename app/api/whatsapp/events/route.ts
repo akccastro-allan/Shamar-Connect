@@ -67,40 +67,68 @@ function normalizePayload(payload: Record<string, unknown>) {
   return payload;
 }
 
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function resolvePayloads(input: unknown) {
+  if (Array.isArray(input)) {
+    return input.filter(isObject);
+  }
+
+  if (isObject(input) && Array.isArray(input.events)) {
+    return input.events.filter(isObject).map((eventPayload) => ({
+      ...eventPayload,
+      provider: eventPayload.provider || input.provider,
+      organization_id: eventPayload.organization_id || input.organization_id,
+      organizationId: eventPayload.organizationId || input.organizationId,
+      tenant_id: eventPayload.tenant_id || input.tenant_id,
+      tenantId: eventPayload.tenantId || input.tenantId,
+    }));
+  }
+
+  return isObject(input) ? [input] : [];
+}
+
 export async function POST(request: NextRequest) {
   if (!isAuthorized(request)) {
     return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
   }
 
-  let payload: Record<string, unknown> = {};
+  let input: unknown = {};
 
   try {
-    payload = await request.json();
+    input = await request.json();
   } catch {
     return NextResponse.json({ ok: false, error: "Payload inválido." }, { status: 400 });
   }
 
-  const normalizedPayload = normalizePayload(payload);
+  const payloads = resolvePayloads(input).slice(0, 100);
+
+  if (payloads.length === 0) {
+    return NextResponse.json({ ok: false, error: "Nenhum evento válido recebido." }, { status: 400 });
+  }
+
   const db = createSupabaseWriteClient();
-  const event = resolveEventName(normalizedPayload);
-  const provider = resolveProvider(normalizedPayload);
-  const organizationId = resolveUuid(normalizedPayload.organization_id || normalizedPayload.organizationId);
-  const tenantId = resolveUuid(normalizedPayload.tenant_id || normalizedPayload.tenantId);
+  const rows = payloads.map((payload) => {
+    const normalizedPayload = normalizePayload(payload);
 
-  const { data: providerEvent, error: eventError } = await db
-    .from("provider_events")
-    .insert({
-      provider,
-      event,
+    return {
+      provider: resolveProvider(normalizedPayload),
+      event: resolveEventName(normalizedPayload),
       payload: normalizedPayload,
-      organization_id: organizationId,
-      tenant_id: tenantId,
+      organization_id: resolveUuid(normalizedPayload.organization_id || normalizedPayload.organizationId),
+      tenant_id: resolveUuid(normalizedPayload.tenant_id || normalizedPayload.tenantId),
       processing_status: "pending",
-    })
-    .select("id")
-    .single();
+    };
+  });
 
-  if (eventError || !providerEvent) {
+  const { data: providerEvents, error: eventError } = await db
+    .from("provider_events")
+    .insert(rows)
+    .select("id");
+
+  if (eventError || !providerEvents) {
     return NextResponse.json(
       { ok: false, error: "Falha ao registrar evento do WhatsApp." },
       { status: 500 },
@@ -108,15 +136,16 @@ export async function POST(request: NextRequest) {
   }
 
   const { data: processResult, error: processError } = await db.rpc("process_pending_whatsapp_provider_events", {
-    max_events: 25,
+    max_events: Math.max(25, providerEvents.length),
   });
 
   if (processError) {
     return NextResponse.json(
       {
         ok: true,
-        eventId: providerEvent.id,
+        eventIds: providerEvents.map((event) => event.id),
         registered: true,
+        registeredCount: providerEvents.length,
         processed: false,
       },
       { status: 202 },
@@ -125,8 +154,9 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    eventId: providerEvent.id,
+    eventIds: providerEvents.map((event) => event.id),
     registered: true,
+    registeredCount: providerEvents.length,
     processed: true,
     result: processResult,
   });
