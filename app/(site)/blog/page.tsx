@@ -9,6 +9,14 @@ export const metadata: Metadata = {
 
 const posts = [
   {
+    title: "Como responder clientes mais rápido no WhatsApp sem perder qualidade",
+    description:
+      "Veja como responder clientes mais rápido no WhatsApp sem perder qualidade usando respostas rápidas, CRM, organização, equipe e IA.",
+    href: "/blog/como-responder-clientes-mais-rapido-no-whatsapp-sem-perder-qualidade",
+    category: "Atendimento pelo WhatsApp",
+    readTime: "7 min",
+  },
+  {
     title: "Atendimento multiatendente no WhatsApp: quando usar",
     description:
       "Entenda quando sua empresa precisa de atendimento multiatendente no WhatsApp e como organizar responsáveis, histórico, CRM e equipe.",
