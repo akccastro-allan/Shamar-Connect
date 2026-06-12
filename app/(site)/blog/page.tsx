@@ -9,6 +9,14 @@ export const metadata: Metadata = {
 
 const posts = [
   {
+    title: "Como não perder vendas que chegam pelo WhatsApp",
+    description:
+      "Entenda como evitar perdas comerciais no WhatsApp com organização, CRM, follow-up, etapas de venda e acompanhamento da equipe.",
+    href: "/blog/como-nao-perder-vendas-que-chegam-pelo-whatsapp",
+    category: "Vendas pelo WhatsApp",
+    readTime: "7 min",
+  },
+  {
     title: "Como organizar clientes no WhatsApp sem perder vendas",
     description:
       "Veja como organizar clientes no WhatsApp, controlar orcamentos, acompanhar follow-ups e evitar perdas comerciais com ajuda de CRM.",
