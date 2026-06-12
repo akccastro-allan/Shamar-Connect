@@ -12,12 +12,20 @@ function isAuthorized(request: NextRequest) {
 }
 
 function resolveEventName(payload: Record<string, unknown>) {
-  const rawEvent = payload.event || payload.type || payload.name || "unknown";
+  const rawEvent =
+    payload.event ||
+    payload.eventName ||
+    payload.event_type ||
+    payload.eventType ||
+    payload.name ||
+    payload.type ||
+    "unknown";
+
   return String(rawEvent || "unknown").trim() || "unknown";
 }
 
 function resolveProvider(payload: Record<string, unknown>) {
-  const rawProvider = payload.provider || "whatsapp_web";
+  const rawProvider = payload.provider || payload.source || "whatsapp_web";
   return String(rawProvider || "whatsapp_web").trim() || "whatsapp_web";
 }
 
@@ -29,6 +37,19 @@ function resolveUuid(value: unknown) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
     ? value
     : null;
+}
+
+function normalizePayload(payload: Record<string, unknown>) {
+  const eventPayload = payload.payload || payload.data || payload.message || payload;
+
+  if (typeof eventPayload === "object" && eventPayload !== null && !Array.isArray(eventPayload)) {
+    return {
+      ...payload,
+      payload: eventPayload,
+    };
+  }
+
+  return payload;
 }
 
 export async function POST(request: NextRequest) {
@@ -44,18 +65,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Payload inválido." }, { status: 400 });
   }
 
+  const normalizedPayload = normalizePayload(payload);
   const db = createSupabaseWriteClient();
-  const event = resolveEventName(payload);
-  const provider = resolveProvider(payload);
-  const organizationId = resolveUuid(payload.organization_id || payload.organizationId);
-  const tenantId = resolveUuid(payload.tenant_id || payload.tenantId);
+  const event = resolveEventName(normalizedPayload);
+  const provider = resolveProvider(normalizedPayload);
+  const organizationId = resolveUuid(normalizedPayload.organization_id || normalizedPayload.organizationId);
+  const tenantId = resolveUuid(normalizedPayload.tenant_id || normalizedPayload.tenantId);
 
   const { data: providerEvent, error: eventError } = await db
     .from("provider_events")
     .insert({
       provider,
       event,
-      payload,
+      payload: normalizedPayload,
       organization_id: organizationId,
       tenant_id: tenantId,
       processing_status: "pending",
