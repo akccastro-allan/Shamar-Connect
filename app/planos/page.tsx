@@ -5,16 +5,16 @@ import { BrandLogo } from "@/components/brand/brand-logo";
 const plans = [
   {
     name: "Starter",
-    price: "97",
+    price: "149",
     label: "Para começar com organização",
     description:
       "Ideal para pequenas empresas que precisam tirar o atendimento do improviso e organizar contatos, conversas e oportunidades.",
     highlight: false,
-    features: ["1 empresa", "2 usuários", "WhatsApp central", "CRM básico", "Respostas rápidas", "Importação de contatos"],
+    features: ["1 empresa", "2 usuários", "WhatsApp central", "CRM básico", "Respostas rápidas", "Histórico de conversas"],
   },
   {
     name: "Professional",
-    price: "197",
+    price: "297",
     label: "Mais indicado para vender melhor",
     description:
       "O plano principal para equipes comerciais que precisam de multiatendimento, CRM completo, respostas rápidas e relatórios.",
@@ -23,7 +23,7 @@ const plans = [
   },
   {
     name: "Business",
-    price: "397",
+    price: "597",
     label: "Para operação em expansão",
     description:
       "Para empresas que precisam de automações, catálogo, integração local via Agent e uma operação comercial mais avançada.",
@@ -33,7 +33,7 @@ const plans = [
 ];
 
 const comparison = [
-  ["Preço mensal", "R$ 97", "R$ 197", "R$ 397"],
+  ["Preço mensal", "R$ 149", "R$ 297", "R$ 597"],
   ["Empresa", "1", "1", "Conforme operação"],
   ["Usuários", "2", "Equipe comercial", "Equipe ampliada"],
   ["WhatsApp central", "Incluído", "Incluído", "Incluído"],
@@ -60,7 +60,7 @@ const faqs = [
   ],
   [
     "A IA está inclusa nos planos?",
-    "O Módulo IA é um add-on de R$ 79/mês e pode ser contratado junto com qualquer plano.",
+    "O Módulo IA é um add-on de R$ 79,90/mês e pode ser contratado junto com qualquer plano.",
   ],
   [
     "Posso mudar de plano depois?",
@@ -195,7 +195,7 @@ export default async function PlanosPage({ searchParams }: PlanosPageProps) {
           <div>
             <p className="text-sm font-black uppercase tracking-[0.25em] text-[#C9952A]">Módulo IA</p>
             <h2 className="mt-3 text-3xl font-black tracking-tight text-[#1B2F5B] md:text-5xl">
-              IA como apoio ao atendente por + R$ 79/mês
+              IA como apoio ao atendente por + R$ 79,90/mês
             </h2>
             <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600">
               O Módulo IA adiciona sugestões de resposta, transcrição de áudio e resumo de conversa para acelerar o atendimento sem perder controle humano.
@@ -207,7 +207,7 @@ export default async function PlanosPage({ searchParams }: PlanosPageProps) {
             <div className="mt-5 flex items-end gap-1">
               <span className="text-lg font-black text-slate-500">+</span>
               <span className="text-lg font-black text-slate-500">R$</span>
-              <span className="text-5xl font-black text-[#1B2F5B]">79</span>
+              <span className="text-5xl font-black text-[#1B2F5B]">79,90</span>
               <span className="mb-2 text-sm font-bold text-slate-500">/mês</span>
             </div>
           </div>
