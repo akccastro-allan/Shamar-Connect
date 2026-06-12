@@ -1,92 +1,84 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
+import { createSupabaseWriteClient } from "@/lib/supabase/server";
+
+export const dynamic = "force-dynamic";
+
+const PROCESSABLE_EVENTS = new Set([
+  "message.received",
+  "message_revoke",
+  "message.revoked",
+  "message.deleted",
+]);
+
+type JsonObject = Record<string, unknown>;
+
+type ProcessorSummary = {
+  processedEvents: number | null;
+  errorEvents: number | null;
+};
 
 function getBearerToken(request: NextRequest) {
   const header = request.headers.get("authorization") || "";
   return header.startsWith("Bearer ") ? header.slice(7) : "";
 }
 
-function normalizePhone(value?: string) {
-  return String(value || "").replace(/\D/g, "");
+function isJsonObject(value: unknown): value is JsonObject {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
-function isAutomaticMessageSavingEnabled() {
-  return process.env.WHATSAPP_AUTO_SAVE_INCOMING_MESSAGES === "true";
+function readString(source: JsonObject, keys: string[]) {
+  for (const key of keys) {
+    const value = source[key];
+
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return null;
 }
 
-async function upsertContact(client: ReturnType<typeof createSupabaseWriteClient>, payload: any) {
-  const phone = normalizePhone(payload?.phone || payload?.from);
-  if (!phone) return null;
+function readUuid(source: JsonObject, keys: string[]) {
+  const value = readString(source, keys);
 
-  const name = payload?.contactName || payload?.name || phone;
-  const { data, error } = await client
-    .from("crm_contacts")
-    .upsert({ phone, name, source: "whatsapp_web_auto" }, { onConflict: "phone" })
-    .select("id")
-    .single();
+  if (!value) {
+    return null;
+  }
 
-  if (error) throw error;
-  return data;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+    ? value
+    : null;
 }
 
-async function upsertConversation(client: ReturnType<typeof createSupabaseWriteClient>, payload: any, contactId?: string) {
-  const externalChatId = payload?.from || payload?.chatId || payload?.groupId;
-  if (!externalChatId) return null;
+function readNumber(source: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = source[key];
+    const parsed = Number(value);
 
-  const { data, error } = await client
-    .from("whatsapp_conversations")
-    .upsert({
-      external_chat_id: externalChatId,
-      provider: "whatsapp_web",
-      contact_id: contactId || null,
-      name: payload?.contactName || payload?.groupName || payload?.from || externalChatId,
-      is_group: Boolean(payload?.isGroup),
-      last_message_at: new Date().toISOString(),
-    }, { onConflict: "external_chat_id" })
-    .select("id")
-    .single();
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
 
-  if (error) throw error;
-  return data;
+  return null;
 }
 
-async function saveMessage(client: ReturnType<typeof createSupabaseWriteClient>, payload: any, conversationId?: string, contactId?: string) {
-  if (!payload?.id && !payload?.body) return;
+function normalizeProcessorSummary(data: unknown): ProcessorSummary {
+  const row = Array.isArray(data) ? data[0] : data;
 
-  const { error } = await client
-    .from("whatsapp_messages")
-    .upsert({
-      external_message_id: payload?.id || undefined,
-      provider: "whatsapp_web",
-      conversation_id: conversationId || null,
-      contact_id: contactId || null,
-      direction: "inbound",
-      from_id: payload?.from || null,
-      to_id: payload?.to || null,
-      body: payload?.body || null,
-      message_type: "text",
-      raw_payload: payload || {},
-      created_at: payload?.timestamp ? new Date(Number(payload.timestamp) * 1000).toISOString() : new Date().toISOString(),
-    }, { onConflict: "external_message_id" });
+  if (!row || typeof row !== "object") {
+    return {
+      processedEvents: typeof row === "number" ? row : null,
+      errorEvents: null,
+    };
+  }
 
-  if (error) throw error;
-}
+  const result = row as Record<string, unknown>;
 
-async function saveGroup(client: ReturnType<typeof createSupabaseWriteClient>, payload: any) {
-  const groupId = payload?.groupId;
-  if (!groupId) return;
-
-  const { error } = await client
-    .from("whatsapp_groups")
-    .upsert({
-      external_group_id: groupId,
-      provider: "whatsapp_web",
-      name: payload?.groupName || groupId,
-      participant_count: Number(payload?.total || 0),
-      last_synced_at: new Date().toISOString(),
-    }, { onConflict: "external_group_id" });
-
-  if (error) throw error;
+  return {
+    processedEvents: readNumber(result, ["processed_count", "processed_events", "events_processed", "processed"]),
+    errorEvents: readNumber(result, ["error_count", "error_events", "events_with_error", "failed_events", "errors"]),
+  };
 }
 
 export async function POST(request: NextRequest) {
@@ -99,35 +91,91 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const client = createSupabaseWriteClient();
-    const event = body?.event || "unknown";
-    const payload = body?.payload || {};
 
-    const { error: eventError } = await client.from("provider_events").insert({
-      provider: body?.provider || "whatsapp_web",
-      event,
-      payload: body || {},
+    if (!isJsonObject(body)) {
+      return NextResponse.json({ ok: false, error: "Invalid JSON body" }, { status: 400 });
+    }
+
+    const payload = isJsonObject(body.payload) ? body.payload : {};
+    const event = readString(body, ["event", "type"]) || "unknown";
+    const provider = readString(body, ["provider"]) || readString(payload, ["provider"]) || "whatsapp_web";
+    const organizationId = readUuid(body, ["organization_id", "organizationId"]) || readUuid(payload, ["organization_id", "organizationId"]);
+    const tenantId = readUuid(body, ["tenant_id", "tenantId"]) || readUuid(payload, ["tenant_id", "tenantId"]);
+    const shouldProcess = PROCESSABLE_EVENTS.has(event);
+    const client = createSupabaseWriteClient();
+
+    const { data: savedEvent, error: eventError } = await client
+      .from("provider_events")
+      .insert({
+        provider,
+        event,
+        payload: body,
+        organization_id: organizationId,
+        tenant_id: tenantId,
+        processing_status: shouldProcess ? "pending" : "processed",
+        processed_at: shouldProcess ? null : new Date().toISOString(),
+        processed_payload: shouldProcess ? {} : { action: "stored_only" },
+      })
+      .select("id")
+      .single();
+
+    if (eventError) {
+      throw eventError;
+    }
+
+    if (!shouldProcess) {
+      return NextResponse.json({
+        ok: true,
+        event,
+        eventId: savedEvent.id,
+        processed: false,
+        reason: "stored_only",
+      });
+    }
+
+    const { data, error } = await client.rpc("process_pending_whatsapp_provider_events", {
+      max_events: 100,
     });
 
-    if (eventError) throw eventError;
+    if (error) {
+      console.error("WhatsApp provider event processor failed after webhook insert", {
+        code: error.code,
+        message: error.message,
+      });
 
-    if (event === "message.received" && isAutomaticMessageSavingEnabled()) {
-      const contact = await upsertContact(client, payload);
-      const conversation = await upsertConversation(client, payload, contact?.id);
-      await saveMessage(client, payload, conversation?.id, contact?.id);
+      await client
+        .from("provider_events")
+        .update({
+          processing_status: "error",
+          processing_error: "Processor call failed",
+          processed_at: new Date().toISOString(),
+        })
+        .eq("id", savedEvent.id);
+
+      return NextResponse.json(
+        { ok: false, event, eventId: savedEvent.id, error: "Event processor failed." },
+        { status: 500 },
+      );
     }
 
-    if (event === "group.participants.extracted" && process.env.WHATSAPP_AUTO_SAVE_GROUP_EVENTS === "true") {
-      await saveGroup(client, payload);
-    }
+    const summary = normalizeProcessorSummary(data);
 
     return NextResponse.json({
       ok: true,
       event,
-      persisted: event === "message.received" ? isAutomaticMessageSavingEnabled() : false,
-      mode: "manual_selection_first",
+      eventId: savedEvent.id,
+      processed: true,
+      processedEvents: summary.processedEvents,
+      errorEvents: summary.errorEvents,
     });
   } catch (error) {
-    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Webhook processing failed" }, { status: 500 });
+    console.error("WhatsApp provider webhook failed", {
+      message: error instanceof Error ? error.message : "Unknown error",
+    });
+
+    return NextResponse.json(
+      { ok: false, error: "Webhook processing failed" },
+      { status: 500 },
+    );
   }
 }
