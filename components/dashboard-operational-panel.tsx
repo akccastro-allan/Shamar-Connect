@@ -333,7 +333,7 @@ export function DashboardOperationalPanel() {
             <ul className="space-y-3 text-sm">
               {tasks.map((task) => (
                 <li key={task} className="flex items-start gap-3 rounded-2xl border p-3">
-                  <CheckIcon />
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#2ABFAB]" />
                   <span>{task}</span>
                 </li>
               ))}
