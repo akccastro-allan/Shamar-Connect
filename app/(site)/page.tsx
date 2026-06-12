@@ -1,8 +1,7 @@
 import Link from "next/link";
-import { BrandLogo } from "@/components/brand/brand-logo";
 
 const features = [
-  ["WhatsApp Central", "Gerencie todas as conversas em um único painel organizado."],
+  ["WhatsApp Central", "Gerencie todas as conversas em um painel organizado."],
   ["CRM Completo", "Cadastre contatos, acompanhe o funil e registre oportunidades."],
   ["Respostas Rápidas", "Crie templates e responda clientes em segundos."],
   ["IA Assistida", "Sugestões de resposta, transcrição de áudio e resumo de conversa."],
@@ -31,19 +30,7 @@ const faqs = [
 
 export default function HomePage() {
   return (
-    <main className="bg-[#F8FAFC] text-slate-950">
-      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 md:px-8">
-          <Link href="/" className="w-48 md:w-64"><BrandLogo className="h-auto w-full" /></Link>
-          <nav className="hidden items-center gap-8 text-sm font-bold text-slate-600 md:flex">
-            <a href="#funcionalidades" className="hover:text-[#1B2F5B]">Funcionalidades</a>
-            <a href="#planos" className="hover:text-[#1B2F5B]">Planos</a>
-            <a href="#faq" className="hover:text-[#1B2F5B]">FAQ</a>
-          </nav>
-          <Link href="/login" className="rounded-full bg-[#1B2F5B] px-5 py-2.5 text-sm font-black text-white">Entrar</Link>
-        </div>
-      </header>
-
+    <main>
       <section className="relative overflow-hidden bg-white">
         <div className="absolute left-1/2 top-0 h-96 w-96 -translate-x-1/2 rounded-full bg-[#2ABFAB]/20 blur-3xl" />
         <div className="mx-auto grid max-w-7xl items-center gap-12 px-5 py-20 md:px-8 lg:grid-cols-2 lg:py-28">
