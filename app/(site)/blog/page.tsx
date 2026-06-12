@@ -9,6 +9,14 @@ export const metadata: Metadata = {
 
 const posts = [
   {
+    title: "CRM com WhatsApp: como funciona na prática",
+    description:
+      "Entenda como um CRM com WhatsApp ajuda a organizar conversas, clientes, oportunidades, funil de vendas, follow-ups e atendimento comercial.",
+    href: "/blog/crm-com-whatsapp-como-funciona-na-pratica",
+    category: "CRM WhatsApp",
+    readTime: "7 min",
+  },
+  {
     title: "Funil de vendas no WhatsApp: como acompanhar cada cliente",
     description:
       "Entenda como usar um funil de vendas no WhatsApp para acompanhar clientes, orçamentos, follow-ups, negociações e fechamentos.",
