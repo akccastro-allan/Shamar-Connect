@@ -5,7 +5,11 @@ import { ContactsPanel } from "@/components/crm/contacts-panel";
 export default function ContactsPage() {
   return (
     <AppShell active="contacts">
-      <PageHeader title="Contatos" description="Base de contatos salva manualmente a partir do WhatsApp Web e listas de grupos." badge="CRM" />
+      <PageHeader
+        title="Base de Contatos"
+        description="Organize leads, clientes e contatos comerciais capturados pelo WhatsApp, listas importadas e registros do CRM para manter relacionamento, histórico e próximas ações em controle."
+        badge="CRM Comercial"
+      />
       <ContactsPanel />
     </AppShell>
   );
