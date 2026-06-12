@@ -5,7 +5,11 @@ import { GroupContactListsPanel } from "@/components/crm/group-contact-lists-pan
 export default function CrmPage() {
   return (
     <AppShell active="crm">
-      <PageHeader title="CRM" description="Listas, contatos e registros gerados manualmente a partir do WhatsApp Web." badge="Modo seguro" />
+      <PageHeader
+        title="CRM e Listas Comerciais"
+        description="Acompanhe listas importadas, contatos vindos de grupos, registros comerciais e bases de relacionamento para transformar dados do WhatsApp em oportunidades organizadas."
+        badge="Gestão comercial"
+      />
       <GroupContactListsPanel />
     </AppShell>
   );
