@@ -9,6 +9,14 @@ export const metadata: Metadata = {
 
 const posts = [
   {
+    title: "Funil de vendas no WhatsApp: como acompanhar cada cliente",
+    description:
+      "Entenda como usar um funil de vendas no WhatsApp para acompanhar clientes, orçamentos, follow-ups, negociações e fechamentos.",
+    href: "/blog/funil-de-vendas-no-whatsapp-como-acompanhar-cada-cliente",
+    category: "Funil de vendas",
+    readTime: "7 min",
+  },
+  {
     title: "Como controlar atendentes no WhatsApp sem perder qualidade",
     description:
       "Veja como controlar atendentes no WhatsApp com responsáveis, histórico, respostas rápidas, indicadores, CRM e IA sem perder qualidade.",
