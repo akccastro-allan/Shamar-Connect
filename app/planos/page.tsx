@@ -76,7 +76,14 @@ function CheckIcon() {
   );
 }
 
-export default function PlanosPage() {
+type PlanosPageProps = {
+  searchParams?: Promise<{ reason?: string }>;
+};
+
+export default async function PlanosPage({ searchParams }: PlanosPageProps) {
+  const params = await searchParams;
+  const showUnauthorizedNotice = params?.reason === "not-authorized";
+
   return (
     <main className="min-h-screen bg-[#F8FAFC] text-slate-950">
       <header className="sticky top-0 z-40 border-b border-slate-200/70 bg-white/95 backdrop-blur">
@@ -97,6 +104,14 @@ export default function PlanosPage() {
           </Link>
         </div>
       </header>
+
+      {showUnauthorizedNotice ? (
+        <section className="border-b border-[#C9952A]/20 bg-[#FFF7E8] px-5 py-5 text-center md:px-8">
+          <p className="mx-auto max-w-3xl text-sm font-bold leading-6 text-[#8A5D12]">
+            Seu e-mail ainda não possui acesso ao ShamarConnect. Para usar o sistema, escolha um plano ou fale com nossa equipe para ativar sua conta.
+          </p>
+        </section>
+      ) : null}
 
       <section className="relative overflow-hidden bg-white">
         <div className="absolute left-1/2 top-0 h-72 w-72 -translate-x-1/2 rounded-full bg-[#2ABFAB]/20 blur-3xl" />
