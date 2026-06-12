@@ -13,25 +13,37 @@ const SESSION_PATH = process.env.SESSION_PATH || "/data/.wwebjs_auth";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "*";
 const SHAMARCONNECT_WEBHOOK_URL = process.env.SHAMARCONNECT_WEBHOOK_URL || "";
 const SHAMARCONNECT_WEBHOOK_TOKEN = process.env.SHAMARCONNECT_WEBHOOK_TOKEN || "";
+const DEFAULT_ENDPOINT_KEY = process.env.DEFAULT_ENDPOINT_KEY || "";
+const CLIENTS_JSON = process.env.CLIENTS_JSON || "[]";
 
 const app = express();
 app.use(helmet());
 app.use(cors({ origin: ALLOWED_ORIGIN === "*" ? true : ALLOWED_ORIGIN }));
-app.use(express.json({ limit: "2mb" }));
+app.use(express.json({ limit: "10mb" }));
 app.use(morgan("tiny"));
 
-let client;
-let latestQrText = null;
-let latestQrDataUrl = null;
-let status = {
-  provider: "whatsapp_web",
-  status: "idle",
-  phone: undefined,
-  qrCode: undefined,
-  pairingCode: undefined,
-  lastSyncAt: undefined,
-  error: undefined,
-};
+const sessions = new Map();
+
+function parseClients() {
+  try {
+    const parsed = JSON.parse(CLIENTS_JSON);
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed
+      .map((client) => ({
+        id: String(client.id || client.sessionId || client.slug || "").trim(),
+        name: String(client.name || client.id || client.sessionId || "").trim(),
+        endpointKey: String(client.endpointKey || client.endpoint_key || DEFAULT_ENDPOINT_KEY || "").trim(),
+        enabled: client.enabled !== false,
+      }))
+      .filter((client) => client.id && client.endpointKey && client.enabled);
+  } catch (error) {
+    console.error("Invalid CLIENTS_JSON", error);
+    return [];
+  }
+}
+
+const configuredClients = parseClients();
 
 function requireToken(req, res, next) {
   const auth = req.headers.authorization || "";
@@ -42,31 +54,6 @@ function requireToken(req, res, next) {
   next();
 }
 
-function setStatus(nextStatus) {
-  status = {
-    ...status,
-    ...nextStatus,
-    lastSyncAt: new Date().toISOString(),
-  };
-}
-
-async function notifyShamarConnect(event, payload = {}) {
-  if (!SHAMARCONNECT_WEBHOOK_URL) return;
-
-  try {
-    await fetch(SHAMARCONNECT_WEBHOOK_URL, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(SHAMARCONNECT_WEBHOOK_TOKEN ? { authorization: `Bearer ${SHAMARCONNECT_WEBHOOK_TOKEN}` } : {}),
-      },
-      body: JSON.stringify({ event, provider: "whatsapp_web", payload, createdAt: new Date().toISOString() }),
-    });
-  } catch (error) {
-    console.error("Failed to notify ShamarConnect", error);
-  }
-}
-
 function normalizePhoneFromWid(id = "") {
   return id.replace("@c.us", "").replace("@g.us", "");
 }
@@ -75,11 +62,77 @@ function getMessageDirection(message) {
   return message.fromMe ? "outbound" : "inbound";
 }
 
+function createInitialStatus(clientConfig) {
+  return {
+    sessionId: clientConfig.id,
+    name: clientConfig.name,
+    endpointKey: clientConfig.endpointKey,
+    provider: "whatsapp_web",
+    status: "idle",
+    phone: undefined,
+    qrCode: undefined,
+    pairingCode: undefined,
+    lastSyncAt: undefined,
+    error: undefined,
+  };
+}
+
+function safeClientSummary(session) {
+  return {
+    sessionId: session.config.id,
+    name: session.config.name,
+    endpointKey: session.config.endpointKey,
+    status: session.status.status,
+    phone: session.status.phone,
+    lastSyncAt: session.status.lastSyncAt,
+    error: session.status.error,
+  };
+}
+
+function setStatus(session, nextStatus) {
+  session.status = {
+    ...session.status,
+    ...nextStatus,
+    lastSyncAt: new Date().toISOString(),
+  };
+}
+
+async function notifyShamarConnect(session, event, payload = {}) {
+  if (!SHAMARCONNECT_WEBHOOK_URL) return;
+
+  try {
+    await fetch(SHAMARCONNECT_WEBHOOK_URL, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-webhook-endpoint-key": session.config.endpointKey,
+        ...(SHAMARCONNECT_WEBHOOK_TOKEN ? { "x-whatsapp-gateway-key": SHAMARCONNECT_WEBHOOK_TOKEN } : {}),
+      },
+      body: JSON.stringify({
+        event,
+        provider: "whatsapp_web",
+        endpoint_key: session.config.endpointKey,
+        sessionId: session.config.id,
+        clientName: session.config.name,
+        payload,
+        createdAt: new Date().toISOString(),
+      }),
+    });
+  } catch (error) {
+    console.error(`Failed to notify ShamarConnect for session ${session.config.id}`, error);
+  }
+}
+
 async function mapMessage(message, chat) {
   const contact = await message.getContact().catch(() => null);
   const from = message.from;
   const to = message.to;
-  return {
+  const hasMedia = Boolean(message.hasMedia);
+  const media = hasMedia
+    ? await message.downloadMedia().catch(() => null)
+    : null;
+
+  const mapped = {
     id: message.id?._serialized,
     chatId: chat?.id?._serialized || from,
     chatName: chat?.name,
@@ -92,86 +145,177 @@ async function mapMessage(message, chat) {
     contactName: contact?.pushname || contact?.name,
     phone: normalizePhoneFromWid(message.fromMe ? to : from),
     type: message.type || "text",
+    hasMedia,
   };
+
+  if (media) {
+    mapped.media = {
+      mimetype: media.mimetype,
+      filename: media.filename,
+      data: media.data,
+    };
+    mapped.mediaType = message.type || "unknown";
+    mapped.mimeType = media.mimetype;
+    mapped.fileName = media.filename;
+  }
+
+  if (message.location) {
+    mapped.latitude = message.location.latitude;
+    mapped.longitude = message.location.longitude;
+    mapped.description = message.location.description;
+    mapped.type = "location";
+  }
+
+  if (message.vCards?.length) {
+    mapped.type = "contact";
+    mapped.vCards = message.vCards;
+  }
+
+  return mapped;
 }
 
-function getClient() {
-  if (client) return client;
+function getSession(sessionId) {
+  const session = sessions.get(sessionId);
+  if (!session) {
+    const error = new Error(`Session ${sessionId} not found.`);
+    error.statusCode = 404;
+    throw error;
+  }
+  return session;
+}
 
-  setStatus({ status: "connecting", error: undefined });
+function createSession(clientConfig) {
+  const existing = sessions.get(clientConfig.id);
+  if (existing) return existing;
 
-  client = new Client({
-    authStrategy: new LocalAuth({ dataPath: SESSION_PATH }),
+  const session = {
+    config: clientConfig,
+    client: null,
+    latestQrText: null,
+    latestQrDataUrl: null,
+    initialized: false,
+    status: createInitialStatus(clientConfig),
+  };
+
+  session.client = new Client({
+    authStrategy: new LocalAuth({ clientId: clientConfig.id, dataPath: SESSION_PATH }),
     puppeteer: {
       headless: true,
       args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
     },
   });
 
-  client.on("qr", async (qr) => {
-    latestQrText = qr;
-    latestQrDataUrl = await QRCode.toDataURL(qr);
-    setStatus({ status: "qr", qrCode: latestQrDataUrl });
-    await notifyShamarConnect("connection.qr_received", { qrCode: latestQrDataUrl });
+  session.client.on("qr", async (qr) => {
+    session.latestQrText = qr;
+    session.latestQrDataUrl = await QRCode.toDataURL(qr);
+    setStatus(session, { status: "qr", qrCode: session.latestQrDataUrl, error: undefined });
+    await notifyShamarConnect(session, "connection.qr_received", { qrCode: session.latestQrDataUrl });
   });
 
-  client.on("authenticated", async () => {
-    setStatus({ status: "authenticated" });
-    await notifyShamarConnect("connection.authenticated");
+  session.client.on("authenticated", async () => {
+    setStatus(session, { status: "authenticated", error: undefined });
+    await notifyShamarConnect(session, "connection.authenticated");
   });
 
-  client.on("ready", async () => {
-    const info = client.info;
-    setStatus({ status: "ready", phone: info?.wid?.user, qrCode: undefined, error: undefined });
-    await notifyShamarConnect("connection.ready", { phone: info?.wid?.user });
+  session.client.on("ready", async () => {
+    const info = session.client.info;
+    setStatus(session, { status: "ready", phone: info?.wid?.user, qrCode: undefined, error: undefined });
+    await notifyShamarConnect(session, "connection.ready", { phone: info?.wid?.user });
   });
 
-  client.on("auth_failure", async (message) => {
-    setStatus({ status: "error", error: message });
-    await notifyShamarConnect("connection.auth_failure", { message });
+  session.client.on("auth_failure", async (message) => {
+    setStatus(session, { status: "error", error: message });
+    await notifyShamarConnect(session, "connection.auth_failure", { message });
   });
 
-  client.on("disconnected", async (reason) => {
-    setStatus({ status: "disconnected", error: reason });
-    await notifyShamarConnect("connection.disconnected", { reason });
-    client = undefined;
+  session.client.on("disconnected", async (reason) => {
+    setStatus(session, { status: "disconnected", error: reason });
+    await notifyShamarConnect(session, "connection.disconnected", { reason });
+    session.initialized = false;
   });
 
-  client.on("message", async (message) => {
-    const contact = await message.getContact().catch(() => null);
-    await notifyShamarConnect("message.received", {
-      id: message.id?._serialized,
-      from: message.from,
-      to: message.to,
-      body: message.body,
-      timestamp: message.timestamp,
-      contactName: contact?.pushname || contact?.name,
-      phone: normalizePhoneFromWid(message.from),
-      isGroup: message.from?.endsWith("@g.us"),
+  session.client.on("message", async (message) => {
+    const chat = await message.getChat().catch(() => null);
+    const payload = await mapMessage(message, chat);
+    await notifyShamarConnect(session, "message.received", payload);
+  });
+
+  session.client.on("message_create", async (message) => {
+    if (!message.fromMe) return;
+    const chat = await message.getChat().catch(() => null);
+    const payload = await mapMessage(message, chat);
+    await notifyShamarConnect(session, "message.received", payload);
+  });
+
+  session.client.on("message_revoke_everyone", async (_after, before) => {
+    await notifyShamarConnect(session, "message_revoke", {
+      id: before?.id?._serialized,
+      from: before?.from,
+      to: before?.to,
+      body: before?.body,
+      timestamp: before?.timestamp,
+      type: before?.type || "unknown",
     });
   });
 
-  return client;
+  sessions.set(clientConfig.id, session);
+  return session;
 }
 
-app.get("/health", (_req, res) => res.json({ ok: true, service: "shamar-whatsapp-web-gateway" }));
+async function initializeSession(session) {
+  if (session.initialized) return session;
+  setStatus(session, { status: "connecting", error: undefined });
+  session.initialized = true;
+  await session.client.initialize();
+  return session;
+}
 
-app.get("/status", requireToken, (_req, res) => res.json(status));
-
-app.post("/connect", requireToken, async (_req, res) => {
-  const instance = getClient();
-  if (status.status === "idle" || status.status === "connecting") {
-    await instance.initialize();
+async function destroySession(session, logout = false) {
+  if (logout) {
+    await session.client.logout().catch(() => null);
   }
-  res.json(status);
+  await session.client.destroy().catch(() => null);
+  sessions.delete(session.config.id);
+}
+
+for (const clientConfig of configuredClients) {
+  createSession(clientConfig);
+}
+
+app.get("/health", (_req, res) => res.json({ ok: true, service: "shamar-whatsapp-web-gateway", sessions: sessions.size }));
+
+app.get("/sessions", requireToken, (_req, res) => {
+  res.json([...sessions.values()].map(safeClientSummary));
 });
 
-app.get("/qr", requireToken, (_req, res) => {
-  res.json({ ...status, qrCode: latestQrDataUrl, qrText: latestQrText });
+app.post("/sessions/:sessionId/connect", requireToken, async (req, res) => {
+  const session = getSession(req.params.sessionId);
+  await initializeSession(session);
+  res.json(safeClientSummary(session));
 });
 
-app.post("/send-message", requireToken, async (req, res) => {
-  if (!client || status.status !== "ready") {
+app.post("/sessions/connect-all", requireToken, async (_req, res) => {
+  const results = [];
+  for (const session of sessions.values()) {
+    await initializeSession(session);
+    results.push(safeClientSummary(session));
+  }
+  res.json(results);
+});
+
+app.get("/sessions/:sessionId/status", requireToken, (req, res) => {
+  const session = getSession(req.params.sessionId);
+  res.json(session.status);
+});
+
+app.get("/sessions/:sessionId/qr", requireToken, (req, res) => {
+  const session = getSession(req.params.sessionId);
+  res.json({ ...session.status, qrCode: session.latestQrDataUrl, qrText: session.latestQrText });
+});
+
+app.post("/sessions/:sessionId/send-message", requireToken, async (req, res) => {
+  const session = getSession(req.params.sessionId);
+  if (!session.client || session.status.status !== "ready") {
     return res.status(409).json({ error: "WhatsApp client is not ready." });
   }
 
@@ -181,16 +325,17 @@ app.post("/send-message", requireToken, async (req, res) => {
   }
 
   const chatId = String(to).includes("@") ? String(to) : `${String(to).replace(/\D/g, "")}@c.us`;
-  const message = await client.sendMessage(chatId, String(body));
+  const message = await session.client.sendMessage(chatId, String(body));
   res.json({ id: message.id?._serialized, status: "sent" });
 });
 
-app.get("/chats", requireToken, async (_req, res) => {
-  if (!client || status.status !== "ready") {
+app.get("/sessions/:sessionId/chats", requireToken, async (req, res) => {
+  const session = getSession(req.params.sessionId);
+  if (!session.client || session.status.status !== "ready") {
     return res.status(409).json({ error: "WhatsApp client is not ready." });
   }
 
-  const chats = await client.getChats();
+  const chats = await session.client.getChats();
   res.json(chats.slice(0, 100).map((chat) => ({
     id: chat.id?._serialized,
     name: chat.name,
@@ -200,14 +345,15 @@ app.get("/chats", requireToken, async (_req, res) => {
   })));
 });
 
-app.get("/chats/:chatId/messages", requireToken, async (req, res) => {
-  if (!client || status.status !== "ready") {
+app.get("/sessions/:sessionId/chats/:chatId/messages", requireToken, async (req, res) => {
+  const session = getSession(req.params.sessionId);
+  if (!session.client || session.status.status !== "ready") {
     return res.status(409).json({ error: "WhatsApp client is not ready." });
   }
 
   const chatId = decodeURIComponent(req.params.chatId);
   const limit = Math.min(Number(req.query.limit || 50), 200);
-  const chat = await client.getChatById(chatId).catch(() => null);
+  const chat = await session.client.getChatById(chatId).catch(() => null);
 
   if (!chat) {
     return res.status(404).json({ error: "Chat not found." });
@@ -218,12 +364,13 @@ app.get("/chats/:chatId/messages", requireToken, async (req, res) => {
   res.json(mapped);
 });
 
-app.get("/groups", requireToken, async (_req, res) => {
-  if (!client || status.status !== "ready") {
+app.get("/sessions/:sessionId/groups", requireToken, async (req, res) => {
+  const session = getSession(req.params.sessionId);
+  if (!session.client || session.status.status !== "ready") {
     return res.status(409).json({ error: "WhatsApp client is not ready." });
   }
 
-  const chats = await client.getChats();
+  const chats = await session.client.getChats();
   res.json(chats.filter((chat) => chat.isGroup).map((chat) => ({
     id: chat.id?._serialized,
     name: chat.name,
@@ -231,19 +378,20 @@ app.get("/groups", requireToken, async (_req, res) => {
   })));
 });
 
-app.get("/groups/:groupId/participants", requireToken, async (req, res) => {
-  if (!client || status.status !== "ready") {
+app.get("/sessions/:sessionId/groups/:groupId/participants", requireToken, async (req, res) => {
+  const session = getSession(req.params.sessionId);
+  if (!session.client || session.status.status !== "ready") {
     return res.status(409).json({ error: "WhatsApp client is not ready." });
   }
 
   const groupId = decodeURIComponent(req.params.groupId);
-  const chat = await client.getChatById(groupId);
+  const chat = await session.client.getChatById(groupId);
   if (!chat?.isGroup) {
     return res.status(404).json({ error: "Group not found." });
   }
 
   const participants = await Promise.all((chat.participants || []).map(async (participant) => {
-    const contact = await client.getContactById(participant.id?._serialized).catch(() => null);
+    const contact = await session.client.getContactById(participant.id?._serialized).catch(() => null);
     return {
       id: participant.id?._serialized,
       name: contact?.pushname || contact?.name,
@@ -254,22 +402,27 @@ app.get("/groups/:groupId/participants", requireToken, async (req, res) => {
     };
   }));
 
-  await notifyShamarConnect("group.participants.extracted", { groupId, groupName: chat.name, total: participants.length });
+  await notifyShamarConnect(session, "group.participants.extracted", { groupId, groupName: chat.name, total: participants.length });
   res.json(participants);
 });
 
-app.post("/logout", requireToken, async (_req, res) => {
-  if (client) {
-    await client.logout().catch(() => null);
-    await client.destroy().catch(() => null);
-  }
-  client = undefined;
-  latestQrText = null;
-  latestQrDataUrl = null;
-  setStatus({ status: "disconnected", phone: undefined, qrCode: undefined });
-  res.json(status);
+app.post("/sessions/:sessionId/logout", requireToken, async (req, res) => {
+  const session = getSession(req.params.sessionId);
+  await destroySession(session, true);
+  const freshSession = createSession(session.config);
+  setStatus(freshSession, { status: "disconnected", phone: undefined, qrCode: undefined });
+  res.json(freshSession.status);
+});
+
+app.post("/sessions/:sessionId/restart", requireToken, async (req, res) => {
+  const session = getSession(req.params.sessionId);
+  await destroySession(session, false);
+  const freshSession = createSession(session.config);
+  await initializeSession(freshSession);
+  res.json(safeClientSummary(freshSession));
 });
 
 app.listen(PORT, () => {
   console.log(`Shamar WhatsApp Web Gateway running on port ${PORT}`);
+  console.log(`Configured sessions: ${configuredClients.map((client) => client.id).join(", ") || "none"}`);
 });
