@@ -39,8 +39,11 @@ export default function HomePage() {
             <h1 className="mt-7 max-w-4xl text-4xl font-black tracking-tight text-[#1B2F5B] md:text-6xl">Atenda mais, venda mais e organize seu WhatsApp</h1>
             <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600">CRM, automações e IA para pequenas e médias empresas. Do primeiro contato à venda fechada, tudo em um lugar.</p>
             <div className="mt-9 flex flex-col gap-4 sm:flex-row">
-              <Link href="/login" className="rounded-full bg-[#2ABFAB] px-7 py-4 text-center font-black text-white shadow-lg">Começar agora</Link>
+              <Link href="/login" className="rounded-full bg-[#2ABFAB] px-7 py-4 text-center font-black text-white shadow-lg shadow-[#2ABFAB]/30">Começar agora</Link>
               <Link href="/planos" className="rounded-full border border-slate-300 bg-white px-7 py-4 text-center font-black text-[#1B2F5B]">Ver planos</Link>
+            </div>
+            <div className="mt-10 grid gap-3 sm:grid-cols-3">
+              {["Atendimento centralizado", "Funil de vendas", "Equipe organizada"].map((item) => <div key={item} className="rounded-2xl border border-slate-200 bg-white p-4 text-sm font-black text-[#1B2F5B] shadow-sm">{item}</div>)}
             </div>
           </div>
           <div className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-2xl">
@@ -56,7 +59,7 @@ export default function HomePage() {
 
       <section id="funcionalidades" className="mx-auto max-w-7xl px-5 py-20 md:px-8">
         <div className="mx-auto max-w-3xl text-center"><p className="text-sm font-black uppercase tracking-[0.25em] text-[#C9952A]">Funcionalidades</p><h2 className="mt-3 text-3xl font-black text-[#1B2F5B] md:text-5xl">Tudo para vender melhor pelo WhatsApp</h2></div>
-        <div className="mt-12 grid gap-6 md:grid-cols-2 lg:grid-cols-4">{features.map(([title, text]) => <article key={title} className="rounded-[2rem] border border-slate-200 bg-white p-7 shadow-sm"><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#2ABFAB]/10 font-black text-[#2ABFAB]">✓</span><h3 className="mt-5 text-lg font-black text-[#1B2F5B]">{title}</h3><p className="mt-3 text-sm leading-7 text-slate-600">{text}</p></article>)}</div>
+        <div className="mt-12 grid gap-6 md:grid-cols-2 lg:grid-cols-4">{features.map(([title, text]) => <article key={title} className="rounded-[2rem] border border-slate-200 bg-white p-7 shadow-sm transition hover:-translate-y-1 hover:shadow-xl"><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#2ABFAB]/10 font-black text-[#2ABFAB]">✓</span><h3 className="mt-5 text-lg font-black text-[#1B2F5B]">{title}</h3><p className="mt-3 text-sm leading-7 text-slate-600">{text}</p></article>)}</div>
       </section>
 
       <section className="bg-white py-20"><div className="mx-auto max-w-7xl px-5 md:px-8"><div className="mx-auto max-w-3xl text-center"><p className="text-sm font-black uppercase tracking-[0.25em] text-[#2ABFAB]">Como funciona</p><h2 className="mt-3 text-3xl font-black text-[#1B2F5B] md:text-5xl">Sua operação pronta em poucos passos</h2></div><div className="mt-12 grid gap-6 md:grid-cols-3">{steps.map(([n, title, text]) => <article key={title} className="rounded-[2rem] bg-[#F8FAFC] p-8 ring-1 ring-slate-200"><span className="font-black text-[#C9952A]">{n}</span><h3 className="mt-5 text-xl font-black text-[#1B2F5B]">{title}</h3><p className="mt-3 text-slate-600">{text}</p></article>)}</div></div></section>
