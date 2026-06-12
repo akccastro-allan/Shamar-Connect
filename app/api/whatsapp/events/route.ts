@@ -11,17 +11,32 @@ function isAuthorized(request: NextRequest) {
   return Boolean(expectedKey && receivedKey && receivedKey === expectedKey);
 }
 
+function normalizeEventName(value: string) {
+  const event = value.trim().toLowerCase();
+
+  if (["message", "message_create", "message.created", "message_received", "message.received"].includes(event)) {
+    return "message.received";
+  }
+
+  if (["message_revoke", "message_revoke_everyone", "message.revoked", "message.deleted", "message_delete", "message.deleted_for_everyone"].includes(event)) {
+    return "message_revoke";
+  }
+
+  return value.trim() || "unknown";
+}
+
 function resolveEventName(payload: Record<string, unknown>) {
   const rawEvent =
     payload.event ||
     payload.eventName ||
+    payload.event_name ||
     payload.event_type ||
     payload.eventType ||
     payload.name ||
     payload.type ||
     "unknown";
 
-  return String(rawEvent || "unknown").trim() || "unknown";
+  return normalizeEventName(String(rawEvent || "unknown"));
 }
 
 function resolveProvider(payload: Record<string, unknown>) {
