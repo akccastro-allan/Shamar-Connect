@@ -9,6 +9,14 @@ export const metadata: Metadata = {
 
 const posts = [
   {
+    title: "Como organizar clientes no WhatsApp sem perder vendas",
+    description:
+      "Veja como organizar clientes no WhatsApp, controlar orcamentos, acompanhar follow-ups e evitar perdas comerciais com ajuda de CRM.",
+    href: "/blog/como-organizar-clientes-no-whatsapp-sem-perder-vendas",
+    category: "Atendimento comercial",
+    readTime: "7 min",
+  },
+  {
     title: "CRM para WhatsApp: como organizar vendas e atendimento em um só lugar",
     description:
       "Entenda como um CRM para WhatsApp ajuda pequenas empresas a organizar atendimento, vendas, clientes e oportunidades em um só lugar.",
