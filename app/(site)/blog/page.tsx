@@ -9,6 +9,14 @@ export const metadata: Metadata = {
 
 const posts = [
   {
+    title: "Como acompanhar orçamentos enviados pelo WhatsApp",
+    description:
+      "Veja como acompanhar orçamentos enviados pelo WhatsApp com follow-up, etapas comerciais, CRM, histórico e controle de oportunidades.",
+    href: "/blog/como-acompanhar-orcamentos-enviados-pelo-whatsapp",
+    category: "Orçamentos pelo WhatsApp",
+    readTime: "7 min",
+  },
+  {
     title: "Respostas rápidas no WhatsApp: como padronizar o atendimento",
     description:
       "Veja como usar respostas rápidas no WhatsApp para padronizar atendimento comercial, reduzir tempo de resposta e melhorar vendas.",
