@@ -7,7 +7,7 @@ export default function InboxPage() {
     <AppShell active="inbox">
       <PageHeader
         title="Central de Atendimento"
-        description="Gerencie conversas salvas, responda clientes, atualize dados do CRM, registre notas, acompanhe prioridade e mantenha o histórico comercial organizado em um único painel."
+        description="Gerencie conversas e mensagens processadas pelo gateway, responda clientes, atualize dados do CRM, registre notas, acompanhe prioridade e mantenha o histórico comercial organizado em um único painel."
         badge="WhatsApp Central"
       />
       <InboxPanel />
