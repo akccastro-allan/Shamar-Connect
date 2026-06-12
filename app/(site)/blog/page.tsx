@@ -9,6 +9,13 @@ export const metadata: Metadata = {
 
 const posts = [
   {
+    title: "Transcrição de áudio no WhatsApp: por que isso ajuda no atendimento",
+    description: "Guia pratico sobre transcricao de audio e ganho de produtividade no atendimento.",
+    href: "/blog/transcricao-de-audio-no-whatsapp-ajuda-no-atendimento",
+    category: "IA no atendimento",
+    readTime: "7 min",
+  },
+  {
     title: "IA no atendimento pelo WhatsApp: como usar sem perder o toque humano",
     description: "Guia pratico sobre uso de IA para apoiar o atendimento comercial pelo WhatsApp.",
     href: "/blog/ia-no-atendimento-pelo-whatsapp-como-usar-sem-perder-o-toque-humano",
