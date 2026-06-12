@@ -9,6 +9,14 @@ export const metadata: Metadata = {
 
 const posts = [
   {
+    title: "Como controlar atendentes no WhatsApp sem perder qualidade",
+    description:
+      "Veja como controlar atendentes no WhatsApp com responsáveis, histórico, respostas rápidas, indicadores, CRM e IA sem perder qualidade.",
+    href: "/blog/como-controlar-atendentes-no-whatsapp-sem-perder-qualidade",
+    category: "Gestão de atendimento",
+    readTime: "7 min",
+  },
+  {
     title: "Melhor CRM para pequenas empresas: como escolher sem complicar",
     description:
       "Saiba como escolher o melhor CRM para pequenas empresas considerando simplicidade, WhatsApp, funil de vendas, equipe e controle comercial.",
