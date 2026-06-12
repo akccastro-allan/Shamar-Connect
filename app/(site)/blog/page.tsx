@@ -9,6 +9,14 @@ export const metadata: Metadata = {
 
 const posts = [
   {
+    title: "Como transformar conversas do WhatsApp em oportunidades de venda",
+    description:
+      "Veja como transformar conversas do WhatsApp em oportunidades de venda com qualificação, CRM, funil, histórico e próxima ação.",
+    href: "/blog/como-transformar-conversas-do-whatsapp-em-oportunidades-de-venda",
+    category: "Oportunidades de venda",
+    readTime: "7 min",
+  },
+  {
     title: "Como acompanhar orçamentos enviados pelo WhatsApp",
     description:
       "Veja como acompanhar orçamentos enviados pelo WhatsApp com follow-up, etapas comerciais, CRM, histórico e controle de oportunidades.",
