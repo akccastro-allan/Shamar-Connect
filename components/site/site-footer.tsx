@@ -2,20 +2,23 @@ import Link from "next/link";
 
 import { BrandLogo } from "@/components/brand/brand-logo";
 
+const supportEmail = ["suporte", "shamarconnect.com.br"].join("@");
+
 const footerLinks = [
   { href: "/", label: "Início" },
   { href: "/planos", label: "Planos" },
   { href: "/sobre", label: "Sobre" },
-  { href: "/login", label: "Entrar" },
+  { href: "/contato", label: "Contato" },
+  { href: "/termos", label: "Termos de Uso" },
 ];
 
 export function SiteFooter() {
   return (
     <footer className="border-t border-slate-200 bg-white">
-      <div className="mx-auto grid max-w-7xl gap-10 px-5 py-12 md:grid-cols-[1.2fr_0.8fr] md:px-8">
+      <div className="mx-auto grid max-w-7xl gap-10 px-5 py-12 md:grid-cols-[1.2fr_0.8fr_0.8fr] md:px-8">
         <div>
-          <Link href="/" className="block w-48" aria-label="ShamarConnect">
-            <BrandLogo className="h-auto w-full" />
+          <Link href="/" className="block w-40" aria-label="ShamarConnect">
+            <BrandLogo variant="mark" className="h-auto w-full" />
           </Link>
           <p className="mt-5 max-w-md text-sm leading-7 text-slate-600">
             WhatsApp, CRM, automações e IA para empresas que querem atender melhor e vender com processo.
@@ -36,6 +39,16 @@ export function SiteFooter() {
               </li>
             ))}
           </ul>
+        </div>
+
+        <div>
+          <h3 className="text-sm font-black uppercase tracking-[0.2em] text-[#1B2F5B]">Suporte</h3>
+          <p className="mt-5 text-sm leading-7 text-slate-600">
+            Para dúvidas sobre acesso, contratação ou uso da plataforma, fale com nosso suporte oficial.
+          </p>
+          <a href={`mailto:${supportEmail}`} className="mt-4 inline-flex text-sm font-black text-[#1B2F5B] hover:text-[#2ABFAB]">
+            {supportEmail}
+          </a>
         </div>
       </div>
 
