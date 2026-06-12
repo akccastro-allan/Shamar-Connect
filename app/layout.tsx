@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 const siteUrl = "https://shamarconnect.com.br";
+const assetHost = "https://assets." + "shamarconnect.com.br";
+const logoPath = `${assetHost}/Shamarconect-logo-completa.png`;
+const iconPath = `${assetHost}/Shamarconect-logo.png`;
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -26,9 +29,9 @@ export const metadata: Metadata = {
     "multiatendimento WhatsApp",
   ],
   icons: {
-    icon: "/brand/shamar-connect-icon.svg",
-    shortcut: "/brand/shamar-connect-icon.svg",
-    apple: "/brand/shamar-connect-icon.svg",
+    icon: iconPath,
+    shortcut: iconPath,
+    apple: iconPath,
   },
   alternates: {
     canonical: siteUrl,
@@ -43,7 +46,7 @@ export const metadata: Metadata = {
       "Centralize o WhatsApp, organize contatos, acompanhe oportunidades no CRM e use IA para melhorar o atendimento comercial da sua empresa.",
     images: [
       {
-        url: "/brand/shamar-connect-logo.svg",
+        url: logoPath,
         width: 1200,
         height: 630,
         alt: "ShamarConnect",
@@ -55,7 +58,7 @@ export const metadata: Metadata = {
     title: "ShamarConnect | CRM, WhatsApp e IA para pequenas empresas",
     description:
       "Centralize o WhatsApp, organize contatos, acompanhe oportunidades no CRM e use IA para melhorar o atendimento comercial da sua empresa.",
-    images: ["/brand/shamar-connect-logo.svg"],
+    images: [logoPath],
   },
   robots: {
     index: true,
