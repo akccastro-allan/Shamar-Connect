@@ -13,12 +13,20 @@ function resolveProvider(value: string | null): Provider {
   return DEFAULT_PROVIDER;
 }
 
+function normalizeNextPath(value: string | null) {
+  if (!value || !value.startsWith("/") || value.startsWith("//")) {
+    return "/dashboard";
+  }
+
+  return value;
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
   const provider = resolveProvider(searchParams.get("provider"));
-  const next = searchParams.get("next") ?? "/";
+  const next = normalizeNextPath(searchParams.get("next"));
 
-  const supabase = await createSupabaseServerClient();
+  const supabase = createSupabaseServerClient();
 
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider,
