@@ -9,6 +9,14 @@ export const metadata: Metadata = {
 
 const posts = [
   {
+    title: "Melhor CRM para pequenas empresas: como escolher sem complicar",
+    description:
+      "Saiba como escolher o melhor CRM para pequenas empresas considerando simplicidade, WhatsApp, funil de vendas, equipe e controle comercial.",
+    href: "/blog/melhor-crm-para-pequenas-empresas-como-escolher-sem-complicar",
+    category: "CRM para pequenas empresas",
+    readTime: "7 min",
+  },
+  {
     title: "Como não perder vendas que chegam pelo WhatsApp",
     description:
       "Entenda como evitar perdas comerciais no WhatsApp com organização, CRM, follow-up, etapas de venda e acompanhamento da equipe.",
