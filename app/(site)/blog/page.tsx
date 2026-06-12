@@ -9,6 +9,14 @@ export const metadata: Metadata = {
 
 const posts = [
   {
+    title: "Respostas rápidas no WhatsApp: como padronizar o atendimento",
+    description:
+      "Veja como usar respostas rápidas no WhatsApp para padronizar atendimento comercial, reduzir tempo de resposta e melhorar vendas.",
+    href: "/blog/respostas-rapidas-no-whatsapp-como-padronizar-o-atendimento-comercial",
+    category: "Respostas rápidas",
+    readTime: "7 min",
+  },
+  {
     title: "Como responder clientes mais rápido no WhatsApp sem perder qualidade",
     description:
       "Veja como responder clientes mais rápido no WhatsApp sem perder qualidade usando respostas rápidas, CRM, organização, equipe e IA.",
