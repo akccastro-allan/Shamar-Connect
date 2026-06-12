@@ -2,11 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 
 const SHAMAR_SESSION_COOKIE = "shamar_connect_session";
 
+function decodeBase64Url(value: string) {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), "=");
+
+  return atob(padded);
+}
+
 function isLikelyValidSession(value?: string) {
   if (!value) return false;
 
   try {
-    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf-8"));
+    const parsed = JSON.parse(decodeBase64Url(value));
     return Boolean(parsed?.companyId && parsed?.userId && parsed?.loginAt);
   } catch {
     return false;
