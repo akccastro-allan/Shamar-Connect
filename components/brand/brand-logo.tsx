@@ -3,13 +3,18 @@ type BrandLogoProps = {
   variant?: "complete" | "mark";
 };
 
+const ASSET_HOST = "https://assets." + "shamarconnect.com.br";
+
+export const SHAMAR_CONNECT_LOGO_PATH = `${ASSET_HOST}/Shamarconect-logo-completa.png`;
+export const SHAMAR_CONNECT_ICON_PATH = `${ASSET_HOST}/Shamarconect-logo.png`;
+
 const logos = {
-  complete: "https://assets.shamarconnect.com.br/Shamarconect-logo-completa.png",
-  mark: "https://assets.shamarconnect.com.br/Shamarconect-logo.png",
+  complete: SHAMAR_CONNECT_LOGO_PATH,
+  mark: SHAMAR_CONNECT_ICON_PATH,
 };
 
 export function BrandIcon({ className = "h-11 w-11" }: { className?: string }) {
-  return <img src={logos.mark} alt="Ícone ShamarConnect" className={className} />;
+  return <img src={SHAMAR_CONNECT_ICON_PATH} alt="Ícone ShamarConnect" className={className} />;
 }
 
 export function BrandLogo({ className = "h-auto w-full max-w-md", variant = "complete" }: BrandLogoProps) {
