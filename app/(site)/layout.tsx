@@ -9,6 +9,7 @@ const navLinks = [
   { href: "/", label: "Início" },
   { href: "/planos", label: "Planos" },
   { href: "/sobre", label: "Sobre" },
+  { href: "/contato", label: "Contato" },
 ];
 
 export const metadata: Metadata = {
@@ -34,9 +35,9 @@ export default function SiteLayout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-950">
       <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 md:px-8">
-          <Link href="/" aria-label="ShamarConnect" className="w-48 md:w-64">
-            <BrandLogo className="h-auto w-full" />
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-3 md:px-8">
+          <Link href="/" aria-label="ShamarConnect" className="flex items-center">
+            <BrandLogo variant="mark" className="h-11 w-auto object-contain md:h-12" />
           </Link>
 
           <nav className="hidden items-center gap-8 text-sm font-bold text-slate-600 md:flex">
