@@ -37,7 +37,7 @@ export default function SiteLayout({ children }: { children: ReactNode }) {
       <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-3 md:px-8">
           <Link href="/" aria-label="ShamarConnect" className="flex items-center">
-            <BrandLogo variant="mark" className="h-20 w-auto object-contain" />
+            <BrandLogo variant="mark" className="h-20 w-auto object-contain md:h-24 lg:h-28" />
           </Link>
 
           <nav className="hidden items-center gap-8 text-sm font-bold text-slate-600 md:flex">
