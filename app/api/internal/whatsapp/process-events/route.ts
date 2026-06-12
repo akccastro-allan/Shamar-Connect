@@ -1,66 +1,149 @@
+import { createHash, timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
+import { createSupabaseWriteClient } from "@/lib/supabase/server";
 
-const DEFAULT_LIMIT = 100;
-const MAX_LIMIT = 500;
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
-function getRequestedLimit(value: unknown) {
-  const parsed = Number(value || DEFAULT_LIMIT);
+type ProcessorSummary = {
+  processedEvents: number | null;
+  errorEvents: number | null;
+};
 
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return DEFAULT_LIMIT;
-  }
-
-  return Math.min(Math.floor(parsed), MAX_LIMIT);
+function hashToken(value: string) {
+  return createHash("sha256").update(value).digest();
 }
 
-function isAuthorized(request: NextRequest) {
+function hasValidInternalApiKey(request: NextRequest) {
   const expectedToken = process.env.INTERNAL_API_KEY || "";
+  const receivedToken = request.headers.get("x-internal-api-key")?.trim() || "";
 
-  if (!expectedToken) {
+  if (!expectedToken || !receivedToken) {
     return false;
   }
 
-  const receivedToken = request.headers.get("x-internal-api-key") || "";
+  return timingSafeEqual(hashToken(expectedToken), hashToken(receivedToken));
+}
 
-  return receivedToken === expectedToken;
+function clampMaxEvents(value: unknown) {
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed)) {
+    return 100;
+  }
+
+  return Math.min(Math.max(Math.trunc(parsed), 1), 500);
+}
+
+function readNumber(source: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = source[key];
+    const parsed = Number(value);
+
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
+function normalizeProcessorSummary(data: unknown): ProcessorSummary {
+  const row = Array.isArray(data) ? data[0] : data;
+
+  if (typeof row === "number") {
+    return {
+      processedEvents: row,
+      errorEvents: null,
+    };
+  }
+
+  if (!row || typeof row !== "object") {
+    return {
+      processedEvents: null,
+      errorEvents: null,
+    };
+  }
+
+  const result = row as Record<string, unknown>;
+
+  return {
+    processedEvents: readNumber(result, [
+      "processed_events",
+      "events_processed",
+      "processed_count",
+      "processed",
+      "success_count",
+    ]),
+    errorEvents: readNumber(result, [
+      "error_events",
+      "events_with_error",
+      "failed_events",
+      "failed_count",
+      "errors",
+      "error_count",
+    ]),
+  };
 }
 
 export async function POST(request: NextRequest) {
-  if (!isAuthorized(request)) {
-    return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
-  }
+  const executedAt = new Date().toISOString();
 
-  let body: unknown = {};
-
-  try {
-    body = await request.json();
-  } catch {
-    body = {};
-  }
-
-  const limit = getRequestedLimit((body as { limit?: unknown })?.limit);
-  const db = createSupabaseWriteClient();
-
-  const { data, error } = await db.rpc("process_pending_whatsapp_provider_events", {
-    max_events: limit,
-  });
-
-  if (error) {
+  if (!process.env.INTERNAL_API_KEY) {
     return NextResponse.json(
-      {
-        ok: false,
-        error: "Falha ao processar eventos do WhatsApp.",
-        details: error.message,
-      },
+      { ok: false, error: "Internal API key is not configured.", executedAt },
       { status: 500 },
     );
   }
 
-  return NextResponse.json({
-    ok: true,
-    processedAt: new Date().toISOString(),
-    limit,
-    result: data,
-  });
+  if (!hasValidInternalApiKey(request)) {
+    return NextResponse.json({ ok: false, error: "Unauthorized", executedAt }, { status: 401 });
+  }
+
+  const body = await request.json().catch(() => ({}));
+  const maxEvents = clampMaxEvents(
+    typeof body === "object" && body
+      ? (body as Record<string, unknown>).max_events ??
+          (body as Record<string, unknown>).maxEvents ??
+          (body as Record<string, unknown>).limit
+      : undefined,
+  );
+
+  try {
+    const supabase = createSupabaseWriteClient();
+    const { data, error } = await supabase.rpc("process_pending_whatsapp_provider_events", {
+      max_events: maxEvents,
+    });
+
+    if (error) {
+      console.error("WhatsApp provider event processor failed", {
+        code: error.code,
+        message: error.message,
+      });
+
+      return NextResponse.json(
+        { ok: false, error: "Event processor failed.", executedAt },
+        { status: 500 },
+      );
+    }
+
+    const summary = normalizeProcessorSummary(data);
+
+    return NextResponse.json({
+      ok: true,
+      processedEvents: summary.processedEvents,
+      errorEvents: summary.errorEvents,
+      maxEvents,
+      executedAt,
+    });
+  } catch (error) {
+    console.error("Unexpected WhatsApp provider event processor error", {
+      message: error instanceof Error ? error.message : "Unknown error",
+    });
+
+    return NextResponse.json(
+      { ok: false, error: "Event processor failed.", executedAt },
+      { status: 500 },
+    );
+  }
 }
