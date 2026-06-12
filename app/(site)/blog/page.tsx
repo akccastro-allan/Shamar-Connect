@@ -9,6 +9,14 @@ export const metadata: Metadata = {
 
 const posts = [
   {
+    title: "Atendimento multiatendente no WhatsApp: quando usar",
+    description:
+      "Entenda quando sua empresa precisa de atendimento multiatendente no WhatsApp e como organizar responsáveis, histórico, CRM e equipe.",
+    href: "/blog/atendimento-multiatendente-no-whatsapp-quando-sua-empresa-precisa-disso",
+    category: "Atendimento multiatendente",
+    readTime: "7 min",
+  },
+  {
     title: "CRM com WhatsApp: como funciona na prática",
     description:
       "Entenda como um CRM com WhatsApp ajuda a organizar conversas, clientes, oportunidades, funil de vendas, follow-ups e atendimento comercial.",
