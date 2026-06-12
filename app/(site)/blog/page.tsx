@@ -9,6 +9,13 @@ export const metadata: Metadata = {
 
 const posts = [
   {
+    title: "IA no atendimento pelo WhatsApp: como usar sem perder o toque humano",
+    description: "Guia pratico sobre uso de IA para apoiar o atendimento comercial pelo WhatsApp.",
+    href: "/blog/ia-no-atendimento-pelo-whatsapp-como-usar-sem-perder-o-toque-humano",
+    category: "IA no atendimento",
+    readTime: "7 min",
+  },
+  {
     title: "Como transformar conversas do WhatsApp em oportunidades de venda",
     description:
       "Veja como transformar conversas do WhatsApp em oportunidades de venda com qualificação, CRM, funil, histórico e próxima ação.",
