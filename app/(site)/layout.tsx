@@ -9,6 +9,7 @@ const navLinks = [
   { href: "/", label: "Início" },
   { href: "/planos", label: "Planos" },
   { href: "/sobre", label: "Sobre" },
+  { href: "/blog", label: "Blog" },
   { href: "/contato", label: "Contato" },
 ];
 
@@ -40,9 +41,9 @@ export default function SiteLayout({ children }: { children: ReactNode }) {
             <BrandLogo variant="mark" className="h-20 w-auto object-contain md:h-[7.5rem]" />
           </Link>
 
-          <nav className="hidden items-center gap-8 text-sm font-bold text-slate-600 md:flex">
+          <nav className="hidden items-center gap-10 text-base font-black text-slate-600 md:flex lg:text-lg">
             {navLinks.map((link) => (
-              <Link key={link.href} href={link.href} className="hover:text-[#1B2F5B]">
+              <Link key={link.href} href={link.href} className="transition hover:text-[#1B2F5B]">
                 {link.label}
               </Link>
             ))}
@@ -56,7 +57,7 @@ export default function SiteLayout({ children }: { children: ReactNode }) {
           </Link>
         </div>
 
-        <nav className="flex justify-center gap-6 border-t border-slate-200 px-5 py-3 text-sm font-bold text-slate-600 md:hidden">
+        <nav className="flex flex-wrap justify-center gap-x-6 gap-y-2 border-t border-slate-200 px-5 py-3 text-sm font-bold text-slate-600 md:hidden">
           {navLinks.map((link) => (
             <Link key={link.href} href={link.href} className="hover:text-[#1B2F5B]">
               {link.label}
