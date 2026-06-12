@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import {
   Activity,
   Bot,
@@ -21,6 +22,8 @@ import {
 } from "lucide-react";
 import { BrandIcon } from "@/components/brand/brand-logo";
 import { cn } from "@/lib/utils";
+import { getCurrentSession } from "@/lib/auth/session";
+import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 
 const navigationGroups = [
   {
@@ -124,7 +127,43 @@ function SidebarContent({ active }: { active?: string }) {
   );
 }
 
-export function AppShell({ children, active }: { children: React.ReactNode; active?: string }) {
+async function assertAuthorizedSession() {
+  const session = await getCurrentSession();
+
+  if (!session?.userId || !session.companyId) {
+    redirect("/login");
+  }
+
+  const db = createSupabaseWriteClient();
+
+  const { data: user } = await db
+    .from("app_users")
+    .select("id, status")
+    .eq("id", session.userId)
+    .eq("status", "active")
+    .maybeSingle();
+
+  if (!user) {
+    redirect("/planos?reason=not-authorized");
+  }
+
+  const { data: tenantUser } = await db
+    .from("tenant_users")
+    .select("id")
+    .eq("app_user_id", session.userId)
+    .eq("status", "active")
+    .or(`organization_id.eq.${session.companyId},tenant_id.eq.${session.companyId}`)
+    .limit(1)
+    .maybeSingle();
+
+  if (!tenantUser) {
+    redirect("/planos?reason=not-authorized");
+  }
+}
+
+export async function AppShell({ children, active }: { children: React.ReactNode; active?: string }) {
+  await assertAuthorizedSession();
+
   return (
     <div className="min-h-screen bg-slate-100">
       <aside className="fixed inset-y-0 left-0 hidden w-80 bg-[#1B2F5B] p-5 shadow-2xl lg:block">
