@@ -9,6 +9,13 @@ export const metadata: Metadata = {
 
 const posts = [
   {
+    title: "Como saber se sua equipe está perdendo vendas no WhatsApp",
+    description: "Guia pratico para identificar perdas comerciais no atendimento pelo WhatsApp.",
+    href: "/blog/como-saber-se-sua-equipe-esta-perdendo-vendas-no-whatsapp",
+    category: "Vendas pelo WhatsApp",
+    readTime: "7 min",
+  },
+  {
     title: "Como organizar o histórico de clientes no WhatsApp",
     description: "Guia pratico para organizar historico de clientes, conversas e contexto no atendimento.",
     href: "/blog/como-organizar-o-historico-de-clientes-no-whatsapp",
