@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
 
     let query = client
       .from("whatsapp_messages")
-      .select("id, external_message_id, provider, conversation_id, contact_id, direction, from_id, to_id, body, message_type, raw_payload, created_at, crm_contacts(id, name, phone)")
+      .select("id, external_message_id, provider, conversation_id, contact_id, direction, from_id, to_id, body, message_type, raw_payload, created_at, deleted_by_sender, deleted_at, has_media, media_count, media_summary, crm_contacts(id, name, phone)")
       .order("created_at", { ascending: true })
       .limit(200);
 
