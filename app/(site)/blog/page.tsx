@@ -7,6 +7,17 @@ export const metadata: Metadata = {
     "Conteudos sobre atendimento pelo WhatsApp, CRM, vendas, automacao comercial e inteligencia artificial para pequenas e medias empresas.",
 };
 
+const posts = [
+  {
+    title: "CRM para WhatsApp: como organizar vendas e atendimento em um só lugar",
+    description:
+      "Entenda como um CRM para WhatsApp ajuda pequenas empresas a organizar atendimento, vendas, clientes e oportunidades em um só lugar.",
+    href: "/blog/crm-para-whatsapp-como-organizar-vendas-e-atendimento-em-um-so-lugar",
+    category: "CRM WhatsApp",
+    readTime: "7 min",
+  },
+];
+
 const topics = [
   "CRM para WhatsApp",
   "Atendimento comercial",
@@ -32,7 +43,24 @@ export default function BlogPage() {
           </p>
         </div>
 
-        <div className="mt-14 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-14 grid gap-6 lg:grid-cols-3">
+          {posts.map((post) => (
+            <article key={post.href} className="rounded-[2rem] border border-slate-200 bg-white p-7 shadow-lg">
+              <div className="flex flex-wrap gap-2 text-xs font-black uppercase tracking-[0.18em] text-[#C9952A]">
+                <span>{post.category}</span>
+                <span>•</span>
+                <span>{post.readTime}</span>
+              </div>
+              <h2 className="mt-4 text-2xl font-black text-[#1B2F5B]">{post.title}</h2>
+              <p className="mt-4 text-sm leading-7 text-slate-600">{post.description}</p>
+              <Link href={post.href} className="mt-6 inline-flex rounded-full bg-[#2ABFAB] px-5 py-3 font-black text-white">
+                Ler artigo
+              </Link>
+            </article>
+          ))}
+        </div>
+
+        <div className="mt-16 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
           {topics.map((topic) => (
             <article key={topic} className="rounded-[2rem] border border-slate-200 bg-[#F8FAFC] p-7 shadow-sm">
               <p className="text-sm font-black uppercase tracking-[0.2em] text-[#C9952A]">
