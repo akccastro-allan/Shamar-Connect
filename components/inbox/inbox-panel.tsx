@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Inbox, MessageCircle, RefreshCcw, ShieldCheck, Send, UserRound, Tags, StickyNote, Save, RotateCw } from "lucide-react";
+import { Inbox, MessageCircle, RefreshCcw, Send, Tags, StickyNote, Save, RotateCw, UserRound } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -42,6 +42,11 @@ type Message = {
   body?: string | null;
   message_type?: string | null;
   created_at: string;
+  deleted_by_sender?: boolean | null;
+  deleted_at?: string | null;
+  has_media?: boolean | null;
+  media_count?: number | null;
+  media_summary?: string | null;
   crm_contacts?: Contact | null;
 };
 
@@ -329,8 +334,8 @@ export function InboxPanel() {
         </CardHeader>
         <CardContent>
           <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
-            <div className="flex items-center gap-2 font-medium"><ShieldCheck className="h-4 w-4" />Modo seguro</div>
-            <p className="mt-1">O Inbox não importa conversas pessoais automaticamente. Ele exibe e opera apenas conversas/mensagens já salvas manualmente.</p>
+            <div className="flex items-center gap-2 font-medium"><MessageCircle className="h-4 w-4" />Central WhatsApp</div>
+            <p className="mt-1">Conversas e mensagens processadas automaticamente a partir dos eventos do gateway.</p>
           </div>
         </CardContent>
       </Card>
@@ -398,13 +403,27 @@ export function InboxPanel() {
                     <div className="rounded-2xl border border-dashed bg-white p-8 text-center text-sm text-muted-foreground">Sem mensagens salvas. Clique em “Sincronizar esta conversa”.</div>
                   ) : messages.map((message) => {
                     const outbound = message.direction === "outbound";
+                    const deleted = Boolean(message.deleted_by_sender);
+                    const hasMedia = Boolean(message.has_media);
                     return (
                       <div key={message.id} className={`flex ${outbound ? "justify-end" : "justify-start"}`}>
                         <div className={`max-w-[82%] rounded-3xl border px-4 py-3 text-sm shadow-sm ${outbound ? "bg-emerald-600 text-white" : "bg-white text-slate-900"}`}>
-                          <p className="whitespace-pre-wrap leading-6">{message.body || "Mensagem sem conteúdo textual."}</p>
+                          {deleted ? (
+                            <div className={`mb-2 flex items-center gap-2 rounded-2xl px-3 py-2 text-xs ${outbound ? "bg-emerald-700 text-emerald-50" : "bg-red-50 text-red-700"}`}>
+                              <RotateCw className="h-3.5 w-3.5" />
+                              <span>Mensagem deletada pelo remetente</span>
+                            </div>
+                          ) : null}
+                          {hasMedia ? (
+                            <div className={`mb-2 inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs ${outbound ? "bg-emerald-700 text-emerald-50" : "bg-slate-100 text-slate-700"}`}>
+                              <MessageCircle className="h-3.5 w-3.5" />
+                              <span>{message.media_summary || message.message_type || "mídia"}{message.media_count ? ` · ${message.media_count}` : ""}</span>
+                            </div>
+                          ) : null}
+                          <p className="whitespace-pre-wrap leading-6">{message.body || (hasMedia ? "Mensagem com mídia." : "Mensagem sem conteúdo textual.")}</p>
                           <div className={`mt-2 flex items-center justify-between gap-3 text-[11px] ${outbound ? "text-emerald-50" : "text-muted-foreground"}`}>
                             <span>{outbound ? "Enviada" : "Recebida"}</span>
-                            <span>{formatDate(message.created_at)}</span>
+                            <span>{formatDate(deleted ? message.deleted_at || message.created_at : message.created_at)}</span>
                           </div>
                         </div>
                       </div>
