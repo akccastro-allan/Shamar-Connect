@@ -1,10 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 
-export function proxy(request: NextRequest) {
-  const hasCookies = request.cookies.getAll().length > 0;
+const SHAMAR_SESSION_COOKIE = "shamar_connect_session";
 
-  if (!hasCookies) {
-    return NextResponse.redirect(new URL("/login", request.url));
+function isLikelyValidSession(value?: string) {
+  if (!value) return false;
+
+  try {
+    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf-8"));
+    return Boolean(parsed?.companyId && parsed?.userId && parsed?.loginAt);
+  } catch {
+    return false;
+  }
+}
+
+export function proxy(request: NextRequest) {
+  const session = request.cookies.get(SHAMAR_SESSION_COOKIE)?.value;
+
+  if (!isLikelyValidSession(session)) {
+    const loginUrl = new URL("/login", request.url);
+    loginUrl.searchParams.set("next", request.nextUrl.pathname);
+    return NextResponse.redirect(loginUrl);
   }
 
   return NextResponse.next();
