@@ -39,8 +39,8 @@ function resolveEventName(payload: Record<string, unknown>) {
   return normalizeEventName(String(rawEvent || "unknown"));
 }
 
-function resolveProvider(payload: Record<string, unknown>) {
-  const rawProvider = payload.provider || payload.source || "whatsapp_web";
+function resolveProvider(payload: Record<string, unknown>, fallbackProvider?: string | null) {
+  const rawProvider = payload.provider || payload.source || fallbackProvider || "whatsapp_web";
   return String(rawProvider || "whatsapp_web").trim() || "whatsapp_web";
 }
 
@@ -84,10 +84,86 @@ function resolvePayloads(input: unknown) {
       organizationId: eventPayload.organizationId || input.organizationId,
       tenant_id: eventPayload.tenant_id || input.tenant_id,
       tenantId: eventPayload.tenantId || input.tenantId,
+      endpoint_key: eventPayload.endpoint_key || input.endpoint_key,
+      endpointKey: eventPayload.endpointKey || input.endpointKey,
     }));
   }
 
   return isObject(input) ? [input] : [];
+}
+
+function resolveEndpointKey(request: NextRequest, input: unknown) {
+  const url = new URL(request.url);
+  const fromHeader =
+    request.headers.get("x-webhook-endpoint-key") ||
+    request.headers.get("x-shamar-endpoint-key") ||
+    request.headers.get("x-endpoint-key");
+
+  if (fromHeader) {
+    return fromHeader.trim();
+  }
+
+  const fromQuery = url.searchParams.get("endpoint_key") || url.searchParams.get("endpointKey");
+
+  if (fromQuery) {
+    return fromQuery.trim();
+  }
+
+  if (isObject(input)) {
+    const fromPayload = input.endpoint_key || input.endpointKey || input.webhook_endpoint_key || input.webhookEndpointKey;
+    return typeof fromPayload === "string" ? fromPayload.trim() : "";
+  }
+
+  return "";
+}
+
+type WebhookContext = {
+  provider: string | null;
+  organizationId: string | null;
+  tenantId: string | null;
+};
+
+async function resolveWebhookContext(db: ReturnType<typeof createSupabaseWriteClient>, endpointKey: string): Promise<WebhookContext> {
+  if (!endpointKey) {
+    return { provider: null, organizationId: null, tenantId: null };
+  }
+
+  const { data: endpoint } = await db
+    .from("inbound_webhook_endpoints")
+    .select("integration_id, provider, config, status, is_active")
+    .eq("endpoint_key", endpointKey)
+    .eq("is_active", true)
+    .maybeSingle();
+
+  if (!endpoint || endpoint.status !== "active") {
+    return { provider: null, organizationId: null, tenantId: null };
+  }
+
+  let organizationId = null;
+  let tenantId = null;
+  const config = isObject(endpoint.config) ? endpoint.config : {};
+
+  organizationId = resolveUuid(config.organization_id || config.organizationId);
+  tenantId = resolveUuid(config.tenant_id || config.tenantId);
+
+  if (endpoint.integration_id) {
+    const { data: integration } = await db
+      .from("integration_sources")
+      .select("tenant_id, organization_id, status")
+      .eq("id", endpoint.integration_id)
+      .maybeSingle();
+
+    if (integration && integration.status === "active") {
+      organizationId = integration.organization_id || organizationId;
+      tenantId = integration.tenant_id || tenantId;
+    }
+  }
+
+  return {
+    provider: endpoint.provider || null,
+    organizationId,
+    tenantId,
+  };
 }
 
 export async function POST(request: NextRequest) {
@@ -110,15 +186,18 @@ export async function POST(request: NextRequest) {
   }
 
   const db = createSupabaseWriteClient();
+  const endpointKey = resolveEndpointKey(request, input);
+  const webhookContext = await resolveWebhookContext(db, endpointKey);
+
   const rows = payloads.map((payload) => {
     const normalizedPayload = normalizePayload(payload);
 
     return {
-      provider: resolveProvider(normalizedPayload),
+      provider: resolveProvider(normalizedPayload, webhookContext.provider),
       event: resolveEventName(normalizedPayload),
       payload: normalizedPayload,
-      organization_id: resolveUuid(normalizedPayload.organization_id || normalizedPayload.organizationId),
-      tenant_id: resolveUuid(normalizedPayload.tenant_id || normalizedPayload.tenantId),
+      organization_id: resolveUuid(normalizedPayload.organization_id || normalizedPayload.organizationId) || webhookContext.organizationId,
+      tenant_id: resolveUuid(normalizedPayload.tenant_id || normalizedPayload.tenantId) || webhookContext.tenantId,
       processing_status: "pending",
     };
   });
@@ -147,6 +226,7 @@ export async function POST(request: NextRequest) {
         registered: true,
         registeredCount: providerEvents.length,
         processed: false,
+        endpointKey: endpointKey || null,
       },
       { status: 202 },
     );
@@ -158,6 +238,7 @@ export async function POST(request: NextRequest) {
     registered: true,
     registeredCount: providerEvents.length,
     processed: true,
+    endpointKey: endpointKey || null,
     result: processResult,
   });
 }
