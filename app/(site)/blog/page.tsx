@@ -9,6 +9,13 @@ export const metadata: Metadata = {
 
 const posts = [
   {
+    title: "Como organizar o histórico de clientes no WhatsApp",
+    description: "Guia pratico para organizar historico de clientes, conversas e contexto no atendimento.",
+    href: "/blog/como-organizar-o-historico-de-clientes-no-whatsapp",
+    category: "Historico de clientes",
+    readTime: "7 min",
+  },
+  {
     title: "Transcrição de áudio no WhatsApp: por que isso ajuda no atendimento",
     description: "Guia pratico sobre transcricao de audio e ganho de produtividade no atendimento.",
     href: "/blog/transcricao-de-audio-no-whatsapp-ajuda-no-atendimento",
