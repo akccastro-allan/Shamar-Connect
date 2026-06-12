@@ -9,6 +9,13 @@ export const metadata: Metadata = {
 
 const posts = [
   {
+    title: "CRM para equipe comercial: como organizar vendedores e atendentes",
+    description: "Guia pratico para organizar equipe comercial, responsaveis, etapas e oportunidades.",
+    href: "/blog/crm-para-equipe-comercial-como-organizar-vendedores-e-atendentes",
+    category: "CRM comercial",
+    readTime: "7 min",
+  },
+  {
     title: "Como saber se sua equipe está perdendo vendas no WhatsApp",
     description: "Guia pratico para identificar perdas comerciais no atendimento pelo WhatsApp.",
     href: "/blog/como-saber-se-sua-equipe-esta-perdendo-vendas-no-whatsapp",
