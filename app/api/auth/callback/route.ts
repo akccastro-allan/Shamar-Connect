@@ -5,6 +5,7 @@ import { clearSessionCookie, setSessionCookie } from "@/lib/auth/session";
 
 const PRIVATE_FALLBACK_PATH = "/dashboard";
 const UNAUTHORIZED_PATH = "/planos?reason=not-authorized";
+const ALLOWED_ROLES = new Set(["owner", "admin", "attendant", "viewer"]);
 
 function normalizeEmail(value?: string | null) {
   return String(value || "").trim().toLowerCase();
@@ -20,6 +21,12 @@ function normalizeNextPath(value: string | null) {
   }
 
   return value;
+}
+
+function normalizeRole(value?: string | null) {
+  return ALLOWED_ROLES.has(String(value || ""))
+    ? (value as "owner" | "admin" | "attendant" | "viewer")
+    : "viewer";
 }
 
 export async function GET(request: NextRequest) {
@@ -102,7 +109,7 @@ export async function GET(request: NextRequest) {
     documentNumber,
     userId: appUser.id,
     userName: appUser.name || email,
-    userRole: tenantUser.role || appUser.role || "viewer",
+    userRole: normalizeRole(tenantUser.role || appUser.role),
     loginAt: new Date().toISOString(),
   });
 
