@@ -1,0 +1,38 @@
+import Link from "next/link";
+import { BrandLogo } from "@/components/brand/brand-logo";
+
+export default function CheckoutSucessoPage() {
+  return (
+    <main className="min-h-screen bg-[#F8FAFC] text-slate-950">
+      <header className="border-b border-slate-200 bg-white">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 md:px-8">
+          <Link href="/" className="flex items-center" aria-label="ShamarConnect">
+            <BrandLogo variant="mark" className="h-11 w-auto object-contain md:h-12" />
+          </Link>
+          <Link href="/login" className="rounded-full bg-[#1B2F5B] px-5 py-2.5 text-sm font-black text-white">Entrar</Link>
+        </div>
+      </header>
+
+      <section className="mx-auto max-w-4xl px-5 py-20 text-center md:px-8">
+        <div className="rounded-[2rem] border border-[#2ABFAB]/20 bg-white p-8 shadow-sm md:p-12">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[#2ABFAB]/10 text-3xl font-black text-[#2ABFAB]">✓</div>
+          <h1 className="mt-7 text-4xl font-black tracking-tight text-[#1B2F5B] md:text-5xl">Pagamento recebido ou em confirmação</h1>
+          <p className="mx-auto mt-5 max-w-2xl text-base leading-8 text-slate-600">
+            Recebemos o retorno do checkout. Assim que o pagamento for confirmado pelo Asaas, a equipe da Moriah Systems fará a ativação conforme o plano contratado.
+          </p>
+          <div className="mt-8 rounded-3xl bg-slate-50 p-6 text-left text-sm leading-7 text-slate-700">
+            <p className="font-black text-[#1B2F5B]">Próximos passos:</p>
+            <p>1. Conferência da confirmação de pagamento pelo Asaas.</p>
+            <p>2. Criação ou ativação da empresa no ShamarConnect.</p>
+            <p>3. Agendamento da implantação assistida.</p>
+            <p>4. Conexão inicial do WhatsApp e treinamento conforme o plano.</p>
+          </div>
+          <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
+            <Link href="/login" className="rounded-full bg-[#2ABFAB] px-7 py-4 text-sm font-black text-white shadow-lg shadow-[#2ABFAB]/20">Ir para login</Link>
+            <Link href="/contato" className="rounded-full border border-slate-300 bg-white px-7 py-4 text-sm font-black text-[#1B2F5B]">Falar com suporte</Link>
+          </div>
+        </div>
+      </section>
+    </main>
+  );
+}
