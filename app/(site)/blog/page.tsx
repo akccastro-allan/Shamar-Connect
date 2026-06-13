@@ -9,6 +9,13 @@ export const metadata: Metadata = {
 
 const posts = [
   {
+    title: "Como organizar atendimento, vendas e CRM em uma única operação",
+    description: "Guia pratico para integrar atendimento, vendas, CRM, historico e IA em uma unica operacao.",
+    href: "/blog/como-organizar-atendimento-vendas-e-crm-em-uma-unica-operacao",
+    category: "Operação comercial",
+    readTime: "7 min",
+  },
+  {
     title: "Atendimento comercial pelo WhatsApp: como criar um processo simples",
     description: "Guia pratico para criar processo comercial simples no atendimento pelo WhatsApp.",
     href: "/blog/atendimento-comercial-pelo-whatsapp-como-criar-um-processo-simples",
