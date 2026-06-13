@@ -123,7 +123,13 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, event: eventName, paymentId, checkoutId });
+  if (checkoutId && normalizedStatus === "paid") {
+    await db.rpc("activate_paid_checkout_subscription", {
+      checkout_session_id: checkoutId,
+    });
+  }
+
+  return NextResponse.json({ ok: true, event: eventName, paymentId, checkoutId, status: normalizedStatus });
 }
 
 export async function GET() {
