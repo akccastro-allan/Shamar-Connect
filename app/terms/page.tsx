@@ -13,7 +13,7 @@ const sections = [
   },
   {
     title: "3. Empresa responsável",
-    text: "O serviço é fornecido pela Moriah Systems Serviços Ltda, CNPJ 66.912.118/0001-02, com atuação no Rio de Janeiro, RJ, Brasil. O contato oficial para suporte, dúvidas contratuais, privacidade e solicitações relacionadas ao serviço é suporte@shamarconnect.com.br.",
+    text: "O serviço é fornecido pela Moriah Systems Serviços Ltda, CNPJ 66.912.118/0001-02, com atuação no Rio de Janeiro, RJ, Brasil. O contato oficial para suporte, financeiro, cancelamento, privacidade e solicitações relacionadas ao serviço é suporte@shamarconnect.com.br.",
   },
   {
     title: "4. Cadastro e acesso",
@@ -37,11 +37,11 @@ const sections = [
   },
   {
     title: "9. Uso de integrações e provedores externos",
-    text: "A plataforma pode integrar serviços de terceiros, como WhatsApp, Google, Supabase, provedores de IA, hospedagem, e-mail, armazenamento e outros sistemas. O usuário deve respeitar os termos, limites, políticas de uso e regras de cada provedor. A Moriah Systems poderá suspender integrações que apresentem risco técnico, jurídico, operacional ou de segurança.",
+    text: "A plataforma pode integrar serviços de terceiros, como WhatsApp, Google, Asaas, Supabase, provedores de IA, hospedagem, e-mail, armazenamento e outros sistemas. O usuário deve respeitar os termos, limites, políticas de uso e regras de cada provedor.",
   },
   {
     title: "10. Google APIs e uso limitado",
-    text: "Quando a plataforma usar APIs do Google, os dados obtidos serão usados somente para fornecer ou melhorar funcionalidades visíveis e autorizadas pelo usuário no ShamarConnect. A Moriah Systems não vende dados do Google, não usa esses dados para publicidade, não transfere dados para corretores de dados e não utiliza dados do Google para finalidades incompatíveis com a autenticação e operação da conta.",
+    text: "Quando a plataforma usar APIs do Google, os dados obtidos serão usados somente para fornecer ou melhorar funcionalidades visíveis e autorizadas pelo usuário no ShamarConnect. A Moriah Systems não vende dados do Google, não usa esses dados para publicidade, não transfere dados para corretores de dados e não utiliza dados do Google para finalidades incompatíveis com autenticação e operação da conta.",
   },
   {
     title: "11. Revogação de permissões Google",
@@ -49,63 +49,83 @@ const sections = [
   },
   {
     title: "12. Planos, cobrança e contratação",
-    text: "O acesso ao ShamarConnect pode depender da contratação de planos pagos, módulos adicionais, conexões WhatsApp, implantação ou serviços complementares. Valores, recursos e limites podem variar conforme o plano contratado e poderão ser atualizados mediante comunicação ou publicação no site oficial.",
+    text: "O acesso ao ShamarConnect pode depender da contratação de planos pagos, módulos adicionais, conexões WhatsApp, implantação ou serviços complementares. Valores, recursos, limites, adicionais e condições podem variar conforme o plano contratado, checkout, proposta ou contrato aceito pelo cliente.",
   },
   {
-    title: "13. Conexões WhatsApp",
+    title: "13. Checkout e pagamento via Asaas",
+    text: "A Moriah Systems poderá utilizar o Asaas como provedor de pagamento para criar clientes, cobranças, assinaturas, Pix, boleto, cartão de crédito, links de pagamento e notificações de cobrança. Dados necessários à cobrança, como nome, CPF/CNPJ, e-mail, telefone, valor, plano e referência interna, poderão ser enviados ao Asaas. Dados completos de cartão não devem ser armazenados pelo ShamarConnect.",
+  },
+  {
+    title: "14. Implantação e serviços profissionais",
+    text: "A contratação pode incluir taxa de implantação, configuração inicial, treinamento, parametrização, importação de dados, integração local, suporte técnico ou customizações. Esses serviços podem ser cobrados separadamente da mensalidade e podem ter regras próprias de cancelamento quando já executados.",
+  },
+  {
+    title: "15. Direito de arrependimento",
+    text: "Quando a contratação ocorrer pela internet ou fora de estabelecimento comercial, o consumidor poderá exercer o direito de arrependimento no prazo de 7 dias corridos, conforme o Código de Defesa do Consumidor. A solicitação deve ser enviada para suporte@shamarconnect.com.br com identificação do contratante, e-mail da conta, plano contratado e referência da cobrança.",
+  },
+  {
+    title: "16. Cancelamento e reembolso",
+    text: "Dentro do prazo legal de arrependimento, a Moriah Systems analisará o cancelamento e a devolução dos valores elegíveis conforme a legislação aplicável. Após esse prazo, o cliente pode solicitar cancelamento da renovação futura, mantendo acesso até o fim do ciclo já pago, salvo violação dos Termos, inadimplência ou decisão operacional. Reembolso proporcional após o prazo legal não é automático.",
+  },
+  {
+    title: "17. Serviços já executados",
+    text: "Taxas de implantação, treinamento, configuração personalizada, integração local, migração de dados, desenvolvimento sob demanda e serviços profissionais já executados poderão não ser reembolsáveis integralmente, desde que essa condição tenha sido informada de forma clara antes da contratação e respeite a legislação aplicável.",
+  },
+  {
+    title: "18. Inadimplência e suspensão",
+    text: "Em caso de atraso no pagamento, a Moriah Systems poderá enviar avisos, restringir funcionalidades, suspender integrações, bloquear acesso ou cancelar a assinatura. A reativação poderá depender da quitação de valores em aberto e da confirmação do pagamento pelo provedor financeiro.",
+  },
+  {
+    title: "19. Conexões WhatsApp",
     text: "Cada conexão WhatsApp representa uma sessão, número ou canal conectado ao ShamarConnect. Os planos podem incluir uma quantidade definida de conexões, e conexões adicionais poderão ser cobradas à parte. O cliente é responsável por utilizar contas e números de forma regular, autorizada e compatível com as regras do WhatsApp.",
   },
   {
-    title: "14. Histórico, mídias e mensagens apagadas",
+    title: "20. Histórico, mídias e mensagens apagadas",
     text: "Quando contratado, o ShamarConnect pode armazenar histórico de mensagens, mídias, documentos, áudios, vídeos, localizações, contatos compartilhados e eventos de mensagem apagada pelo remetente. Esse recurso visa preservar histórico comercial, auditoria operacional e continuidade de atendimento. O cliente deve informar seus usuários e contatos conforme a legislação aplicável.",
   },
   {
-    title: "15. Módulo de Inteligência Artificial",
+    title: "21. Módulo de Inteligência Artificial",
     text: "O Módulo IA é um recurso adicional que pode incluir sugestões de resposta, transcrição de áudio, resumo de conversas, classificação de intenção, detecção de urgência e pontuação de leads. As respostas geradas por IA são sugestões de apoio e devem ser revisadas pelo usuário antes de uso comercial.",
   },
   {
-    title: "16. Shamar Agent",
+    title: "22. Shamar Agent",
     text: "O Shamar Agent é um componente complementar destinado a integrações com sistemas locais do cliente, quando contratado. A instalação, configuração e disponibilidade podem depender do ambiente técnico do cliente, permissões, rede, sistema local e regras de segurança.",
   },
   {
-    title: "17. Responsabilidades do cliente",
+    title: "23. Responsabilidades do cliente",
     text: "O cliente é responsável pelas informações cadastradas, mensagens enviadas, contatos importados, dados de clientes, permissões concedidas, uso de recursos de automação e cumprimento das leis aplicáveis à sua atividade, inclusive normas de proteção de dados e comunicação comercial.",
   },
   {
-    title: "18. Disponibilidade do serviço",
+    title: "24. Disponibilidade do serviço",
     text: "A Moriah Systems busca manter a plataforma disponível e estável, mas não garante funcionamento ininterrupto. Manutenções, falhas de terceiros, instabilidades de rede, atualizações, incidentes técnicos, bloqueios de provedores ou alterações em serviços externos podem afetar temporariamente o serviço.",
   },
   {
-    title: "19. Suporte",
+    title: "25. Suporte",
     text: "O suporte será prestado conforme o plano contratado e pelos canais informados oficialmente. O contato principal de suporte é suporte@shamarconnect.com.br. Solicitações podem exigir dados técnicos, identificação da conta e informações sobre o problema relatado.",
   },
   {
-    title: "20. Proteção de dados",
+    title: "26. Proteção de dados",
     text: "O tratamento de dados pessoais no ShamarConnect segue a Política de Privacidade publicada no site. O usuário declara possuir base legal e autorização adequada para cadastrar, importar ou tratar dados de clientes, leads, contatos e colaboradores na plataforma.",
   },
   {
-    title: "21. Segurança e credenciais",
-    text: "O usuário deve proteger credenciais, tokens, senhas, dispositivos e acessos administrativos. É proibido compartilhar acessos de forma irregular, burlar mecanismos de segurança, tentar acessar dados de outras empresas ou usar credenciais de terceiros sem autorização.",
+    title: "27. Segurança e credenciais",
+    text: "O usuário deve proteger credenciais, senhas, dispositivos e acessos administrativos. É proibido compartilhar acessos de forma irregular, tentar acessar dados de outras empresas ou usar credenciais de terceiros sem autorização.",
   },
   {
-    title: "22. Propriedade intelectual",
+    title: "28. Propriedade intelectual",
     text: "A marca ShamarConnect, identidade visual, códigos, interfaces, fluxos, textos, documentação, estrutura da plataforma e demais elementos são de titularidade da Moriah Systems ou de seus licenciantes. O uso da plataforma não transfere propriedade intelectual ao cliente.",
   },
   {
-    title: "23. Limitação de responsabilidade",
+    title: "29. Limitação de responsabilidade",
     text: "A Moriah Systems não se responsabiliza por perdas decorrentes de mau uso, decisões comerciais tomadas pelo cliente, indisponibilidade de terceiros, bloqueios de conta em provedores externos, mensagens enviadas indevidamente, dados incorretos ou falhas fora do controle razoável da plataforma.",
   },
   {
-    title: "24. Cancelamento e suspensão",
-    text: "O acesso poderá ser suspenso ou cancelado em caso de inadimplência, violação destes Termos, uso abusivo, risco de segurança, solicitação do cliente ou encerramento da contratação. Dados poderão ser retidos ou excluídos conforme a Política de Privacidade e obrigações legais.",
+    title: "30. Alterações nos Termos",
+    text: "Estes Termos podem ser atualizados para refletir mudanças legais, técnicas, comerciais, financeiras ou operacionais. A versão vigente será publicada no site oficial. O uso contínuo da plataforma após alterações representa concordância com a nova versão.",
   },
   {
-    title: "25. Alterações nos Termos",
-    text: "Estes Termos podem ser atualizados para refletir mudanças legais, técnicas, comerciais ou operacionais. A versão vigente será publicada no site oficial. O uso contínuo da plataforma após alterações representa concordância com a nova versão.",
-  },
-  {
-    title: "26. Foro",
-    text: "Fica eleito o foro da Comarca do Rio de Janeiro, RJ, para dirimir eventuais controvérsias relacionadas a estes Termos, salvo quando a legislação aplicável determinar foro diverso.",
+    title: "31. Legislação e foro",
+    text: "Estes Termos são regidos pelas leis da República Federativa do Brasil. Fica eleito o foro da Comarca do Rio de Janeiro, RJ, para dirimir controvérsias relacionadas a estes Termos, salvo quando a legislação aplicável determinar foro diverso ou obrigatório.",
   },
 ];
 
@@ -135,7 +155,7 @@ export default function TermsPage() {
             Termos de Uso
           </h1>
           <p className="mt-6 text-lg leading-8 text-slate-600">
-            Estes Termos regulam o acesso e uso do ShamarConnect, plataforma de atendimento comercial, CRM, WhatsApp, automações, integrações e recursos de inteligência artificial fornecida pela Moriah Systems Serviços Ltda.
+            Estes Termos regulam o acesso, contratação e uso do ShamarConnect, plataforma de atendimento comercial, CRM, WhatsApp, automações, integrações, cobrança e recursos de inteligência artificial fornecida pela Moriah Systems Serviços Ltda.
           </p>
           <p className="mt-4 text-sm font-semibold text-slate-500">
             Última atualização: junho de 2026
