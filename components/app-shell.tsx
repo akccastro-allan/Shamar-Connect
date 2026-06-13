@@ -1,27 +1,5 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import {
-  Activity,
-  Bot,
-  Building,
-  CreditCard,
-  Download,
-  FileText,
-  FlaskConical,
-  GitBranch,
-  KanbanSquare,
-  LayoutDashboard,
-  ListChecks,
-  Megaphone,
-  MessageCircle,
-  Palette,
-  Settings,
-  ShieldCheck,
-  Tags,
-  Upload,
-  Users,
-  Zap,
-} from "lucide-react";
 import { BrandIcon } from "@/components/brand/brand-logo";
 import { cn } from "@/lib/utils";
 import { getCurrentSession } from "@/lib/auth/session";
@@ -31,47 +9,47 @@ const navigationGroups = [
   {
     label: "Operação",
     items: [
-      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-      { href: "/inbox", label: "Inbox", icon: MessageCircle },
-      { href: "/whatsapp-messages", label: "Mensagens WhatsApp", icon: MessageCircle },
-      { href: "/settings/whatsapp", label: "WhatsApp", icon: Settings },
+      { href: "/dashboard", label: "Dashboard", marker: "D" },
+      { href: "/inbox", label: "Inbox", marker: "I" },
+      { href: "/whatsapp-messages", label: "Mensagens WhatsApp", marker: "W" },
+      { href: "/settings/whatsapp", label: "WhatsApp", marker: "C" },
     ],
   },
   {
     label: "CRM e vendas",
     items: [
-      { href: "/contacts", label: "Contatos", icon: Users },
-      { href: "/crm", label: "CRM", icon: Tags },
-      { href: "/pipeline", label: "Funil", icon: KanbanSquare },
-      { href: "/campaigns", label: "Campanhas", icon: Megaphone },
+      { href: "/contacts", label: "Contatos", marker: "C" },
+      { href: "/crm", label: "CRM", marker: "R" },
+      { href: "/pipeline", label: "Funil", marker: "F" },
+      { href: "/campaigns", label: "Campanhas", marker: "M" },
     ],
   },
   {
     label: "Gestão interna",
     items: [
-      { href: "/admin", label: "Administração", icon: Building },
-      { href: "/financeiro", label: "Financeiro", icon: CreditCard },
+      { href: "/admin", label: "Administração", marker: "A" },
+      { href: "/financeiro", label: "Financeiro", marker: "$" },
     ],
   },
   {
     label: "Automação e dados",
     items: [
-      { href: "/quick-replies", label: "Respostas", icon: FileText },
-      { href: "/conversation-flows", label: "Fluxos", icon: GitBranch },
-      { href: "/automations", label: "Automações", icon: Zap },
-      { href: "/knowledge", label: "Conhecimento", icon: Bot },
-      { href: "/whatsapp-import", label: "Importação WhatsApp", icon: Download },
-      { href: "/contact-import", label: "Importar contatos", icon: Upload },
-      { href: "/group-import-lists", label: "Listas importadas", icon: ListChecks },
+      { href: "/quick-replies", label: "Respostas", marker: "R" },
+      { href: "/conversation-flows", label: "Fluxos", marker: "F" },
+      { href: "/automations", label: "Automações", marker: "Z" },
+      { href: "/knowledge", label: "Conhecimento", marker: "K" },
+      { href: "/whatsapp-import", label: "Importação WhatsApp", marker: "I" },
+      { href: "/contact-import", label: "Importar contatos", marker: "U" },
+      { href: "/group-import-lists", label: "Listas importadas", marker: "L" },
     ],
   },
   {
     label: "Sistema",
     items: [
-      { href: "/system-test", label: "Teste do sistema", icon: Activity },
-      { href: "/ui-lab", label: "UI Lab", icon: Palette },
-      { href: "/feature-lab", label: "Feature Lab", icon: FlaskConical },
-      { href: "/audit", label: "Auditoria", icon: ShieldCheck },
+      { href: "/system-test", label: "Teste do sistema", marker: "T" },
+      { href: "/ui-lab", label: "UI Lab", marker: "U" },
+      { href: "/feature-lab", label: "Feature Lab", marker: "F" },
+      { href: "/audit", label: "Auditoria", marker: "S" },
     ],
   },
 ];
@@ -98,7 +76,6 @@ function SidebarContent({ active }: { active?: string }) {
 
             <div className="space-y-1">
               {group.items.map((item) => {
-                const Icon = item.icon;
                 const isActive = active ? item.href.includes(active) || active.includes(item.href.replace("/", "")) : false;
 
                 return (
@@ -110,7 +87,9 @@ function SidebarContent({ active }: { active?: string }) {
                       isActive && "bg-[#2ABFAB] text-white shadow-lg shadow-black/10"
                     )}
                   >
-                    <Icon className="h-4 w-4 shrink-0" />
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-lg bg-white/10 text-[10px] font-black text-white/75">
+                      {item.marker}
+                    </span>
                     <span className="truncate">{item.label}</span>
                   </Link>
                 );
