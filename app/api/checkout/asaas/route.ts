@@ -166,7 +166,7 @@ export async function POST(request: NextRequest) {
       externalReference: `shamar_checkout_${checkoutSession.id}`,
       callback: APP_PUBLIC_URL
         ? {
-            successUrl: `${APP_PUBLIC_URL}/login?checkout=success`,
+            successUrl: `${APP_PUBLIC_URL}/checkout/sucesso?checkout=${checkoutSession.id}`,
             autoRedirect: true,
           }
         : undefined,
