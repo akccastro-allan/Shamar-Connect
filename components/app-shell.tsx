@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import {
   Activity,
   Bot,
+  Building2,
+  CreditCard,
   Download,
   FileText,
   FlaskConical,
@@ -42,6 +44,13 @@ const navigationGroups = [
       { href: "/crm", label: "CRM", icon: Tags },
       { href: "/pipeline", label: "Funil", icon: KanbanSquare },
       { href: "/campaigns", label: "Campanhas", icon: Megaphone },
+    ],
+  },
+  {
+    label: "Gestão interna",
+    items: [
+      { href: "/admin", label: "Administração", icon: Building2 },
+      { href: "/financeiro", label: "Financeiro", icon: CreditCard },
     ],
   },
   {
