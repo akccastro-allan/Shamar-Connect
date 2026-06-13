@@ -3,7 +3,8 @@ import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 
 const ASAAS_API_BASE_URL = process.env.ASAAS_API_BASE_URL || "https://api-sandbox.asaas.com/v3";
 const ASAAS_API_KEY = process.env.ASAAS_API_KEY || "";
-const APP_PUBLIC_URL = process.env.APP_PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || "";
+const RAW_APP_PUBLIC_URL = process.env.APP_PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || "";
+const DEFAULT_PUBLIC_URL = "https://shamarconnect.com.br";
 
 type CheckoutInput = {
   planSlug?: string;
@@ -35,6 +36,16 @@ function normalizePositiveInteger(value: unknown) {
 function money(value: unknown) {
   const parsed = Number(value || 0);
   return Math.round(parsed * 100) / 100;
+}
+
+function getSafePublicUrl() {
+  const value = RAW_APP_PUBLIC_URL.trim().replace(/\/$/, "");
+
+  if (!value || value.includes("localhost") || value.includes("127.0.0.1") || value.startsWith("http://")) {
+    return DEFAULT_PUBLIC_URL;
+  }
+
+  return value;
 }
 
 async function asaasRequest(path: string, body: Record<string, unknown>) {
@@ -156,6 +167,7 @@ export async function POST(request: NextRequest) {
 
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + 1);
+    const publicUrl = getSafePublicUrl();
 
     const payment = await asaasRequest("/payments", {
       customer: customer.id,
@@ -164,12 +176,10 @@ export async function POST(request: NextRequest) {
       dueDate: dueDate.toISOString().slice(0, 10),
       description: `ShamarConnect ${plan.plan_name} - ${billingCycle === "annual" ? "anual" : "mensal"}`,
       externalReference: `shamar_checkout_${checkoutSession.id}`,
-      callback: APP_PUBLIC_URL
-        ? {
-            successUrl: `${APP_PUBLIC_URL}/checkout/sucesso?checkout=${checkoutSession.id}`,
-            autoRedirect: true,
-          }
-        : undefined,
+      callback: {
+        successUrl: `${publicUrl}/checkout/sucesso?checkout=${checkoutSession.id}`,
+        autoRedirect: true,
+      },
     });
 
     const paymentUrl = payment.invoiceUrl || payment.bankSlipUrl || payment.transactionReceiptUrl || null;
