@@ -35,6 +35,8 @@ export function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     "/dashboard/:path*",
+    "/admin/:path*",
+    "/financeiro/:path*",
     "/inbox/:path*",
     "/whatsapp-messages/:path*",
     "/settings/:path*",
