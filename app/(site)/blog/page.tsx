@@ -9,6 +9,13 @@ export const metadata: Metadata = {
 
 const posts = [
   {
+    title: "Atendimento comercial pelo WhatsApp: como criar um processo simples",
+    description: "Guia pratico para criar processo comercial simples no atendimento pelo WhatsApp.",
+    href: "/blog/atendimento-comercial-pelo-whatsapp-como-criar-um-processo-simples",
+    category: "Atendimento comercial",
+    readTime: "7 min",
+  },
+  {
     title: "CRM para equipe comercial: como organizar vendedores e atendentes",
     description: "Guia pratico para organizar equipe comercial, responsaveis, etapas e oportunidades.",
     href: "/blog/crm-para-equipe-comercial-como-organizar-vendedores-e-atendentes",
