@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import {
   Activity,
   Bot,
-  Building2,
+  Building,
   CreditCard,
   Download,
   FileText,
@@ -49,7 +49,7 @@ const navigationGroups = [
   {
     label: "Gestão interna",
     items: [
-      { href: "/admin", label: "Administração", icon: Building2 },
+      { href: "/admin", label: "Administração", icon: Building },
       { href: "/financeiro", label: "Financeiro", icon: CreditCard },
     ],
   },
@@ -119,19 +119,6 @@ function SidebarContent({ active }: { active?: string }) {
           </div>
         ))}
       </nav>
-
-      <div className="mt-6 rounded-3xl border border-white/10 bg-white/10 p-4 text-white">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold text-white/50">Status</p>
-            <p className="mt-1 text-sm font-black">Operação ativa</p>
-          </div>
-          <span className="h-3 w-3 rounded-full bg-[#2ABFAB] shadow-lg shadow-[#2ABFAB]/40" />
-        </div>
-        <p className="mt-3 text-xs leading-5 text-white/55">
-          Ambiente preparado para atendimento, CRM, importações e demonstrações comerciais.
-        </p>
-      </div>
     </div>
   );
 }
@@ -139,20 +126,20 @@ function SidebarContent({ active }: { active?: string }) {
 async function assertAuthorizedSession() {
   const session = await getCurrentSession();
 
-  if (!session?.userId || !session.companyId) {
+  if (!session?.userId || !session?.companyId) {
     redirect("/login");
   }
 
   const db = createSupabaseWriteClient();
 
-  const { data: user } = await db
+  const { data: appUser } = await db
     .from("app_users")
     .select("id, status")
     .eq("id", session.userId)
     .eq("status", "active")
     .maybeSingle();
 
-  if (!user) {
+  if (!appUser) {
     redirect("/planos?reason=not-authorized");
   }
 
@@ -162,47 +149,30 @@ async function assertAuthorizedSession() {
     .eq("app_user_id", session.userId)
     .eq("status", "active")
     .or(`organization_id.eq.${session.companyId},tenant_id.eq.${session.companyId}`)
-    .limit(1)
     .maybeSingle();
 
   if (!tenantUser) {
     redirect("/planos?reason=not-authorized");
   }
+
+  return session;
 }
 
 export async function AppShell({ children, active }: { children: React.ReactNode; active?: string }) {
   await assertAuthorizedSession();
 
   return (
-    <div className="min-h-screen bg-slate-100">
-      <aside className="fixed inset-y-0 left-0 hidden w-80 bg-[#1B2F5B] p-5 shadow-2xl lg:block">
+    <div className="min-h-screen bg-[#F8FAFC] text-slate-950 lg:grid lg:grid-cols-[280px_1fr]">
+      <aside className="hidden h-screen bg-[#1B2F5B] p-5 lg:sticky lg:top-0 lg:block">
         <SidebarContent active={active} />
       </aside>
 
-      <div className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur lg:hidden">
-        <div className="flex items-center justify-between gap-4">
-          <Link href="/dashboard" className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-slate-100">
-              <BrandIcon className="h-8 w-8 object-contain" />
-            </div>
-            <div>
-              <p className="text-sm font-black text-[#1B2F5B]">ShamarConnect</p>
-              <p className="text-[11px] font-semibold text-slate-500">Painel interno</p>
-            </div>
-          </Link>
-
-          <Link
-            href="/settings/whatsapp"
-            className="rounded-full bg-[#1B2F5B] px-4 py-2 text-xs font-black text-white"
-          >
-            WhatsApp
-          </Link>
+      <div className="min-w-0">
+        <div className="border-b border-slate-200 bg-white px-5 py-4 lg:hidden">
+          <SidebarContent active={active} />
         </div>
+        {children}
       </div>
-
-      <main className="lg:pl-80">
-        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">{children}</div>
-      </main>
     </div>
   );
 }
