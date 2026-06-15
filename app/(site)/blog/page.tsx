@@ -9,6 +9,13 @@ export const metadata: Metadata = {
 
 const posts = [
   {
+    title: "Como organizar prioridades no atendimento pelo WhatsApp",
+    description: "Guia pratico para priorizar conversas, oportunidades e proximas acoes no WhatsApp.",
+    href: "/blog/como-organizar-prioridades-no-atendimento-pelo-whatsapp",
+    category: "Prioridade no atendimento",
+    readTime: "7 min",
+  },
+  {
     title: "Como usar respostas rápidas sem deixar o atendimento robótico",
     description: "Guia pratico para usar respostas rapidas com contexto e atendimento humano.",
     href: "/blog/como-usar-respostas-rapidas-sem-deixar-o-atendimento-robotico",
