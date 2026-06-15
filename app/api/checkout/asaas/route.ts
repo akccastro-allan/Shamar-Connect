@@ -158,7 +158,7 @@ export async function POST(request: NextRequest) {
 
     const payment = await asaasRequest("/payments", {
       customer: customer.id,
-      billingType: "UNDEFINED",
+      billingType: "PIX",
       value: totalAmount,
       dueDate: dueDate.toISOString().slice(0, 10),
       description: `ShamarConnect ${plan.plan_name} - ${billingCycle === "annual" ? "anual" : "mensal"}`,
