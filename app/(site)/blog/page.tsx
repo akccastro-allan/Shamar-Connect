@@ -9,6 +9,13 @@ export const metadata: Metadata = {
 
 const posts = [
   {
+    title: "Como usar respostas rápidas sem deixar o atendimento robótico",
+    description: "Guia pratico para usar respostas rapidas com contexto e atendimento humano.",
+    href: "/blog/como-usar-respostas-rapidas-sem-deixar-o-atendimento-robotico",
+    category: "Respostas rápidas",
+    readTime: "7 min",
+  },
+  {
     title: "Como reduzir o tempo de resposta no WhatsApp da empresa",
     description: "Guia pratico para responder mais rapido no WhatsApp sem perder qualidade.",
     href: "/blog/como-reduzir-o-tempo-de-resposta-no-whatsapp-da-empresa",
