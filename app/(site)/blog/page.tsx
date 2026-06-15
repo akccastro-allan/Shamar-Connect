@@ -9,6 +9,13 @@ export const metadata: Metadata = {
 
 const posts = [
   {
+    title: "Como reduzir o tempo de resposta no WhatsApp da empresa",
+    description: "Guia pratico para responder mais rapido no WhatsApp sem perder qualidade.",
+    href: "/blog/como-reduzir-o-tempo-de-resposta-no-whatsapp-da-empresa",
+    category: "Atendimento pelo WhatsApp",
+    readTime: "7 min",
+  },
+  {
     title: "Indicadores de atendimento no WhatsApp: o que o gestor precisa acompanhar",
     description: "Guia pratico sobre indicadores para melhorar atendimento e vendas pelo WhatsApp.",
     href: "/blog/indicadores-de-atendimento-no-whatsapp-o-que-o-gestor-precisa-acompanhar",
