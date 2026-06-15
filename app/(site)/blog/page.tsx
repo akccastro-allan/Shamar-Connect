@@ -9,6 +9,13 @@ export const metadata: Metadata = {
 
 const posts = [
   {
+    title: "Indicadores de atendimento no WhatsApp: o que o gestor precisa acompanhar",
+    description: "Guia pratico sobre indicadores para melhorar atendimento e vendas pelo WhatsApp.",
+    href: "/blog/indicadores-de-atendimento-no-whatsapp-o-que-o-gestor-precisa-acompanhar",
+    category: "Gestão de atendimento",
+    readTime: "7 min",
+  },
+  {
     title: "Como organizar atendimento, vendas e CRM em uma única operação",
     description: "Guia pratico para integrar atendimento, vendas, CRM, historico e IA em uma unica operacao.",
     href: "/blog/como-organizar-atendimento-vendas-e-crm-em-uma-unica-operacao",
