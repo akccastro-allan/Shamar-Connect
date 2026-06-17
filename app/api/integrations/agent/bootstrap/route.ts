@@ -164,7 +164,7 @@ export async function POST(request: NextRequest) {
         tenant_id: tenantId,
         organization_id: organizationId,
         integration_source_id: source.id,
-        name: agentName,
+        agent_agent_name: agentName,
         machine_name: machineName,
         operating_system: operatingSystem,
         agent_version: agentVersion,
@@ -187,7 +187,7 @@ export async function POST(request: NextRequest) {
       tenant_id: tenantId,
       organization_id: organizationId,
       integration_source_id: source.id,
-      integration_agent_id: (agent as any).id,
+      agent_id: (agent as any).id,
       level: "info",
       message: "Agente ativado via bootstrap do Shamar Agent.",
       context: {
