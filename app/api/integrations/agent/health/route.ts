@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
       tenant_id: (agent as any).tenant_id || (source as any).tenant_id,
       organization_id: (agent as any).organization_id || (source as any).organization_id,
       integration_source_id: (source as any).id,
-      integration_agent_id: (agent as any).id,
+      agent_id: (agent as any).id,
       level: "info",
       message: "Health check recebido do agente.",
       context: {

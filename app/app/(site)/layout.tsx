@@ -39,8 +39,8 @@ export default function SiteLayout({ children }: { children: ReactNode }) {
             <Link href="/login" className="text-sm font-medium text-slate-600 hover:text-[#1B2F5B]">
               Entrar
             </Link>
-            <Link href="/login" className="bg-[#2ABFAB] text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-[#239f90] transition">
-              Começar grátis
+            <Link href="/planos" className="bg-[#2ABFAB] text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-[#239f90] transition">
+              Escolher plano
             </Link>
           </div>
         </div>
@@ -62,7 +62,7 @@ export default function SiteLayout({ children }: { children: ReactNode }) {
               <ul className="space-y-2 text-sm text-slate-300">
                 <li><Link href="/planos" className="hover:text-white">Planos</Link></li>
                 <li><Link href="/login" className="hover:text-white">Entrar</Link></li>
-                <li><Link href="/login" className="hover:text-white">Criar conta</Link></li>
+                <li><Link href="/planos" className="hover:text-white">Criar conta</Link></li>
               </ul>
             </div>
             <div>

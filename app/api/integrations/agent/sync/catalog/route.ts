@@ -108,11 +108,11 @@ export async function POST(request: NextRequest) {
     const tenantId = (agent as any).tenant_id || (source as any).tenant_id;
     const organizationId = (agent as any).organization_id || (source as any).organization_id;
     const integrationSourceId = (source as any).id;
-    const integrationAgentId = (agent as any).id;
+    const agentId = (agent as any).id;
     const externalSource = (source as any).source_type || "unknown";
     const startedAt = new Date().toISOString();
 
-    await touchAgentSeen(integrationAgentId, request);
+    await touchAgentSeen(agentId, request);
 
     const { data: syncRun, error: syncRunError } = await supabase
       .from("integration_sync_runs")
@@ -120,7 +120,8 @@ export async function POST(request: NextRequest) {
         tenant_id: tenantId,
         organization_id: organizationId,
         integration_source_id: integrationSourceId,
-        integration_agent_id: integrationAgentId,
+        agent_id: agentId,
+        sync_type: "catalog",
         status: "running",
         started_at: startedAt,
         items_received: items.length,
@@ -173,7 +174,7 @@ export async function POST(request: NextRequest) {
           source_updated_at: toStringOrNull(item?.sourceUpdatedAt),
           last_synced_at: new Date().toISOString(),
           raw_payload: item?.rawPayload || item,
-          metadata: { syncedBy: "shamar_agent", integrationSourceId, integrationAgentId },
+          metadata: { syncedBy: "shamar_agent", integrationSourceId, agentId },
         };
 
         const { data: existingItem, error: lookupError } = await supabase
@@ -232,7 +233,7 @@ export async function POST(request: NextRequest) {
       tenant_id: tenantId,
       organization_id: organizationId,
       integration_source_id: integrationSourceId,
-      integration_agent_id: integrationAgentId,
+      agent_id: agentId,
       sync_run_id: syncRunId,
       level: failed > 0 ? "warning" : "info",
       message: "Sincronização de catálogo recebida do Shamar Agent.",
