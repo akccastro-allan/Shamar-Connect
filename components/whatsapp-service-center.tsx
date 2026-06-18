@@ -15,6 +15,14 @@ type Conversation = {
   status: string;
   unread_count: number;
   last_message_at: string | null;
+  last_inbound_at?: string | null;
+  last_outbound_at?: string | null;
+  last_message_direction?: "inbound" | "outbound" | string | null;
+  requires_human?: boolean | null;
+  pending_reason?: string | null;
+  sla_status?: "pending" | "breached" | "ok" | string | null;
+  sla_due_at?: string | null;
+  watchdog_checked_at?: string | null;
   crm_contacts?: { id: string; name: string | null; phone: string | null; email: string | null; company: string | null; consent_status: string | null } | null;
   latest_message?: { body: string | null; direction: "inbound" | "outbound"; created_at: string } | null;
 };
@@ -125,6 +133,88 @@ function getMediaLabel(message: Message) {
   return message.media_summary || "Mídia";
 }
 
+function parseTime(value?: string | null) {
+  if (!value) return 0;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+function minutesSince(value?: string | null) {
+  const time = parseTime(value);
+  if (!time) return 0;
+  return Math.max(0, Math.floor((Date.now() - time) / 60000));
+}
+
+function formatWaiting(value?: string | null) {
+  const minutes = minutesSince(value);
+  if (!minutes) return "—";
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest ? `${hours}h ${rest}min` : `${hours}h`;
+}
+
+function getPendingReasonLabel(reason?: string | null) {
+  if (reason === "unanswered_inbound") return "Cliente sem resposta";
+  if (reason === "media_requires_human") return "Mídia recebida sem resposta";
+  if (reason === "sticker_requires_human") return "Figurinha recebida sem resposta";
+  if (reason === "non_text_requires_human") return "Conteúdo exige atendimento humano";
+  return reason || "Precisa de atendimento humano";
+}
+
+function isUnanswered(conversation: Conversation) {
+  const inbound = parseTime(conversation.last_inbound_at || (conversation.latest_message?.direction === "inbound" ? conversation.latest_message.created_at : null));
+  const outbound = parseTime(conversation.last_outbound_at || (conversation.latest_message?.direction === "outbound" ? conversation.latest_message.created_at : null));
+  return inbound > 0 && inbound > outbound;
+}
+
+function getQueueDate(conversation: Conversation) {
+  return conversation.last_inbound_at || conversation.sla_due_at || conversation.last_message_at || conversation.latest_message?.created_at || null;
+}
+
+function getQueueRank(conversation: Conversation) {
+  if (conversation.sla_status === "breached") return 0;
+  if (isUnanswered(conversation)) return 1;
+  if (conversation.requires_human) return 2;
+  if (conversation.sla_status === "pending") return 3;
+  return 4;
+}
+
+function sortConversationsForQueue(items: Conversation[]) {
+  return [...items].sort((a, b) => {
+    const rankDiff = getQueueRank(a) - getQueueRank(b);
+    if (rankDiff !== 0) return rankDiff;
+
+    const aTime = parseTime(getQueueDate(a));
+    const bTime = parseTime(getQueueDate(b));
+    if (aTime && bTime && aTime !== bTime) return aTime - bTime;
+    if (aTime !== bTime) return aTime ? -1 : 1;
+    return getConversationName(a).localeCompare(getConversationName(b), "pt-BR");
+  });
+}
+
+function playAlertSound() {
+  if (typeof window === "undefined") return;
+  const AudioContextConstructor = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!AudioContextConstructor) return;
+
+  const audioContext = new AudioContextConstructor();
+  const oscillator = audioContext.createOscillator();
+  const gain = audioContext.createGain();
+
+  oscillator.type = "sine";
+  oscillator.frequency.setValueAtTime(880, audioContext.currentTime);
+  oscillator.frequency.setValueAtTime(660, audioContext.currentTime + 0.12);
+  gain.gain.setValueAtTime(0.001, audioContext.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.18, audioContext.currentTime + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.32);
+
+  oscillator.connect(gain);
+  gain.connect(audioContext.destination);
+  oscillator.start();
+  oscillator.stop(audioContext.currentTime + 0.34);
+}
+
 export function WhatsappServiceCenter() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -132,22 +222,57 @@ export function WhatsappServiceCenter() {
   const [conversationFlows, setConversationFlows] = useState<ConversationFlow[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState("");
   const [query, setQuery] = useState("");
+  const [queueFilter, setQueueFilter] = useState<"all" | "breached" | "human" | "unanswered">("all");
   const [quickReplyQuery, setQuickReplyQuery] = useState("");
   const [flowQuery, setFlowQuery] = useState("");
   const [replyBody, setReplyBody] = useState("");
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [sending, setSending] = useState(false);
+  const [watchdogRunning, setWatchdogRunning] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(false);
+  const [lastAlertKey, setLastAlertKey] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const selectedConversation = useMemo(() => conversations.find((conversation) => conversation.id === selectedConversationId) || conversations[0], [conversations, selectedConversationId]);
 
+  const queueStats = useMemo(() => {
+    const breached = conversations.filter((item) => item.sla_status === "breached").length;
+    const requiresHuman = conversations.filter((item) => item.requires_human).length;
+    const unanswered = conversations.filter(isUnanswered).length;
+    const waitingConversations = conversations.filter((item) => item.sla_status === "breached" || item.requires_human || isUnanswered(item));
+    const oldest = waitingConversations
+      .map((item) => parseTime(getQueueDate(item)))
+      .filter(Boolean)
+      .sort((a, b) => a - b)[0];
+
+    return {
+      breached,
+      requiresHuman,
+      unanswered,
+      oldestWaitingLabel: oldest ? formatWaiting(new Date(oldest).toISOString()) : "—",
+    };
+  }, [conversations]);
+
   const filteredConversations = useMemo(() => {
     const term = query.trim().toLowerCase();
-    if (!term) return conversations;
-    return conversations.filter((conversation) => [conversation.name, conversation.external_chat_id, conversation.crm_contacts?.name, conversation.crm_contacts?.phone, conversation.latest_message?.body].filter(Boolean).join(" ").toLowerCase().includes(term));
-  }, [conversations, query]);
+    let items = conversations;
+
+    if (queueFilter === "breached") items = items.filter((conversation) => conversation.sla_status === "breached");
+    if (queueFilter === "human") items = items.filter((conversation) => conversation.requires_human);
+    if (queueFilter === "unanswered") items = items.filter(isUnanswered);
+
+    if (term) {
+      items = items.filter((conversation) => [conversation.name, conversation.external_chat_id, conversation.crm_contacts?.name, conversation.crm_contacts?.phone, conversation.latest_message?.body, conversation.pending_reason]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(term));
+    }
+
+    return sortConversationsForQueue(items);
+  }, [conversations, query, queueFilter]);
 
   const filteredQuickReplies = useMemo(() => {
     const term = quickReplyQuery.trim().toLowerCase();
@@ -167,8 +292,9 @@ export function WhatsappServiceCenter() {
     setError(null);
     try {
       const data = await readJson<{ ok: boolean; conversations: Conversation[] }>("/api/whatsapp-messages/conversations");
-      setConversations(data.conversations || []);
-      const firstId = selectedConversationId || data.conversations?.[0]?.id || "";
+      const sorted = sortConversationsForQueue(data.conversations || []);
+      setConversations(sorted);
+      const firstId = selectedConversationId || sorted[0]?.id || "";
       setSelectedConversationId(firstId);
       if (firstId) await loadMessages(firstId);
     } catch (err) {
@@ -231,6 +357,32 @@ export function WhatsappServiceCenter() {
     } finally {
       setSyncing(false);
     }
+  }
+
+  async function runWatchdog() {
+    setWatchdogRunning(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const data = await readJson<{ ok: boolean; checkedAt: string; staleMinutes: number; scannedConversations: number; requiresHuman: number; breached: number; pending: number }>("/api/whatsapp-web/watchdog?staleMinutes=5");
+      await loadConversations();
+      const alertKey = `${data.breached}:${data.requiresHuman}:${data.pending}:${data.checkedAt}`;
+      if (soundEnabled && alertKey !== lastAlertKey && (data.breached > 0 || data.requiresHuman > 0)) {
+        playAlertSound();
+        setLastAlertKey(alertKey);
+      }
+      setNotice(`Pendências verificadas: ${data.breached} atrasada(s), ${data.requiresHuman} precisa(m) humano.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao verificar pendências");
+    } finally {
+      setWatchdogRunning(false);
+    }
+  }
+
+  function enableSound() {
+    setSoundEnabled(true);
+    playAlertSound();
+    setNotice("Alertas sonoros ativados nesta aba.");
   }
 
   async function applyQuickReply(reply: QuickReply) {
@@ -299,21 +451,24 @@ export function WhatsappServiceCenter() {
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <CardTitle className="flex items-center gap-2 text-2xl"><MessageCircle className="h-6 w-6 text-emerald-700" />Central de atendimento WhatsApp</CardTitle>
-              <CardDescription className="mt-2 max-w-3xl">Visualize conversas salvas, leia mensagens, use respostas rápidas, aplique fluxos e envie respostas registradas no CRM/Supabase.</CardDescription>
+              <CardDescription className="mt-2 max-w-3xl">Fila operacional por SLA: conversas antigas e atrasadas aparecem primeiro; chamadas novas entram no final da fila.</CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button onClick={loadConversations} disabled={loading} variant="outline"><RefreshCcw className="mr-2 h-4 w-4" />Atualizar</Button>
+              <Button onClick={runWatchdog} disabled={watchdogRunning} variant="outline"><Clock className="mr-2 h-4 w-4" />Verificar pendências</Button>
+              <Button onClick={enableSound} disabled={soundEnabled} variant="outline">{soundEnabled ? "Som ativo" : "Ativar som"}</Button>
               <Button asChild><Link href="/whatsapp-import"><Download className="mr-2 h-4 w-4" />Importar WhatsApp</Link></Button>
             </div>
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-3 sm:grid-cols-5">
+          <div className="grid gap-3 sm:grid-cols-6">
             <div className="rounded-2xl border bg-white p-4"><p className="text-xs text-muted-foreground">Conversas</p><p className="text-2xl font-semibold">{conversations.length}</p></div>
             <div className="rounded-2xl border bg-white p-4"><p className="text-xs text-muted-foreground">Grupos</p><p className="text-2xl font-semibold">{conversations.filter((item) => item.is_group).length}</p></div>
-            <div className="rounded-2xl border bg-white p-4"><p className="text-xs text-muted-foreground">Mensagens</p><p className="text-2xl font-semibold">{messages.length}</p></div>
-            <div className="rounded-2xl border bg-white p-4"><p className="text-xs text-muted-foreground">Respostas</p><p className="text-2xl font-semibold">{quickReplies.length}</p></div>
-            <div className="rounded-2xl border bg-white p-4"><p className="text-xs text-muted-foreground">Fluxos</p><p className="text-2xl font-semibold">{conversationFlows.length}</p></div>
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-4"><p className="text-xs text-red-700">SLA estourado</p><p className="text-2xl font-semibold text-red-800">{queueStats.breached}</p></div>
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4"><p className="text-xs text-amber-700">Precisa humano</p><p className="text-2xl font-semibold text-amber-800">{queueStats.requiresHuman}</p></div>
+            <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4"><p className="text-xs text-orange-700">Sem resposta</p><p className="text-2xl font-semibold text-orange-800">{queueStats.unanswered}</p></div>
+            <div className="rounded-2xl border bg-white p-4"><p className="text-xs text-muted-foreground">Mais antigo</p><p className="text-2xl font-semibold">{queueStats.oldestWaitingLabel}</p></div>
           </div>
           {error ? <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</div> : null}
           {notice ? <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">{notice}</div> : null}
@@ -323,10 +478,16 @@ export function WhatsappServiceCenter() {
       <div className="grid min-h-[760px] gap-6 xl:grid-cols-[360px_1fr_320px]">
         <Card className="overflow-hidden">
           <CardHeader className="border-b">
-            <CardTitle className="text-base">Conversas</CardTitle>
+            <CardTitle className="text-base">Fila de atendimento</CardTitle>
             <div className="relative mt-2">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
               <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar conversa" className="w-full rounded-xl border bg-white py-2 pl-9 pr-3 text-sm" />
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button size="sm" variant={queueFilter === "all" ? "default" : "outline"} onClick={() => setQueueFilter("all")}>Todas</Button>
+              <Button size="sm" variant={queueFilter === "breached" ? "default" : "outline"} onClick={() => setQueueFilter("breached")}>Atrasadas</Button>
+              <Button size="sm" variant={queueFilter === "human" ? "default" : "outline"} onClick={() => setQueueFilter("human")}>Precisa humano</Button>
+              <Button size="sm" variant={queueFilter === "unanswered" ? "default" : "outline"} onClick={() => setQueueFilter("unanswered")}>Sem resposta</Button>
             </div>
           </CardHeader>
           <CardContent className="p-0">
@@ -408,6 +569,20 @@ export function WhatsappServiceCenter() {
         </Card>
 
         <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base"><Clock className="h-5 w-5" />Controle anti-vácuo</CardTitle>
+              <CardDescription>Esta conversa só sai da fila quando houver resposta ou resolução registrada.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">SLA</p><p className="font-medium">{selectedConversation?.sla_status || "—"}</p></div>
+              <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Motivo</p><p className="font-medium">{getPendingReasonLabel(selectedConversation?.pending_reason)}</p></div>
+              <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Última entrada</p><p className="font-medium">{formatDate(selectedConversation?.last_inbound_at)}</p></div>
+              <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Última saída</p><p className="font-medium">{formatDate(selectedConversation?.last_outbound_at)}</p></div>
+              <Button onClick={runWatchdog} disabled={watchdogRunning} variant="outline" className="w-full"><Clock className="mr-2 h-4 w-4" />Verificar pendências</Button>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base"><Users className="h-5 w-5" />Contato / conversa</CardTitle>
