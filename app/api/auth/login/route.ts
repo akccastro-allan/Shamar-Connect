@@ -189,7 +189,7 @@ export async function POST(request: NextRequest) {
     const session = {
       companyId: tenantUser.organization_id || tenantUser.tenant_id,
       companyName: organizationName,
-      documentType: "cnpj",
+      documentType: "cnpj" as const,
       documentNumber,
       userId: appUser.id,
       userName: appUser.name || authenticatedEmail,
