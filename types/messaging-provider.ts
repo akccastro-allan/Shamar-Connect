@@ -41,6 +41,13 @@ export interface ProviderGroupParticipant {
   sourceGroupName: string;
 }
 
+export interface ProviderMediaPayload {
+  mimetype?: string;
+  data?: string;
+  filename?: string;
+  caption?: string;
+}
+
 export interface ProviderSyncedMessage {
   id: string;
   chatId: string;
@@ -54,6 +61,10 @@ export interface ProviderSyncedMessage {
   contactName?: string;
   phone?: string;
   type?: string;
+  hasMedia?: boolean;
+  media?: ProviderMediaPayload;
+  mediaType?: string;
+  mimeType?: string;
 }
 
 export interface MessagingProviderClient {
