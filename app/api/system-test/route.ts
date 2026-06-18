@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
+type EnvCheck = {
+  key: string;
+  ok: boolean;
+  optional?: boolean;
+};
+
 async function testSupabase() {
   try {
     const db = createSupabaseServerClient();
@@ -45,7 +51,7 @@ async function testGateway() {
 }
 
 function testEnv() {
-  const requiredChecks = [
+  const requiredChecks: EnvCheck[] = [
     { key: "NEXT_PUBLIC_SUPABASE_URL", ok: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL) },
     { key: "NEXT_PUBLIC_SUPABASE_ANON_KEY", ok: Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) },
     { key: "SUPABASE_SERVICE_ROLE_KEY", ok: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY) },
@@ -54,12 +60,12 @@ function testEnv() {
     { key: "SHAMARCONNECT_WEBHOOK_TOKEN", ok: Boolean(process.env.SHAMARCONNECT_WEBHOOK_TOKEN) },
   ];
 
-  const optionalChecks = [
+  const optionalChecks: EnvCheck[] = [
     { key: "INTERNAL_API_KEY", ok: Boolean(process.env.INTERNAL_API_KEY), optional: true },
     { key: "WHATSAPP_WEB_GATEWAY_SESSION_ID", ok: Boolean(process.env.WHATSAPP_WEB_GATEWAY_SESSION_ID), optional: true },
   ];
 
-  const checks = [...requiredChecks, ...optionalChecks];
+  const checks: EnvCheck[] = [...requiredChecks, ...optionalChecks];
 
   return {
     ok: requiredChecks.every((check) => check.ok),
