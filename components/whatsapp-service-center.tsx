@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { Bot, Clock, Download, FileText, GitBranch, Image as ImageIcon, MessageCircle, RefreshCcw, Search, Send, UserPlus, Users } from "lucide-react";
+import { Bot, Clock, Download, FileText, GitBranch, MessageCircle, RefreshCcw, Search, Send, UserPlus, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -380,7 +380,7 @@ export function WhatsappServiceCenter() {
                         </div>
                       ) : message.has_media ? (
                         <div className="flex items-center gap-2 rounded-xl border border-dashed border-slate-200 bg-white/70 p-3 text-sm text-slate-700">
-                          <ImageIcon className="h-4 w-4" />
+                          <FileText className="h-4 w-4" />
                           <span>{message.body || `[${mediaLabel} recebida]`}</span>
                         </div>
                       ) : (
