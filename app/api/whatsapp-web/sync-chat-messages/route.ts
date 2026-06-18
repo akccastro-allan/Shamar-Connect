@@ -11,6 +11,13 @@ function normalizePhone(value?: string) {
 type AppContext = Awaited<ReturnType<typeof getRequiredAppContext>>;
 type SupabaseWriteClient = ReturnType<typeof createSupabaseWriteClient>;
 
+type SyncMessageError = {
+  chatId: string;
+  messageId?: string;
+  step: string;
+  error: string;
+};
+
 async function upsertContact(
   client: SupabaseWriteClient,
   context: AppContext,
@@ -145,6 +152,30 @@ function resolveMessageBody(message: ProviderSyncedMessage) {
   return null;
 }
 
+function resolveMediaSummary(message: ProviderSyncedMessage) {
+  if (!message.hasMedia) return null;
+
+  const type = resolveMessageType(message);
+  const mimeType = message.mimeType || message.media?.mimetype || "";
+  const label = type === "sticker" ? "Figurinha" : type || "Mídia";
+
+  return mimeType ? `${label} (${mimeType})` : label;
+}
+
+function sanitizeRawPayload(message: ProviderSyncedMessage) {
+  const payload = JSON.parse(JSON.stringify(message)) as Record<string, unknown>;
+  const media = payload.media as Record<string, unknown> | undefined;
+
+  if (media && typeof media === "object" && typeof media.data === "string") {
+    const data = media.data;
+    delete media.data;
+    media.dataOmitted = true;
+    media.dataLength = data.length;
+  }
+
+  return payload;
+}
+
 async function upsertMessage(
   client: SupabaseWriteClient,
   context: AppContext,
@@ -178,7 +209,10 @@ async function upsertMessage(
     to_id: message.to || null,
     body: resolveMessageBody(message),
     message_type: resolveMessageType(message),
-    raw_payload: message,
+    raw_payload: sanitizeRawPayload(message),
+    has_media: Boolean(message.hasMedia),
+    media_count: message.hasMedia ? 1 : 0,
+    media_summary: resolveMediaSummary(message),
     created_at: message.timestamp
       ? new Date(Number(message.timestamp) * 1000).toISOString()
       : new Date().toISOString(),
@@ -229,20 +263,30 @@ async function syncChat(
   });
 
   let savedMessages = 0;
+  const errors: SyncMessageError[] = [];
 
   if (conversationId) {
     for (const message of messages) {
-      const messagePhone = normalizePhone(message.phone || message.from || message.to || phone);
-      const messageContactId = messagePhone
-        ? await upsertContact(client, context, messagePhone, message.contactName || chat.name || messagePhone)
-        : contactId;
+      try {
+        const messagePhone = normalizePhone(message.phone || message.from || message.to || phone);
+        const messageContactId = messagePhone
+          ? await upsertContact(client, context, messagePhone, message.contactName || chat.name || messagePhone)
+          : contactId;
 
-      const inserted = await upsertMessage(client, context, message, conversationId, messageContactId);
-      if (inserted) savedMessages += 1;
+        const inserted = await upsertMessage(client, context, message, conversationId, messageContactId);
+        if (inserted) savedMessages += 1;
+      } catch (error) {
+        errors.push({
+          chatId: chat.id,
+          messageId: message.id,
+          step: "upsertMessage",
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
   }
 
-  return { chatId: chat.id, scanned: messages.length, savedMessages, conversationId };
+  return { chatId: chat.id, scanned: messages.length, savedMessages, conversationId, errors };
 }
 
 async function syncChats(chatIds?: string[], messageLimit = 50, chatLimit = 20) {
@@ -254,23 +298,43 @@ async function syncChats(chatIds?: string[], messageLimit = 50, chatLimit = 20) 
     : allChats.slice(0, chatLimit);
 
   const results = [];
+  const chatErrors = [];
 
   for (const chat of selectedChats) {
-    results.push(await syncChat(client, context, chat, messageLimit));
+    try {
+      results.push(await syncChat(client, context, chat, messageLimit));
+    } catch (error) {
+      chatErrors.push({
+        chatId: chat.id,
+        step: "syncChat",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
+  const messageErrors = results.flatMap((item) => item.errors || []);
+
   return {
-    ok: true,
+    ok: chatErrors.length === 0 && messageErrors.length === 0,
+    partial: chatErrors.length > 0 || messageErrors.length > 0,
     totalGatewayChats: allChats.length,
     syncedChats: results.length,
+    failedChats: chatErrors.length,
+    failedMessages: messageErrors.length,
     savedMessages: results.reduce((sum, item) => sum + item.savedMessages, 0),
     results,
+    chatErrors,
+    messageErrors: messageErrors.slice(0, 20),
   };
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const result = await syncChats(undefined, 30, 20);
+    const searchParams = request.nextUrl.searchParams;
+    const chatId = searchParams.get("chatId");
+    const limit = Math.min(Number(searchParams.get("limit") || 30), 200);
+    const chatLimit = Math.min(Number(searchParams.get("chatLimit") || 20), 100);
+    const result = await syncChats(chatId ? [chatId] : undefined, limit, chatLimit);
     return NextResponse.json(result);
   } catch (error) {
     if (isUnauthorizedError(error)) {
