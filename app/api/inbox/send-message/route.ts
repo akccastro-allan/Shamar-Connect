@@ -37,27 +37,30 @@ export async function POST(request: NextRequest) {
     });
 
     const now = new Date().toISOString();
+    const externalMessageId = sent.id || `manual:${conversation.id}:${Date.now()}`;
 
-    const { error: messageError } = await client
+    // Use insert instead of upsert here because the production uniqueness is backed by
+    // partial indexes. PostgREST cannot reliably infer partial indexes with ON CONFLICT,
+    // which caused the gateway send to succeed while persistence failed afterward.
+    const { data: savedMessage, error: messageError } = await client
       .from("whatsapp_messages")
-      .upsert(
-        {
-          tenant_id: context.tenantId,
-          organization_id: context.organizationId,
-          external_message_id: sent.id,
-          provider: "whatsapp_web",
-          conversation_id: conversation.id,
-          contact_id: conversation.contact_id || null,
-          direction: "outbound",
-          from_id: "shamarconnect",
-          to_id: conversation.external_chat_id,
-          body: text,
-          message_type: "text",
-          raw_payload: { sent, source: "inbox_manual_reply" },
-          created_at: now,
-        },
-        { onConflict: "organization_id,provider,external_message_id" },
-      );
+      .insert({
+        tenant_id: context.tenantId,
+        organization_id: context.organizationId,
+        external_message_id: externalMessageId,
+        provider: "whatsapp_web",
+        conversation_id: conversation.id,
+        contact_id: conversation.contact_id || null,
+        direction: "outbound",
+        from_id: "shamarconnect",
+        to_id: conversation.external_chat_id,
+        body: text,
+        message_type: "text",
+        raw_payload: { sent, source: "inbox_manual_reply" },
+        created_at: now,
+      })
+      .select("id, external_message_id, conversation_id, contact_id, direction, from_id, to_id, body, message_type, created_at")
+      .single();
 
     if (messageError) throw messageError;
 
@@ -74,7 +77,7 @@ export async function POST(request: NextRequest) {
 
     if (updateError) throw updateError;
 
-    return NextResponse.json({ ok: true, messageId: sent.id, status: sent.status });
+    return NextResponse.json({ ok: true, messageId: externalMessageId, status: sent.status, message: savedMessage });
   } catch (error) {
     if (isUnauthorizedError(error)) {
       return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
@@ -86,4 +89,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-
