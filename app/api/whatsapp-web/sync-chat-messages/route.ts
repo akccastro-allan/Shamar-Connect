@@ -168,8 +168,15 @@ function sanitizeRawPayload(message: ProviderSyncedMessage) {
 
   if (media && typeof media === "object" && typeof media.data === "string") {
     const data = media.data;
-    delete media.data;
-    media.dataOmitted = true;
+    const type = String(payload.mediaType || payload.type || "").toLowerCase();
+    const mimeType = String(media.mimetype || payload.mimeType || "").toLowerCase();
+    const canInlineRender = type === "sticker" && mimeType.includes("webp") && data.length <= 250_000;
+
+    if (!canInlineRender) {
+      delete media.data;
+      media.dataOmitted = true;
+    }
+
     media.dataLength = data.length;
   }
 
