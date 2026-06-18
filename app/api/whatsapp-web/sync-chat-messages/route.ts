@@ -124,6 +124,27 @@ async function upsertConversation(
   return createdConversation?.id || null;
 }
 
+function resolveMessageType(message: ProviderSyncedMessage) {
+  return message.mediaType || message.type || (message.hasMedia ? "media" : "text");
+}
+
+function resolveMessageBody(message: ProviderSyncedMessage) {
+  const text = String(message.body || "").trim();
+  if (text) return text;
+
+  const type = resolveMessageType(message);
+  const mimeType = message.mimeType || message.media?.mimetype || "";
+
+  if (type === "sticker") return "[Figurinha recebida]";
+  if (type === "image") return "[Imagem recebida]";
+  if (type === "audio" || type === "ptt") return "[Áudio recebido]";
+  if (type === "video") return "[Vídeo recebido]";
+  if (type === "document") return "[Documento recebido]";
+  if (message.hasMedia) return mimeType ? `[Mídia recebida: ${mimeType}]` : "[Mídia recebida]";
+
+  return null;
+}
+
 async function upsertMessage(
   client: SupabaseWriteClient,
   context: AppContext,
@@ -155,8 +176,8 @@ async function upsertMessage(
     direction: message.direction || "inbound",
     from_id: message.from || null,
     to_id: message.to || null,
-    body: message.body || null,
-    message_type: message.type || "text",
+    body: resolveMessageBody(message),
+    message_type: resolveMessageType(message),
     raw_payload: message,
     created_at: message.timestamp
       ? new Date(Number(message.timestamp) * 1000).toISOString()
