@@ -9,22 +9,31 @@ import type {
 } from "@/types/messaging-provider";
 
 function getGatewayBaseUrl() {
-  return process.env.WHATSAPP_WEB_GATEWAY_URL?.replace(/\/$/, "") || "";
+  const rawBaseUrl = process.env.WHATSAPP_WEB_GATEWAY_URL?.replace(/\/$/, "") || "";
+
+  // The Railway WhatsApp gateway exposes session routes at the root, e.g.
+  // /sessions/:sessionId/status. Older ShamarConnect deployments sometimes
+  // configured the base URL with a trailing /api, so normalize that here.
+  return rawBaseUrl.replace(/\/api$/, "");
 }
 
 function getGatewayToken() {
   return process.env.WHATSAPP_WEB_GATEWAY_TOKEN || "";
 }
 
-function buildGatewayUrls(baseUrl: string, path: string) {
-  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  const primaryUrl = `${baseUrl}${normalizedPath}`;
+function getDefaultSessionId() {
+  return process.env.WHATSAPP_WEB_GATEWAY_SESSION_ID || "hall-main";
+}
 
-  if (baseUrl.endsWith("/api") || normalizedPath.startsWith("/api/")) {
-    return [primaryUrl];
+function withDefaultSession(path: string) {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+
+  if (normalizedPath.startsWith("/sessions/")) {
+    return normalizedPath;
   }
 
-  return [primaryUrl, `${baseUrl}/api${normalizedPath}`];
+  const sessionId = encodeURIComponent(getDefaultSessionId());
+  return `/sessions/${sessionId}${normalizedPath}`;
 }
 
 async function gatewayFetch<T>(path: string, init?: RequestInit): Promise<T> {
@@ -33,34 +42,25 @@ async function gatewayFetch<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error("WHATSAPP_WEB_GATEWAY_URL is not configured.");
   }
 
-  const urls = buildGatewayUrls(baseUrl, path);
-  let lastErrorBody = "";
-  let lastStatus = 0;
+  const sessionPath = withDefaultSession(path);
+  const url = `${baseUrl}${sessionPath}`;
 
-  for (const url of urls) {
-    const response = await fetch(url, {
-      ...init,
-      headers: {
-        "content-type": "application/json",
-        ...(getGatewayToken() ? { authorization: `Bearer ${getGatewayToken()}` } : {}),
-        ...(init?.headers || {}),
-      },
-      cache: "no-store",
-    });
+  const response = await fetch(url, {
+    ...init,
+    headers: {
+      "content-type": "application/json",
+      ...(getGatewayToken() ? { authorization: `Bearer ${getGatewayToken()}` } : {}),
+      ...(init?.headers || {}),
+    },
+    cache: "no-store",
+  });
 
-    if (response.ok) {
-      return response.json() as Promise<T>;
-    }
-
-    lastStatus = response.status;
-    lastErrorBody = await response.text();
-
-    if (response.status !== 404) {
-      break;
-    }
+  if (response.ok) {
+    return response.json() as Promise<T>;
   }
 
-  throw new Error(`WhatsApp Web Gateway error ${lastStatus}: ${lastErrorBody}`);
+  const errorBody = await response.text();
+  throw new Error(`WhatsApp Web Gateway error ${response.status}: ${errorBody}`);
 }
 
 export const whatsappWebGatewayClient: MessagingProviderClient = {
