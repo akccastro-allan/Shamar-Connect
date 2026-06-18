@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { Bot, Clock, Download, FileText, GitBranch, MessageCircle, RefreshCcw, Search, Send, UserPlus, Users } from "lucide-react";
+import { Bot, Clock, Download, FileText, GitBranch, Image as ImageIcon, MessageCircle, RefreshCcw, Search, Send, UserPlus, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,6 +19,22 @@ type Conversation = {
   latest_message?: { body: string | null; direction: "inbound" | "outbound"; created_at: string } | null;
 };
 
+type RawPayload = {
+  type?: string;
+  mediaType?: string;
+  mimeType?: string;
+  hasMedia?: boolean;
+  media?: {
+    data?: string;
+    mimetype?: string;
+    mimeType?: string;
+    filename?: string;
+    caption?: string;
+    dataOmitted?: boolean;
+    dataLength?: number;
+  } | null;
+} | null;
+
 type Message = {
   id: string;
   external_message_id: string | null;
@@ -27,6 +43,9 @@ type Message = {
   to_id: string | null;
   body: string | null;
   message_type: string | null;
+  raw_payload?: RawPayload;
+  media_summary?: string | null;
+  has_media?: boolean | null;
   created_at: string;
 };
 
@@ -84,6 +103,26 @@ function personalize(text: string, conversation?: Conversation | null) {
     .replaceAll("{nome}", getConversationName(conversation))
     .replaceAll("{telefone}", conversation?.crm_contacts?.phone || conversation?.external_chat_id || "")
     .replaceAll("{empresa}", conversation?.crm_contacts?.company || "");
+}
+
+function getInlineMediaSource(message: Message) {
+  const rawPayload = message.raw_payload;
+  const media = rawPayload?.media;
+  const data = media?.data;
+  if (!data) return null;
+
+  const mimeType = media?.mimetype || media?.mimeType || rawPayload?.mimeType || "image/webp";
+  return data.startsWith("data:") ? data : `data:${mimeType};base64,${data}`;
+}
+
+function getMediaLabel(message: Message) {
+  const type = message.message_type || message.raw_payload?.mediaType || message.raw_payload?.type;
+  if (type === "sticker") return "Figurinha";
+  if (type === "image") return "Imagem";
+  if (type === "audio" || type === "ptt") return "Áudio";
+  if (type === "video") return "Vídeo";
+  if (type === "document") return "Documento";
+  return message.media_summary || "Mídia";
 }
 
 export function WhatsappServiceCenter() {
@@ -329,10 +368,24 @@ export function WhatsappServiceCenter() {
             <div className="max-h-[460px] space-y-3 overflow-auto pr-2">
               {messages.map((message) => {
                 const outbound = message.direction === "outbound";
+                const mediaSource = getInlineMediaSource(message);
+                const mediaLabel = getMediaLabel(message);
                 return (
                   <div key={message.id} className={`flex ${outbound ? "justify-end" : "justify-start"}`}>
                     <div className={`max-w-[78%] rounded-2xl px-4 py-3 text-sm shadow-sm ${outbound ? "bg-emerald-600 text-white" : "bg-white text-slate-900"}`}>
-                      <p className="whitespace-pre-wrap leading-6">{message.body || "Mensagem sem texto"}</p>
+                      {mediaSource ? (
+                        <div className="space-y-2">
+                          <img src={mediaSource} alt={mediaLabel} className="max-h-48 max-w-[220px] rounded-xl object-contain" />
+                          {message.body && !message.body.startsWith("[") ? <p className="whitespace-pre-wrap leading-6">{message.body}</p> : null}
+                        </div>
+                      ) : message.has_media ? (
+                        <div className="flex items-center gap-2 rounded-xl border border-dashed border-slate-200 bg-white/70 p-3 text-sm text-slate-700">
+                          <ImageIcon className="h-4 w-4" />
+                          <span>{message.body || `[${mediaLabel} recebida]`}</span>
+                        </div>
+                      ) : (
+                        <p className="whitespace-pre-wrap leading-6">{message.body || "Mensagem sem texto"}</p>
+                      )}
                       <p className={`mt-2 text-[11px] ${outbound ? "text-emerald-50" : "text-muted-foreground"}`}>{formatDate(message.created_at)} • {message.message_type || "text"}</p>
                     </div>
                   </div>
