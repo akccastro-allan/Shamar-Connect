@@ -14,7 +14,7 @@ export async function GET() {
 
     const { data: conversations, error: conversationsError } = await db
       .from("whatsapp_conversations")
-      .select("id, external_chat_id, name, is_group, status, unread_count, last_message_at, created_at, crm_contacts(id, name, phone, email, company, consent_status)")
+      .select("id, external_chat_id, name, is_group, status, unread_count, last_message_at, created_at, last_inbound_at, last_outbound_at, last_message_direction, requires_human, pending_reason, sla_status, sla_due_at, watchdog_checked_at, crm_contacts(id, name, phone, email, company, consent_status)")
       .order("last_message_at", { ascending: false, nullsFirst: false })
       .limit(100);
 
