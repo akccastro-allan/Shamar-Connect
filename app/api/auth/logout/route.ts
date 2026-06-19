@@ -3,7 +3,7 @@ import { clearSessionCookie } from "@/lib/auth/session";
 
 export async function POST(request: NextRequest) {
   await clearSessionCookie();
-  return NextResponse.json({ ok: true });
+  return NextResponse.redirect(new URL("/login", request.url), { status: 303 });
 }
 
 export async function GET(request: NextRequest) {
