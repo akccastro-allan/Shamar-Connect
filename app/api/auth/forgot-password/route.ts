@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,11 +10,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "E-mail obrigatório." }, { status: 400 });
     }
 
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://shamarconnect.com.br";
-    const supabase = createSupabaseServerClient();
+    const siteUrl = process.env.NEXT_PUBLIC_APP_URL || "https://shamarconnect.com.br";
+    const supabase = createSupabaseWriteClient();
 
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${siteUrl}/auth/confirm`,
+    const { error } = await supabase.auth.admin.generateLink({
+      type: "recovery",
+      email,
+      options: {
+        redirectTo: `${siteUrl}/auth/confirm`,
+      },
     });
 
     if (error) {
