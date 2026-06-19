@@ -1,7 +1,11 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 
-import { BrandLogo } from "@/components/brand/brand-logo";
-import { SiteFooter } from "@/components/site/site-footer";
+export const metadata: Metadata = {
+  title: "Planos — ShamarConnect",
+  description:
+    "Starter, Professional e Business. Mensalidade + implantação assistida. Conecte WhatsApp, CRM e IA com suporte de ativação incluído.",
+};
 
 const plans = [
   {
@@ -204,25 +208,7 @@ export default async function PlanosPage({ searchParams }: PlanosPageProps) {
   const showUnauthorizedNotice = params?.reason === "not-authorized";
 
   return (
-    <main className="min-h-screen bg-[#F8FAFC] text-slate-950">
-      <header className="sticky top-0 z-40 border-b border-slate-200/70 bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-3 md:px-8">
-          <Link href="/" className="flex items-center" aria-label="ShamarConnect">
-            <BrandLogo variant="mark" className="h-11 w-auto object-contain md:h-12" />
-          </Link>
-          <nav className="hidden items-center gap-8 text-sm font-semibold text-slate-600 md:flex">
-            <Link href="/" className="hover:text-[#1B2F5B]">Início</Link>
-            <a href="#planos" className="hover:text-[#1B2F5B]">Planos</a>
-            <a href="#implantacao" className="hover:text-[#1B2F5B]">Implantação</a>
-            <a href="#comparativo" className="hover:text-[#1B2F5B]">Comparativo</a>
-            <Link href="/sobre" className="hover:text-[#1B2F5B]">Sobre</Link>
-          </nav>
-          <Link href="/login" className="rounded-full bg-[#1B2F5B] px-5 py-2.5 text-sm font-black text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
-            Entrar
-          </Link>
-        </div>
-      </header>
-
+    <>
       {showUnauthorizedNotice ? (
         <section className="border-b border-[#C9952A]/20 bg-[#FFF7E8] px-5 py-5 text-center md:px-8">
           <p className="mx-auto max-w-3xl text-sm font-bold leading-6 text-[#8A5D12]">
@@ -430,7 +416,6 @@ export default async function PlanosPage({ searchParams }: PlanosPageProps) {
           </Link>
         </div>
       </section>
-      <SiteFooter />
-    </main>
+    </>
   );
 }

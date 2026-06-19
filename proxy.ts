@@ -2,19 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 
 const SHAMAR_SESSION_COOKIE = "shamar_connect_session";
 
-function decodeBase64Url(value: string) {
-  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
-  const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), "=");
-
-  return atob(padded);
-}
-
-function isLikelyValidSession(value?: string) {
+function hasValidCookieFormat(value?: string): boolean {
   if (!value) return false;
-
+  // New format: base64url(payload).base64url(hmac-sig)
+  const dotIndex = value.lastIndexOf(".");
+  if (dotIndex === -1) return false;
+  const payload = value.slice(0, dotIndex);
+  if (!payload) return false;
   try {
-    const parsed = JSON.parse(decodeBase64Url(value));
-    return Boolean(parsed?.companyId && parsed?.userId && parsed?.loginAt);
+    const decoded = atob(payload.replace(/-/g, "+").replace(/_/g, "/").padEnd(payload.length + ((4 - (payload.length % 4)) % 4), "="));
+    const parsed = JSON.parse(decoded);
+    return Boolean(parsed?.companyId && parsed?.userId);
   } catch {
     return false;
   }
@@ -23,7 +21,7 @@ function isLikelyValidSession(value?: string) {
 export function proxy(request: NextRequest) {
   const session = request.cookies.get(SHAMAR_SESSION_COOKIE)?.value;
 
-  if (!isLikelyValidSession(session)) {
+  if (!hasValidCookieFormat(session)) {
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("next", request.nextUrl.pathname);
     return NextResponse.redirect(loginUrl);
@@ -39,22 +37,28 @@ export const config = {
     "/financeiro/:path*",
     "/inbox/:path*",
     "/whatsapp-messages/:path*",
+    "/whatsapp-diagnostics/:path*",
+    "/whatsapp-import/:path*",
     "/settings/:path*",
     "/contacts/:path*",
+    "/contact-import/:path*",
     "/crm/:path*",
     "/pipeline/:path*",
+    "/sales-dashboard/:path*",
     "/campaigns/:path*",
+    "/distribution/:path*",
+    "/support/:path*",
+    "/operations/:path*",
+    "/social-inbox/:path*",
+    "/ai-lab/:path*",
     "/quick-replies/:path*",
     "/conversation-flows/:path*",
     "/automations/:path*",
     "/knowledge/:path*",
-    "/whatsapp-import/:path*",
-    "/contact-import/:path*",
     "/group-import-lists/:path*",
     "/system-test/:path*",
     "/ui-lab/:path*",
     "/feature-lab/:path*",
     "/audit/:path*",
-    "/companies/:path*"
   ],
 };

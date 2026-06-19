@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import { cookies } from "next/headers";
+import { cache } from "react";
 
 export const SHAMAR_SESSION_COOKIE = "shamar_connect_session";
 
@@ -65,10 +66,10 @@ export function decodeSession(value?: string | null): ShamarSession | null {
   }
 }
 
-export async function getCurrentSession() {
+export const getCurrentSession = cache(async () => {
   const cookieStore = await cookies();
   return decodeSession(cookieStore.get(SHAMAR_SESSION_COOKIE)?.value);
-}
+});
 
 export async function setSessionCookie(session: ShamarSession) {
   const cookieStore = await cookies();

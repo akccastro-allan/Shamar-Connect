@@ -1,4 +1,17 @@
 import Link from "next/link";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "ShamarConnect — WhatsApp + CRM + IA para empresas",
+  description:
+    "Atendimento, CRM e vendas em uma central inteligente para empresas que vivem no WhatsApp. Histórico permanente, CRM/Kanban, automações e IA supervisionada.",
+  openGraph: {
+    title: "ShamarConnect — WhatsApp + CRM + IA",
+    description: "Central de atendimento, CRM e automação para empresas que vendem pelo WhatsApp.",
+    url: "https://shamarconnect.com.br",
+    type: "website",
+  },
+};
 
 const segments = [
   { icon: "🛍️", title: "Lojas e e-commerce", text: "Centralize pedidos, dúvidas e pós-venda em uma fila organizada por atendente." },

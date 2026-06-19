@@ -1,7 +1,10 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 
-import { BrandLogo } from "@/components/brand/brand-logo";
-import { SiteFooter } from "@/components/site/site-footer";
+export const metadata: Metadata = {
+  title: "Contato — ShamarConnect",
+  description: "Fale com a equipe ShamarConnect. Contratação, acesso ao sistema e informações sobre a empresa.",
+};
 
 const contactItems = [
   {
@@ -33,25 +36,7 @@ const reasons = [
 
 export default function ContactPage() {
   return (
-    <main className="min-h-screen bg-[#F8FAFC] text-slate-950">
-      <header className="sticky top-0 z-40 border-b border-slate-200/70 bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 md:px-8">
-          <Link href="/" className="block w-44 md:w-56" aria-label="ShamarConnect">
-            <BrandLogo className="h-auto w-full" />
-          </Link>
-
-          <nav className="hidden items-center gap-8 text-sm font-semibold text-slate-600 md:flex">
-            <Link href="/" className="hover:text-[#1B2F5B]">Início</Link>
-            <Link href="/planos" className="hover:text-[#1B2F5B]">Planos</Link>
-            <Link href="/sobre" className="hover:text-[#1B2F5B]">Sobre</Link>
-          </nav>
-
-          <Link href="/login" className="rounded-full bg-[#1B2F5B] px-5 py-2.5 text-sm font-black text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
-            Entrar
-          </Link>
-        </div>
-      </header>
-
+    <>
       <section className="relative overflow-hidden bg-white">
         <div className="absolute left-1/2 top-0 h-72 w-72 -translate-x-1/2 rounded-full bg-[#2ABFAB]/20 blur-3xl" />
         <div className="absolute right-0 top-24 h-80 w-80 rounded-full bg-[#1B2F5B]/10 blur-3xl" />
@@ -121,8 +106,6 @@ export default function ContactPage() {
           </Link>
         </div>
       </section>
-
-      <SiteFooter />
-    </main>
+    </>
   );
 }
