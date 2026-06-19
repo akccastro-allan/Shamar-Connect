@@ -60,5 +60,7 @@ export const config = {
     "/ui-lab/:path*",
     "/feature-lab/:path*",
     "/audit/:path*",
+    "/auth-diagnostics/:path*",
+    "/auth-diagnostics",
   ],
 };
