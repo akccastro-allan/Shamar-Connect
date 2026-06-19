@@ -12,7 +12,14 @@ const navigationGroups = [
       { href: "/dashboard", label: "Dashboard", marker: "D" },
       { href: "/inbox", label: "Inbox", marker: "I" },
       { href: "/whatsapp-messages", label: "WhatsApp", marker: "W" },
+      { href: "/social-inbox", label: "Social Inbox", marker: "S" },
       { href: "/operations", label: "Operações", marker: "O" },
+    ],
+  },
+  {
+    label: "Conteúdo e canais",
+    items: [
+      { href: "/distribution", label: "Central de Distribuição", marker: "B" },
     ],
   },
   {
