@@ -22,7 +22,7 @@ export async function POST(request: NextRequest, context: Params) {
 
     const { data: conversation, error: conversationError } = await db
       .from("whatsapp_conversations")
-      .select("id, external_chat_id, contact_id")
+      .select("id, tenant_id, organization_id, external_chat_id, contact_id")
       .eq("id", conversationId)
       .single();
 
@@ -58,24 +58,37 @@ export async function POST(request: NextRequest, context: Params) {
 
     if (messageError) throw messageError;
 
+    // After a human reply, clear the pending queue and SLA flags
     const { error: updateError } = await db
       .from("whatsapp_conversations")
-      .update({ last_message_at: now, updated_at: now })
+      .update({
+        last_message_at: now,
+        last_outbound_at: now,
+        last_message_direction: "outbound",
+        requires_human: false,
+        pending_reason: null,
+        sla_status: "ok",
+        sla_due_at: null,
+        updated_at: now,
+      })
       .eq("id", conversation.id);
 
     if (updateError) throw updateError;
 
-    await db.from("provider_events").insert({
-      provider: "whatsapp_web",
-      event: "message.sent",
-      payload: {
-        conversationId: conversation.id,
-        externalChatId: conversation.external_chat_id,
-        messageId: sent.id,
-        body: messageBody,
-      },
-      processed_at: now,
-    });
+    if (conversation.tenant_id && conversation.organization_id) {
+      await db.from("whatsapp_conversation_events").insert({
+        tenant_id: conversation.tenant_id,
+        organization_id: conversation.organization_id,
+        conversation_id: conversation.id,
+        event_type: "human_reply_sent",
+        event_source: "service_center",
+        description: "Atendente enviou resposta manual.",
+        metadata: {
+          sentMessageId: sent.id,
+          bodyLength: messageBody.length,
+        },
+      });
+    }
 
     return NextResponse.json({ ok: true, message: savedMessage });
   } catch (error) {

@@ -67,6 +67,10 @@ function getLatest(messages: MessageRow[], direction?: "inbound" | "outbound") {
   return messages.find((message) => !direction || message.direction === direction) || null;
 }
 
+function isGroupChat(externalChatId: string) {
+  return externalChatId.endsWith("@g.us");
+}
+
 function isOutsideBusinessHours(now = new Date()) {
   const formatter = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/Sao_Paulo",
@@ -327,8 +331,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const processed = [];
-    const skipped = [];
+    const processed: object[] = [];
+    const skipped: object[] = [];
+    const failed: object[] = [];
 
     for (const conversation of rows) {
       const conversationMessages = messagesByConversation.get(conversation.id) || [];
@@ -356,74 +361,198 @@ export async function GET(request: NextRequest) {
         continue;
       }
 
+      // Groups are never replied to automatically — hand off to human immediately
+      if (isGroupChat(conversation.external_chat_id)) {
+        if (!dryRun) {
+          try {
+            const now = new Date().toISOString();
+            const slaDueAt = new Date(new Date(latestInbound.created_at).getTime() + 30 * 60 * 1000).toISOString();
+            const slaStatus = new Date(slaDueAt).getTime() < Date.now() ? "breached" : "pending";
+
+            await db
+              .from("whatsapp_conversations")
+              .update({
+                requires_human: true,
+                pending_reason: "group_requires_human",
+                sla_status: slaStatus,
+                sla_due_at: slaDueAt,
+                last_message_at: latestInbound.created_at,
+                updated_at: now,
+              })
+              .eq("id", conversation.id)
+              .eq("tenant_id", context.tenantId)
+              .eq("organization_id", context.organizationId);
+
+            await db.from("whatsapp_conversation_events").insert({
+              tenant_id: context.tenantId,
+              organization_id: context.organizationId,
+              conversation_id: conversation.id,
+              event_type: "automation.group_handoff",
+              event_source: "safe_automation",
+              description: "Mensagem de grupo encaminhada para atendimento humano.",
+              metadata: {
+                latestInboundId: latestInbound.id,
+                latestInboundAt: latestInbound.created_at,
+                dryRun,
+              },
+            });
+          } catch (groupError) {
+            failed.push({
+              conversationId: conversation.id,
+              name: conversation.name,
+              reason: "group_handoff_db_error",
+              error: groupError instanceof Error ? groupError.message : String(groupError),
+            });
+            continue;
+          }
+        }
+
+        processed.push({
+          conversationId: conversation.id,
+          name: conversation.name,
+          externalChatId: conversation.external_chat_id,
+          latestInboundId: latestInbound.id,
+          intent: "group_handoff",
+          replied: false,
+          sentMessageId: null,
+          requiresHuman: true,
+          pendingReason: "group_requires_human",
+          dryRun,
+        });
+        continue;
+      }
+
       const decision = decideAutomation(latestInbound, inboundCount);
       let sentMessageId: string | null = null;
       let sentAt: string | null = null;
 
-      if (decision.replyBody && !dryRun) {
-        const sent = await whatsappWebGatewayClient.sendMessage({
-          to: conversation.external_chat_id,
-          body: decision.replyBody,
-        });
-        sentMessageId = sent.id;
-        sentAt = await persistOutboundMessage(db, conversation, sent, decision.replyBody, {
-          automationIntent: decision.intent,
-          latestInboundId: latestInbound.id,
-        });
-      }
+      try {
+        if (!dryRun) {
+          // Register attempt before sending so failures are traceable
+          await db.from("whatsapp_conversation_events").insert({
+            tenant_id: context.tenantId,
+            organization_id: context.organizationId,
+            conversation_id: conversation.id,
+            event_type: "automation_attempt",
+            event_source: "safe_automation",
+            description: "Automação iniciando processamento.",
+            metadata: {
+              intent: decision.intent,
+              latestInboundId: latestInbound.id,
+              latestInboundAt: latestInbound.created_at,
+              dryRun,
+            },
+          });
+        }
 
-      if (!dryRun) {
-        const now = new Date().toISOString();
-        const { error: updateError } = await db
-          .from("whatsapp_conversations")
-          .update({
-            requires_human: decision.requiresHuman,
-            pending_reason: decision.pendingReason,
-            sla_status: decision.requiresHuman ? "pending" : "ok",
-            last_outbound_at: sentAt || latestOutbound?.created_at || null,
-            last_message_direction: sentAt ? "outbound" : "inbound",
+        if (decision.replyBody && !dryRun) {
+          const sent = await whatsappWebGatewayClient.sendMessage({
+            to: conversation.external_chat_id,
+            body: decision.replyBody,
+          });
+          sentMessageId = sent.id;
+          sentAt = await persistOutboundMessage(db, conversation, sent, decision.replyBody, {
+            automationIntent: decision.intent,
+            latestInboundId: latestInbound.id,
+          });
+        }
+
+        if (!dryRun) {
+          const now = new Date().toISOString();
+
+          const conversationPatch: Record<string, unknown> = {
             last_message_at: sentAt || latestInbound.created_at,
             updated_at: now,
-          })
-          .eq("id", conversation.id)
-          .eq("tenant_id", context.tenantId)
-          .eq("organization_id", context.organizationId);
+          };
 
-        if (updateError) throw updateError;
+          if (sentAt) {
+            conversationPatch.last_outbound_at = sentAt;
+            conversationPatch.last_message_direction = "outbound";
+          }
 
-        const { error: eventError } = await db.from("whatsapp_conversation_events").insert({
-          tenant_id: context.tenantId,
-          organization_id: context.organizationId,
-          conversation_id: conversation.id,
-          event_type: decision.eventType,
-          event_source: "safe_automation",
-          description: decision.description,
-          metadata: {
-            intent: decision.intent,
-            latestInboundId: latestInbound.id,
-            latestInboundAt: latestInbound.created_at,
-            sentMessageId,
-            dryRun,
-            requiresHuman: decision.requiresHuman,
-            pendingReason: decision.pendingReason,
-          },
+          // Only update human/SLA fields if the decision says so; never clear human flag via bot
+          if (decision.requiresHuman) {
+            conversationPatch.requires_human = true;
+            conversationPatch.pending_reason = decision.pendingReason;
+            conversationPatch.sla_status = "pending";
+          } else if (!decision.requiresHuman && sentAt) {
+            // Bot handled it fully (e.g. menu) — safe to mark ok
+            conversationPatch.requires_human = false;
+            conversationPatch.pending_reason = null;
+            conversationPatch.sla_status = "ok";
+            conversationPatch.sla_due_at = null;
+          }
+
+          const { error: updateError } = await db
+            .from("whatsapp_conversations")
+            .update(conversationPatch)
+            .eq("id", conversation.id)
+            .eq("tenant_id", context.tenantId)
+            .eq("organization_id", context.organizationId);
+
+          if (updateError) throw updateError;
+
+          const { error: eventError } = await db.from("whatsapp_conversation_events").insert({
+            tenant_id: context.tenantId,
+            organization_id: context.organizationId,
+            conversation_id: conversation.id,
+            event_type: sentMessageId ? "automation_sent" : decision.eventType,
+            event_source: "safe_automation",
+            description: decision.description,
+            metadata: {
+              intent: decision.intent,
+              latestInboundId: latestInbound.id,
+              latestInboundAt: latestInbound.created_at,
+              sentMessageId,
+              dryRun,
+              requiresHuman: decision.requiresHuman,
+              pendingReason: decision.pendingReason,
+            },
+          });
+
+          if (eventError) throw eventError;
+        }
+
+        processed.push({
+          conversationId: conversation.id,
+          name: conversation.name,
+          externalChatId: conversation.external_chat_id,
+          latestInboundId: latestInbound.id,
+          intent: decision.intent,
+          replied: Boolean(decision.replyBody),
+          sentMessageId,
+          requiresHuman: decision.requiresHuman,
+          pendingReason: decision.pendingReason,
+          dryRun,
         });
+      } catch (conversationError) {
+        // Record failure event if possible, but don't abort remaining conversations
+        try {
+          if (!dryRun) {
+            await db.from("whatsapp_conversation_events").insert({
+              tenant_id: context.tenantId,
+              organization_id: context.organizationId,
+              conversation_id: conversation.id,
+              event_type: "automation_failed",
+              event_source: "safe_automation",
+              description: "Falha ao processar automação para esta conversa.",
+              metadata: {
+                latestInboundId: latestInbound.id,
+                error: conversationError instanceof Error ? conversationError.message : String(conversationError),
+                dryRun,
+              },
+            });
+          }
+        } catch {
+          // Ignore secondary failure — the primary error is already recorded below
+        }
 
-        if (eventError) throw eventError;
+        failed.push({
+          conversationId: conversation.id,
+          name: conversation.name,
+          error: conversationError instanceof Error ? conversationError.message : String(conversationError),
+        });
       }
-
-      processed.push({
-        conversationId: conversation.id,
-        name: conversation.name,
-        externalChatId: conversation.external_chat_id,
-        latestInboundId: latestInbound.id,
-        intent: decision.intent,
-        replied: Boolean(decision.replyBody),
-        sentMessageId,
-        requiresHuman: decision.requiresHuman,
-        pendingReason: decision.pendingReason,
-        dryRun,
-      });
     }
 
     return NextResponse.json({
@@ -433,10 +562,12 @@ export async function GET(request: NextRequest) {
       scannedConversations: rows.length,
       processed: processed.length,
       skipped: skipped.length,
-      repliesSent: processed.filter((item) => item.sentMessageId).length,
-      requiresHuman: processed.filter((item) => item.requiresHuman).length,
+      repliesSent: (processed as Array<{ sentMessageId: string | null }>).filter((item) => item.sentMessageId).length,
+      requiresHuman: (processed as Array<{ requiresHuman: boolean }>).filter((item) => item.requiresHuman).length,
+      failed: failed.length,
       items: processed,
       skippedItems: skipped,
+      errorItems: failed,
     });
   } catch (error) {
     if (isUnauthorizedError(error)) {
