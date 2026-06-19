@@ -81,6 +81,7 @@ async function upsertConversation(
     contactId: string | null;
     lastMessageAt?: string | null;
     unreadCount?: number;
+    channelId?: string | null;
   },
 ) {
   const { data: existingConversation, error: conversationLookupError } = await client
@@ -105,6 +106,7 @@ async function upsertConversation(
     unread_count: payload.unreadCount || 0,
     last_message_at: payload.lastMessageAt || new Date().toISOString(),
     updated_at: new Date().toISOString(),
+    ...(payload.channelId ? { channel_id: payload.channelId } : {}),
   };
 
   if (existingConversation?.id) {
@@ -251,6 +253,7 @@ async function syncChat(
   chat: ProviderChatSummary,
   limit: number,
   gatewayClient = resolveSessionClient(null)!.client,
+  channelId?: string | null,
 ) {
   const messages = await gatewayClient.listChatMessages(chat.id, limit);
   const latestMessage = messages[0];
@@ -268,6 +271,7 @@ async function syncChat(
     contactId,
     lastMessageAt,
     unreadCount: chat.unreadCount || 0,
+    channelId,
   });
 
   let savedMessages = 0;
@@ -302,6 +306,20 @@ async function syncChats(chatIds?: string[], messageLimit = 50, chatLimit = 20, 
   const resolved = resolveSessionClient(sessionId);
   if (!resolved) throw new Error(`sessionId inválido: ${sessionId}`);
   const client = createSupabaseWriteClient();
+
+  // Resolve channel_id for this session so conversations are tagged correctly
+  let channelId: string | null = null;
+  if (resolved.sessionId) {
+    const { data: channel } = await client
+      .from("channels")
+      .select("id")
+      .eq("tenant_id", context.tenantId)
+      .eq("organization_id", context.organizationId)
+      .eq("session_id", resolved.sessionId)
+      .maybeSingle();
+    channelId = channel?.id ?? null;
+  }
+
   const allChats = await resolved.client.listChats();
   const selectedChats = Array.isArray(chatIds) && chatIds.length > 0
     ? allChats.filter((chat) => chatIds.includes(chat.id))
@@ -312,7 +330,7 @@ async function syncChats(chatIds?: string[], messageLimit = 50, chatLimit = 20, 
 
   for (const chat of selectedChats) {
     try {
-      results.push(await syncChat(client, context, chat, messageLimit, resolved.client));
+      results.push(await syncChat(client, context, chat, messageLimit, resolved.client, channelId));
     } catch (error) {
       chatErrors.push({
         chatId: chat.id,

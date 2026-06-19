@@ -12,6 +12,16 @@ export async function GET(request: NextRequest) {
 
     const db = createSupabaseServerClient();
 
+    // Resolve channel_id for this session (used to isolate per-session counts)
+    const { data: channelRow } = await db
+      .from("channels")
+      .select("id")
+      .eq("tenant_id", context.tenantId)
+      .eq("organization_id", context.organizationId)
+      .eq("session_id", resolved.sessionId)
+      .maybeSingle();
+    const channelId: string | null = channelRow?.id ?? null;
+
     // Gateway status (may fail if offline — capture gracefully)
     let gatewayStatus: Record<string, unknown> | null = null;
     let gatewayError: string | null = null;
@@ -21,28 +31,26 @@ export async function GET(request: NextRequest) {
       gatewayError = err instanceof Error ? err.message : "Gateway indisponível";
     }
 
-    // Conversation counts
-    const { count: totalConversations } = await db
+    // Conversation counts (scoped to this session's channel when available)
+    const baseConvQ = db
       .from("whatsapp_conversations")
       .select("id", { count: "exact", head: true })
       .eq("tenant_id", context.tenantId)
       .eq("organization_id", context.organizationId);
 
-    const { count: requiresHumanCount } = await db
-      .from("whatsapp_conversations")
-      .select("id", { count: "exact", head: true })
-      .eq("tenant_id", context.tenantId)
-      .eq("organization_id", context.organizationId)
-      .eq("requires_human", true);
+    const { count: totalConversations } = await (channelId
+      ? baseConvQ.eq("channel_id", channelId)
+      : baseConvQ.is("channel_id", null));
 
-    const { count: slaBreachedCount } = await db
-      .from("whatsapp_conversations")
-      .select("id", { count: "exact", head: true })
-      .eq("tenant_id", context.tenantId)
-      .eq("organization_id", context.organizationId)
-      .eq("sla_status", "breached");
+    const { count: requiresHumanCount } = await (channelId
+      ? db.from("whatsapp_conversations").select("id", { count: "exact", head: true }).eq("tenant_id", context.tenantId).eq("organization_id", context.organizationId).eq("channel_id", channelId).eq("requires_human", true)
+      : db.from("whatsapp_conversations").select("id", { count: "exact", head: true }).eq("tenant_id", context.tenantId).eq("organization_id", context.organizationId).is("channel_id", null).eq("requires_human", true));
 
-    // Message count
+    const { count: slaBreachedCount } = await (channelId
+      ? db.from("whatsapp_conversations").select("id", { count: "exact", head: true }).eq("tenant_id", context.tenantId).eq("organization_id", context.organizationId).eq("channel_id", channelId).eq("sla_status", "breached")
+      : db.from("whatsapp_conversations").select("id", { count: "exact", head: true }).eq("tenant_id", context.tenantId).eq("organization_id", context.organizationId).is("channel_id", null).eq("sla_status", "breached"));
+
+    // Message count (org-wide — messages don't have channel_id directly)
     const { count: totalMessages } = await db
       .from("whatsapp_messages")
       .select("id", { count: "exact", head: true })

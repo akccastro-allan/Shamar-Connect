@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
-import { whatsappWebGatewayClient } from "@/lib/providers/whatsapp-web-gateway-client";
+import { resolveSessionClient } from "@/lib/providers/resolve-session";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 
 type ConversationRow = {
@@ -270,7 +270,25 @@ export async function GET(request: NextRequest) {
     const limit = Math.max(1, Math.min(Number(searchParams.get("limit") || 50), 200));
     const dryRun = searchParams.get("dryRun") === "1" || searchParams.get("dryRun") === "true";
 
-    const { data: conversations, error: conversationsError } = await db
+    // sessionId selects which gateway sends messages and which conversations to process.
+    // Defaults to hall-main for backward compatibility.
+    const sessionId = searchParams.get("sessionId") || "hall-main";
+    const resolved = resolveSessionClient(sessionId);
+    if (!resolved) {
+      return NextResponse.json({ ok: false, error: `sessionId inválido: ${sessionId}` }, { status: 400 });
+    }
+
+    // Resolve channel_id so automation only processes conversations from this session
+    const { data: channelRow } = await db
+      .from("channels")
+      .select("id")
+      .eq("tenant_id", context.tenantId)
+      .eq("organization_id", context.organizationId)
+      .eq("session_id", resolved.sessionId)
+      .maybeSingle();
+    const channelId: string | null = channelRow?.id ?? null;
+
+    let conversationsQuery = db
       .from("whatsapp_conversations")
       .select("id, tenant_id, organization_id, external_chat_id, contact_id, name, status, is_group, requires_human")
       .eq("tenant_id", context.tenantId)
@@ -279,6 +297,15 @@ export async function GET(request: NextRequest) {
       .not("external_chat_id", "is", null)
       .order("last_message_at", { ascending: false, nullsFirst: false })
       .limit(limit);
+
+    // Filter by channel when available; otherwise fall back to untagged conversations
+    if (channelId) {
+      conversationsQuery = conversationsQuery.eq("channel_id", channelId);
+    } else {
+      conversationsQuery = conversationsQuery.is("channel_id", null);
+    }
+
+    const { data: conversations, error: conversationsError } = await conversationsQuery;
 
     if (conversationsError) throw conversationsError;
 
@@ -447,7 +474,7 @@ export async function GET(request: NextRequest) {
         }
 
         if (decision.replyBody && !dryRun) {
-          const sent = await whatsappWebGatewayClient.sendMessage({
+          const sent = await resolved.client.sendMessage({
             to: conversation.external_chat_id,
             body: decision.replyBody,
           });
