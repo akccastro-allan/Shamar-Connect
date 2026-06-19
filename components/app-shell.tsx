@@ -11,9 +11,8 @@ const navigationGroups = [
     items: [
       { href: "/dashboard", label: "Dashboard", marker: "D" },
       { href: "/inbox", label: "Inbox", marker: "I" },
-      { href: "/whatsapp-messages", label: "Mensagens WhatsApp", marker: "W" },
-      { href: "/operations", label: "Operações Hall/Lips", marker: "O" },
-      { href: "/settings/whatsapp", label: "WhatsApp", marker: "C" },
+      { href: "/whatsapp-messages", label: "WhatsApp", marker: "W" },
+      { href: "/operations", label: "Operações", marker: "O" },
     ],
   },
   {
@@ -21,7 +20,8 @@ const navigationGroups = [
     items: [
       { href: "/contacts", label: "Contatos", marker: "C" },
       { href: "/crm", label: "CRM", marker: "R" },
-      { href: "/pipeline", label: "Funil", marker: "F" },
+      { href: "/pipeline", label: "Pipeline", marker: "P" },
+      { href: "/sales-dashboard", label: "Dashboard Vendas", marker: "V" },
       { href: "/campaigns", label: "Campanhas", marker: "M" },
     ],
   },

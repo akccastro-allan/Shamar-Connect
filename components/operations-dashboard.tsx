@@ -19,7 +19,8 @@ type SessionStatus = {
   checkedAt: string | null;
 };
 
-const SESSIONS = [
+// Active sessions with WhatsApp gateway (expanded as new channels come online)
+const ACTIVE_GATEWAY_SESSIONS = [
   { id: "hall-main", label: "Hall Donous" },
   { id: "lips-main", label: "Lips" },
 ];
@@ -45,8 +46,11 @@ function formatTime(value?: string | null) {
   }
 }
 
+type ChannelRow = { id: string; name: string; slug: string; session_id: string; color: string; active: boolean };
+
 export function OperationsDashboard() {
   const [sessions, setSessions] = useState<SessionStatus[]>([]);
+  const [channels, setChannels] = useState<ChannelRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [lastChecked, setLastChecked] = useState<string | null>(null);
   const [contactsToday, setContactsToday] = useState<number | null>(null);
@@ -96,10 +100,13 @@ export function OperationsDashboard() {
   async function loadAll() {
     setLoading(true);
     try {
-      const [s0, s1] = await Promise.all(
-        SESSIONS.map((s) => fetchSessionStatus(s.id, s.label)),
-      );
-      setSessions([s0, s1]);
+      const [statuses, channelsRes] = await Promise.all([
+        Promise.all(ACTIVE_GATEWAY_SESSIONS.map((s) => fetchSessionStatus(s.id, s.label))),
+        fetch("/api/channels"),
+      ]);
+      setSessions(statuses);
+      const channelsData = await channelsRes.json();
+      if (channelsData.ok) setChannels(channelsData.channels);
       setLastChecked(new Date().toISOString());
       await fetchContactsToday();
     } finally {
@@ -190,6 +197,38 @@ export function OperationsDashboard() {
           <p className="text-3xl font-semibold">{contactsToday ?? "—"}</p>
         </div>
       </div>
+
+      {/* All channels */}
+      {channels.length > 0 && (
+        <div>
+          <h2 className="mb-3 text-sm font-semibold text-foreground">Canais cadastrados</h2>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {channels.map((ch) => {
+              const linked = sessions.find((s) => s.sessionId === ch.session_id);
+              return (
+                <div
+                  key={ch.id}
+                  className="rounded-xl border bg-white p-3 flex items-start gap-3"
+                  style={{ borderLeftColor: ch.color, borderLeftWidth: 4 }}
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold truncate">{ch.name}</p>
+                    <p className="text-xs text-muted-foreground truncate">{ch.session_id}</p>
+                    {linked && (
+                      <p className={`text-xs mt-1 font-medium ${linked.online ? "text-emerald-600" : "text-red-500"}`}>
+                        {linked.online ? `Conectado · ${linked.phone || "sem número"}` : "Desconectado"}
+                      </p>
+                    )}
+                    {!linked && (
+                      <p className="text-xs mt-1 text-zinc-400">Aguardando configuração</p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Quick links */}
       <Card>
