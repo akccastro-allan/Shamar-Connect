@@ -46,6 +46,12 @@ const navigationGroups = [
     ],
   },
   {
+    label: "Inteligência artificial",
+    items: [
+      { href: "/ai-lab", label: "AI Lab", marker: "I" },
+    ],
+  },
+  {
     label: "Sistema",
     items: [
       { href: "/system-test", label: "Teste do sistema", marker: "T" },

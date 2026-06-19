@@ -1,0 +1,18 @@
+import { AppShell } from "@/components/app-shell";
+import { AiLabPanel } from "@/components/ai-lab-panel";
+
+export const metadata = { title: "AI Lab — ShamarConnect" };
+
+export default function AiLabPage() {
+  return (
+    <AppShell active="ai-lab">
+      <div className="p-6 lg:p-10">
+        <div className="mb-8">
+          <h1 className="text-3xl font-black text-slate-950">AI Lab</h1>
+          <p className="mt-2 text-muted-foreground">IA supervisionada para atendimento WhatsApp. O atendente revisa e aprova antes de qualquer envio.</p>
+        </div>
+        <AiLabPanel />
+      </div>
+    </AppShell>
+  );
+}
