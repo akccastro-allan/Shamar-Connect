@@ -11,7 +11,7 @@ function getNextPath() {
 }
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("allan@oriahfin.com.br");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
