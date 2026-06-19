@@ -167,7 +167,7 @@ export function OperationsDashboard() {
               </div>
               <div className="mt-3 flex gap-2">
                 <Button asChild variant="outline" size="sm" className="text-xs">
-                  <Link href={`/whatsapp-diagnostics`}>Ver diagnóstico</Link>
+                  <Link href={`/whatsapp-diagnostics?session=${s.sessionId}`}>Ver diagnóstico</Link>
                 </Button>
                 <Button asChild variant="outline" size="sm" className="text-xs">
                   <Link href="/whatsapp-messages">Central</Link>

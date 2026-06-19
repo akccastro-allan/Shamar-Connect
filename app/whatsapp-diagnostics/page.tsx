@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/page-header";
 import { WhatsappDiagnosticsPanel } from "@/components/whatsapp-diagnostics-panel";
@@ -10,7 +11,9 @@ export default function WhatsappDiagnosticsPage() {
         description="Verifique o status do gateway, conversas pendentes, eventos do watchdog e da automação. Nenhuma mensagem é enviada por esta tela."
         badge="Operacional"
       />
-      <WhatsappDiagnosticsPanel />
+      <Suspense>
+        <WhatsappDiagnosticsPanel />
+      </Suspense>
     </AppShell>
   );
 }

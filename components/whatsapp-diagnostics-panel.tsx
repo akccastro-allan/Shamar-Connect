@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Clock, MessageCircle, RefreshCcw, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -41,7 +42,11 @@ function formatDate(value?: string | null) {
 }
 
 export function WhatsappDiagnosticsPanel() {
-  const [session, setSession] = useState<SessionId>("hall-main");
+  const searchParams = useSearchParams();
+  const initialSession = (searchParams.get("session") as SessionId | null) ?? "hall-main";
+  const [session, setSession] = useState<SessionId>(
+    SESSIONS.some((s) => s.id === initialSession) ? initialSession : "hall-main",
+  );
   const [data, setData] = useState<DiagnosticsData | null>(null);
   const [loading, setLoading] = useState(false);
   const [watchdogRunning, setWatchdogRunning] = useState(false);
