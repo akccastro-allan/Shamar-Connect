@@ -41,6 +41,7 @@ const navigationGroups = [
       { href: "/knowledge", label: "Conhecimento", marker: "K" },
       { href: "/whatsapp-diagnostics", label: "Diagnóstico WhatsApp", marker: "G" },
       { href: "/settings/whatsapp-automation", label: "Config. Automação", marker: "A" },
+      { href: "/settings/whatsapp-cloud", label: "Shamar Kids (Cloud API)", marker: "K" },
       { href: "/whatsapp-import", label: "Importação WhatsApp", marker: "I" },
       { href: "/contact-import", label: "Importar contatos", marker: "U" },
       { href: "/group-import-lists", label: "Listas importadas", marker: "L" },

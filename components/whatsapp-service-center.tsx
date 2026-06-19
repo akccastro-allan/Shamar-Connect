@@ -26,6 +26,7 @@ type Conversation = {
   sla_due_at?: string | null;
   watchdog_checked_at?: string | null;
   channel_id?: string | null;
+  provider?: string | null;
   crm_contacts?: { id: string; name: string | null; phone: string | null; email: string | null; company: string | null; consent_status: string | null } | null;
   channels?: { id: string; name: string; slug: string; color: string } | null;
   latest_message?: { body: string | null; direction: "inbound" | "outbound"; created_at: string } | null;
@@ -678,6 +679,11 @@ export function WhatsappServiceCenter() {
                           style={{ backgroundColor: conversation.channels.color + "22", color: conversation.channels.color }}
                         >
                           {conversation.channels.name}
+                        </span>
+                      )}
+                      {conversation.provider === "whatsapp_cloud" && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700 border border-emerald-200">
+                          Cloud API
                         </span>
                       )}
                       {isBreached ? <Badge className="bg-red-600 text-white">SLA estourado</Badge> : null}
