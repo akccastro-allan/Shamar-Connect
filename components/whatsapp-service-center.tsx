@@ -25,9 +25,13 @@ type Conversation = {
   sla_status?: "pending" | "breached" | "ok" | string | null;
   sla_due_at?: string | null;
   watchdog_checked_at?: string | null;
+  channel_id?: string | null;
   crm_contacts?: { id: string; name: string | null; phone: string | null; email: string | null; company: string | null; consent_status: string | null } | null;
+  channels?: { id: string; name: string; slug: string; color: string } | null;
   latest_message?: { body: string | null; direction: "inbound" | "outbound"; created_at: string } | null;
 };
+
+type ChannelFilter = { id: string; name: string; color: string };
 
 type RawPayload = {
   type?: string;
@@ -222,9 +226,11 @@ export function WhatsappServiceCenter() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [quickReplies, setQuickReplies] = useState<QuickReply[]>([]);
   const [conversationFlows, setConversationFlows] = useState<ConversationFlow[]>([]);
+  const [availableChannels, setAvailableChannels] = useState<ChannelFilter[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState("");
   const [query, setQuery] = useState("");
   const [queueFilter, setQueueFilter] = useState<"all" | "breached" | "human" | "unanswered" | "groups" | "individuals">("all");
+  const [channelFilter, setChannelFilter] = useState<string>("");
   const [quickReplyQuery, setQuickReplyQuery] = useState("");
   const [flowQuery, setFlowQuery] = useState("");
   const [replyBody, setReplyBody] = useState("");
@@ -271,6 +277,7 @@ export function WhatsappServiceCenter() {
     const term = query.trim().toLowerCase();
     let items = conversations;
 
+    if (channelFilter) items = items.filter((conversation) => conversation.channel_id === channelFilter);
     if (queueFilter === "breached") items = items.filter((conversation) => conversation.sla_status === "breached");
     if (queueFilter === "human") items = items.filter((conversation) => conversation.requires_human);
     if (queueFilter === "unanswered") items = items.filter(isUnanswered);
@@ -305,9 +312,15 @@ export function WhatsappServiceCenter() {
     setLoading(true);
     setError(null);
     try {
-      const data = await readJson<{ ok: boolean; conversations: Conversation[] }>("/api/whatsapp-messages/conversations");
-      const sorted = sortConversationsForQueue(data.conversations || []);
+      const [convData, channelsData] = await Promise.all([
+        readJson<{ ok: boolean; conversations: Conversation[] }>("/api/whatsapp-messages/conversations"),
+        fetch("/api/channels").then((r) => r.json()).catch(() => ({ ok: false, channels: [] })),
+      ]);
+      const sorted = sortConversationsForQueue(convData.conversations || []);
       setConversations(sorted);
+      if (channelsData.ok && channelsData.channels?.length) {
+        setAvailableChannels(channelsData.channels);
+      }
       const firstId = selectedConversationId || sorted[0]?.id || "";
       setSelectedConversationId(firstId);
       if (firstId) await loadMessages(firstId);
@@ -601,6 +614,28 @@ export function WhatsappServiceCenter() {
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
               <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar conversa" className="w-full rounded-xl border bg-white py-2 pl-9 pr-3 text-sm" />
             </div>
+            {availableChannels.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                <button
+                  onClick={() => setChannelFilter("")}
+                  className={`px-2.5 py-1 text-xs rounded-full border font-medium transition-colors ${!channelFilter ? "bg-slate-900 text-white border-slate-900" : "border-slate-300 text-slate-600 hover:border-slate-500"}`}
+                >
+                  Todos
+                </button>
+                {availableChannels.map((ch) => (
+                  <button
+                    key={ch.id}
+                    onClick={() => setChannelFilter(channelFilter === ch.id ? "" : ch.id)}
+                    className={`px-2.5 py-1 text-xs rounded-full border font-medium transition-colors`}
+                    style={channelFilter === ch.id
+                      ? { backgroundColor: ch.color, borderColor: ch.color, color: "#fff" }
+                      : { borderColor: ch.color + "66", color: ch.color }}
+                  >
+                    {ch.name}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="mt-3 flex flex-wrap gap-2">
               <Button size="sm" variant={queueFilter === "all" ? "default" : "outline"} onClick={() => setQueueFilter("all")}>Todas</Button>
               <Button size="sm" variant={queueFilter === "breached" ? "default" : "outline"} onClick={() => setQueueFilter("breached")}>Atrasadas</Button>
@@ -637,6 +672,14 @@ export function WhatsappServiceCenter() {
                     </div>
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {conversation.is_group ? <Badge variant="outline" className="border-blue-300 text-blue-700">Grupo</Badge> : <Badge variant="secondary">Contato</Badge>}
+                      {conversation.channels && (
+                        <span
+                          className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                          style={{ backgroundColor: conversation.channels.color + "22", color: conversation.channels.color }}
+                        >
+                          {conversation.channels.name}
+                        </span>
+                      )}
                       {isBreached ? <Badge className="bg-red-600 text-white">SLA estourado</Badge> : null}
                       {needsHuman && !isBreached ? <Badge className="bg-amber-500 text-white">Precisa humano</Badge> : null}
                       {lastInboundIsLatest && !needsHuman && !isBreached ? <Badge variant="outline" className="border-orange-300 text-orange-700">Aguardando resposta</Badge> : null}
