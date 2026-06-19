@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { whatsappWebGatewayClient } from "@/lib/providers/whatsapp-web-gateway-client";
+import { sendTextMessage as cloudSendText } from "@/lib/providers/whatsapp-cloud-client";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 
 type Params = { params: Promise<{ conversationId: string }> };
@@ -22,7 +23,7 @@ export async function POST(request: NextRequest, context: Params) {
 
     const { data: conversation, error: conversationError } = await db
       .from("whatsapp_conversations")
-      .select("id, tenant_id, organization_id, external_chat_id, contact_id")
+      .select("id, tenant_id, organization_id, external_chat_id, contact_id, provider, is_group")
       .eq("id", conversationId)
       .single();
 
@@ -30,11 +31,28 @@ export async function POST(request: NextRequest, context: Params) {
     if (!conversation?.external_chat_id) {
       return NextResponse.json({ ok: false, error: "Conversa sem chat ID externo." }, { status: 400 });
     }
+    if (conversation.is_group) {
+      return NextResponse.json({ ok: false, error: "Não é possível enviar mensagens para grupos." }, { status: 400 });
+    }
 
-    const sent = await whatsappWebGatewayClient.sendMessage({
-      to: conversation.external_chat_id,
-      body: messageBody,
-    });
+    // Route by provider
+    let sentId: string;
+    let sentProvider: string;
+
+    if (conversation.provider === "whatsapp_cloud") {
+      const result = await cloudSendText(conversation.external_chat_id, messageBody);
+      sentId = result.messageId;
+      sentProvider = "whatsapp_cloud";
+    } else {
+      const result = await whatsappWebGatewayClient.sendMessage({
+        to: conversation.external_chat_id,
+        body: messageBody,
+      });
+      sentId = result.id;
+      sentProvider = "whatsapp_web";
+    }
+
+    const sent = { id: sentId, provider: sentProvider };
 
     const now = new Date().toISOString();
 
@@ -42,7 +60,7 @@ export async function POST(request: NextRequest, context: Params) {
       .from("whatsapp_messages")
       .upsert({
         external_message_id: sent.id,
-        provider: "whatsapp_web",
+        provider: sentProvider,
         conversation_id: conversation.id,
         contact_id: conversation.contact_id || null,
         direction: "outbound",
