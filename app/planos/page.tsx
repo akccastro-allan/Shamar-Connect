@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { BrandLogo } from "@/components/brand/brand-logo";
+import { SiteFooter } from "@/components/site/site-footer";
 
 const plans = [
   {
@@ -214,6 +215,7 @@ export default async function PlanosPage({ searchParams }: PlanosPageProps) {
             <a href="#planos" className="hover:text-[#1B2F5B]">Planos</a>
             <a href="#implantacao" className="hover:text-[#1B2F5B]">Implantação</a>
             <a href="#comparativo" className="hover:text-[#1B2F5B]">Comparativo</a>
+            <Link href="/sobre" className="hover:text-[#1B2F5B]">Sobre</Link>
           </nav>
           <Link href="/login" className="rounded-full bg-[#1B2F5B] px-5 py-2.5 text-sm font-black text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
             Entrar
@@ -428,6 +430,7 @@ export default async function PlanosPage({ searchParams }: PlanosPageProps) {
           </Link>
         </div>
       </section>
+      <SiteFooter />
     </main>
   );
 }
