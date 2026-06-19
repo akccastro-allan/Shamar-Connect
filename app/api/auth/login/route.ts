@@ -161,6 +161,7 @@ export async function POST(request: NextRequest) {
         .from("organizations")
         .select("name, legal_name, document_number, status")
         .eq("id", tenantUser.organization_id)
+        .eq("tenant_id", tenantUser.tenant_id)
         .eq("status", "active")
         .maybeSingle();
 
