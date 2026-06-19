@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
+import { sendPasswordRecoveryEmail } from "@/lib/email/resend";
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,7 +14,7 @@ export async function POST(request: NextRequest) {
     const siteUrl = process.env.NEXT_PUBLIC_APP_URL || "https://shamarconnect.com.br";
     const supabase = createSupabaseWriteClient();
 
-    const { error } = await supabase.auth.admin.generateLink({
+    const { data, error } = await supabase.auth.admin.generateLink({
       type: "recovery",
       email,
       options: {
@@ -21,9 +22,11 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    if (error) {
-      return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
+    if (error || !data?.properties?.action_link) {
+      return NextResponse.json({ ok: false, error: error?.message ?? "Falha ao gerar link." }, { status: 400 });
     }
+
+    await sendPasswordRecoveryEmail(email, data.properties.action_link);
 
     // Always return ok=true to avoid user enumeration
     return NextResponse.json({ ok: true });
