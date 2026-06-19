@@ -1,254 +1,147 @@
-import type { Metadata } from "next";
 import Link from "next/link";
+import type { Metadata } from "next";
+import { BlogFeatured } from "@/components/site/blog-featured";
+import { BlogCasosReais } from "@/components/site/blog-casos-reais";
+import { posts, CATEGORIES, getPostsByCategory, type Category } from "@/lib/blog/posts";
 
 export const metadata: Metadata = {
-  title: "Blog",
+  title: "Blog — ShamarConnect",
   description:
-    "Conteudos sobre atendimento pelo WhatsApp, CRM, vendas, automacao comercial e inteligencia artificial para pequenas e medias empresas.",
+    "Artigos sobre CRM, WhatsApp, atendimento, vendas, automação e IA para empresas que querem transformar conversas em oportunidades reais.",
 };
 
-const posts = [
-  {
-    title: "Como organizar prioridades no atendimento pelo WhatsApp",
-    description: "Guia pratico para priorizar conversas, oportunidades e proximas acoes no WhatsApp.",
-    href: "/blog/como-organizar-prioridades-no-atendimento-pelo-whatsapp",
-    category: "Prioridade no atendimento",
-    readTime: "7 min",
-  },
-  {
-    title: "Como usar respostas rápidas sem deixar o atendimento robótico",
-    description: "Guia pratico para usar respostas rapidas com contexto e atendimento humano.",
-    href: "/blog/como-usar-respostas-rapidas-sem-deixar-o-atendimento-robotico",
-    category: "Respostas rápidas",
-    readTime: "7 min",
-  },
-  {
-    title: "Como reduzir o tempo de resposta no WhatsApp da empresa",
-    description: "Guia pratico para responder mais rapido no WhatsApp sem perder qualidade.",
-    href: "/blog/como-reduzir-o-tempo-de-resposta-no-whatsapp-da-empresa",
-    category: "Atendimento pelo WhatsApp",
-    readTime: "7 min",
-  },
-  {
-    title: "Indicadores de atendimento no WhatsApp: o que o gestor precisa acompanhar",
-    description: "Guia pratico sobre indicadores para melhorar atendimento e vendas pelo WhatsApp.",
-    href: "/blog/indicadores-de-atendimento-no-whatsapp-o-que-o-gestor-precisa-acompanhar",
-    category: "Gestão de atendimento",
-    readTime: "7 min",
-  },
-  {
-    title: "Como organizar atendimento, vendas e CRM em uma única operação",
-    description: "Guia pratico para integrar atendimento, vendas, CRM, historico e IA em uma unica operacao.",
-    href: "/blog/como-organizar-atendimento-vendas-e-crm-em-uma-unica-operacao",
-    category: "Operação comercial",
-    readTime: "7 min",
-  },
-  {
-    title: "Atendimento comercial pelo WhatsApp: como criar um processo simples",
-    description: "Guia pratico para criar processo comercial simples no atendimento pelo WhatsApp.",
-    href: "/blog/atendimento-comercial-pelo-whatsapp-como-criar-um-processo-simples",
-    category: "Atendimento comercial",
-    readTime: "7 min",
-  },
-  {
-    title: "CRM para equipe comercial: como organizar vendedores e atendentes",
-    description: "Guia pratico para organizar equipe comercial, responsaveis, etapas e oportunidades.",
-    href: "/blog/crm-para-equipe-comercial-como-organizar-vendedores-e-atendentes",
-    category: "CRM comercial",
-    readTime: "7 min",
-  },
-  {
-    title: "Como saber se sua equipe está perdendo vendas no WhatsApp",
-    description: "Guia pratico para identificar perdas comerciais no atendimento pelo WhatsApp.",
-    href: "/blog/como-saber-se-sua-equipe-esta-perdendo-vendas-no-whatsapp",
-    category: "Vendas pelo WhatsApp",
-    readTime: "7 min",
-  },
-  {
-    title: "Como organizar o histórico de clientes no WhatsApp",
-    description: "Guia pratico para organizar historico de clientes, conversas e contexto no atendimento.",
-    href: "/blog/como-organizar-o-historico-de-clientes-no-whatsapp",
-    category: "Historico de clientes",
-    readTime: "7 min",
-  },
-  {
-    title: "Transcrição de áudio no WhatsApp: por que isso ajuda no atendimento",
-    description: "Guia pratico sobre transcricao de audio e ganho de produtividade no atendimento.",
-    href: "/blog/transcricao-de-audio-no-whatsapp-ajuda-no-atendimento",
-    category: "IA no atendimento",
-    readTime: "7 min",
-  },
-  {
-    title: "IA no atendimento pelo WhatsApp: como usar sem perder o toque humano",
-    description: "Guia pratico sobre uso de IA para apoiar o atendimento comercial pelo WhatsApp.",
-    href: "/blog/ia-no-atendimento-pelo-whatsapp-como-usar-sem-perder-o-toque-humano",
-    category: "IA no atendimento",
-    readTime: "7 min",
-  },
-  {
-    title: "Como transformar conversas do WhatsApp em oportunidades de venda",
-    description:
-      "Veja como transformar conversas do WhatsApp em oportunidades de venda com qualificação, CRM, funil, histórico e próxima ação.",
-    href: "/blog/como-transformar-conversas-do-whatsapp-em-oportunidades-de-venda",
-    category: "Oportunidades de venda",
-    readTime: "7 min",
-  },
-  {
-    title: "Como acompanhar orçamentos enviados pelo WhatsApp",
-    description:
-      "Veja como acompanhar orçamentos enviados pelo WhatsApp com follow-up, etapas comerciais, CRM, histórico e controle de oportunidades.",
-    href: "/blog/como-acompanhar-orcamentos-enviados-pelo-whatsapp",
-    category: "Orçamentos pelo WhatsApp",
-    readTime: "7 min",
-  },
-  {
-    title: "Respostas rápidas no WhatsApp: como padronizar o atendimento",
-    description:
-      "Veja como usar respostas rápidas no WhatsApp para padronizar atendimento comercial, reduzir tempo de resposta e melhorar vendas.",
-    href: "/blog/respostas-rapidas-no-whatsapp-como-padronizar-o-atendimento-comercial",
-    category: "Respostas rápidas",
-    readTime: "7 min",
-  },
-  {
-    title: "Como responder clientes mais rápido no WhatsApp sem perder qualidade",
-    description:
-      "Veja como responder clientes mais rápido no WhatsApp sem perder qualidade usando respostas rápidas, CRM, organização, equipe e IA.",
-    href: "/blog/como-responder-clientes-mais-rapido-no-whatsapp-sem-perder-qualidade",
-    category: "Atendimento pelo WhatsApp",
-    readTime: "7 min",
-  },
-  {
-    title: "Atendimento multiatendente no WhatsApp: quando usar",
-    description:
-      "Entenda quando sua empresa precisa de atendimento multiatendente no WhatsApp e como organizar responsáveis, histórico, CRM e equipe.",
-    href: "/blog/atendimento-multiatendente-no-whatsapp-quando-sua-empresa-precisa-disso",
-    category: "Atendimento multiatendente",
-    readTime: "7 min",
-  },
-  {
-    title: "CRM com WhatsApp: como funciona na prática",
-    description:
-      "Entenda como um CRM com WhatsApp ajuda a organizar conversas, clientes, oportunidades, funil de vendas, follow-ups e atendimento comercial.",
-    href: "/blog/crm-com-whatsapp-como-funciona-na-pratica",
-    category: "CRM WhatsApp",
-    readTime: "7 min",
-  },
-  {
-    title: "Funil de vendas no WhatsApp: como acompanhar cada cliente",
-    description:
-      "Entenda como usar um funil de vendas no WhatsApp para acompanhar clientes, orçamentos, follow-ups, negociações e fechamentos.",
-    href: "/blog/funil-de-vendas-no-whatsapp-como-acompanhar-cada-cliente",
-    category: "Funil de vendas",
-    readTime: "7 min",
-  },
-  {
-    title: "Como controlar atendentes no WhatsApp sem perder qualidade",
-    description:
-      "Veja como controlar atendentes no WhatsApp com responsáveis, histórico, respostas rápidas, indicadores, CRM e IA sem perder qualidade.",
-    href: "/blog/como-controlar-atendentes-no-whatsapp-sem-perder-qualidade",
-    category: "Gestão de atendimento",
-    readTime: "7 min",
-  },
-  {
-    title: "Melhor CRM para pequenas empresas: como escolher sem complicar",
-    description:
-      "Saiba como escolher o melhor CRM para pequenas empresas considerando simplicidade, WhatsApp, funil de vendas, equipe e controle comercial.",
-    href: "/blog/melhor-crm-para-pequenas-empresas-como-escolher-sem-complicar",
-    category: "CRM para pequenas empresas",
-    readTime: "7 min",
-  },
-  {
-    title: "Como não perder vendas que chegam pelo WhatsApp",
-    description:
-      "Entenda como evitar perdas comerciais no WhatsApp com organização, CRM, follow-up, etapas de venda e acompanhamento da equipe.",
-    href: "/blog/como-nao-perder-vendas-que-chegam-pelo-whatsapp",
-    category: "Vendas pelo WhatsApp",
-    readTime: "7 min",
-  },
-  {
-    title: "Como organizar clientes no WhatsApp sem perder vendas",
-    description:
-      "Veja como organizar clientes no WhatsApp, controlar orcamentos, acompanhar follow-ups e evitar perdas comerciais com ajuda de CRM.",
-    href: "/blog/como-organizar-clientes-no-whatsapp-sem-perder-vendas",
-    category: "Atendimento comercial",
-    readTime: "7 min",
-  },
-  {
-    title: "CRM para WhatsApp: como organizar vendas e atendimento em um só lugar",
-    description:
-      "Entenda como um CRM para WhatsApp ajuda pequenas empresas a organizar atendimento, vendas, clientes e oportunidades em um só lugar.",
-    href: "/blog/crm-para-whatsapp-como-organizar-vendas-e-atendimento-em-um-so-lugar",
-    category: "CRM WhatsApp",
-    readTime: "7 min",
-  },
-];
+const CATEGORY_KEYS = Object.keys(CATEGORIES) as Category[];
 
-const topics = [
-  "CRM para WhatsApp",
-  "Atendimento comercial",
-  "Automacao de vendas",
-  "Inteligencia artificial no atendimento",
-  "Organizacao de contatos",
-  "Funil de vendas para pequenas empresas",
-];
+type BlogPageProps = {
+  searchParams?: Promise<{ categoria?: string }>;
+};
 
-export default function BlogPage() {
+export default async function BlogPage({ searchParams }: BlogPageProps) {
+  const params = await searchParams;
+  const activeCategory = CATEGORY_KEYS.includes(params?.categoria as Category)
+    ? (params?.categoria as Category)
+    : null;
+
+  const filtered = getPostsByCategory(activeCategory);
+
   return (
-    <main className="bg-white">
-      <section className="mx-auto max-w-7xl px-5 py-20 md:px-8 lg:py-28">
-        <div className="mx-auto max-w-4xl text-center">
-          <p className="text-sm font-black uppercase tracking-[0.25em] text-[#2ABFAB]">
-            Blog ShamarConnect
-          </p>
-          <h1 className="mt-5 text-4xl font-black tracking-tight text-[#1B2F5B] md:text-6xl">
-            Conteudos para vender mais e atender melhor pelo WhatsApp
-          </h1>
-          <p className="mt-6 text-lg leading-8 text-slate-600">
-            Artigos sobre CRM, WhatsApp, atendimento, vendas, automacao e IA para empresas que querem transformar conversas em oportunidades reais.
-          </p>
-        </div>
+    <>
+      {/* Hero */}
+      <section className="bg-white pt-16 pb-10">
+        <div className="mx-auto max-w-7xl px-5 md:px-8">
+          <div className="mx-auto max-w-3xl text-center">
+            <p className="text-xs font-black uppercase tracking-[0.25em] text-[#2ABFAB]">Blog ShamarConnect</p>
+            <h1 className="mt-4 text-4xl font-black tracking-tight text-[#1B2F5B] md:text-5xl">
+              Conteúdo para vender mais e atender melhor pelo WhatsApp
+            </h1>
+            <p className="mt-5 text-base leading-8 text-slate-600">
+              Artigos práticos sobre CRM, WhatsApp, atendimento, vendas, IA e organização para equipes comerciais.
+            </p>
+          </div>
 
-        <div className="mt-14 grid gap-6 lg:grid-cols-3">
-          {posts.map((post) => (
-            <article key={post.href} className="rounded-[2rem] border border-slate-200 bg-white p-7 shadow-lg">
-              <div className="flex flex-wrap gap-2 text-xs font-black uppercase tracking-[0.18em] text-[#C9952A]">
-                <span>{post.category}</span>
-                <span>•</span>
-                <span>{post.readTime}</span>
-              </div>
-              <h2 className="mt-4 text-2xl font-black text-[#1B2F5B]">{post.title}</h2>
-              <p className="mt-4 text-sm leading-7 text-slate-600">{post.description}</p>
-              <Link href={post.href} className="mt-6 inline-flex rounded-full bg-[#2ABFAB] px-5 py-3 font-black text-white">
-                Ler artigo
+          {/* Category filter */}
+          <div className="mt-10 flex flex-wrap justify-center gap-2">
+            <Link
+              href="/blog"
+              className={`rounded-full border px-5 py-2 text-sm font-black transition ${
+                !activeCategory
+                  ? "border-[#1B2F5B] bg-[#1B2F5B] text-white"
+                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              Todos
+            </Link>
+            {CATEGORY_KEYS.map((cat) => (
+              <Link
+                key={cat}
+                href={`/blog?categoria=${cat}`}
+                className={`rounded-full border px-5 py-2 text-sm font-black transition ${
+                  activeCategory === cat
+                    ? "border-[#2ABFAB] bg-[#2ABFAB] text-white"
+                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                {CATEGORIES[cat]}
               </Link>
-            </article>
-          ))}
-        </div>
-
-        <div className="mt-16 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-          {topics.map((topic) => (
-            <article key={topic} className="rounded-[2rem] border border-slate-200 bg-[#F8FAFC] p-7 shadow-sm">
-              <p className="text-sm font-black uppercase tracking-[0.2em] text-[#C9952A]">
-                Em breve
-              </p>
-              <h2 className="mt-4 text-xl font-black text-[#1B2F5B]">{topic}</h2>
-              <p className="mt-3 text-sm leading-7 text-slate-600">
-                Conteudo em preparacao para ajudar gestores, vendedores e equipes de atendimento a organizarem melhor a operacao comercial.
-              </p>
-            </article>
-          ))}
-        </div>
-
-        <div className="mt-16 rounded-[2rem] bg-[#1B2F5B] p-8 text-center text-white md:p-12">
-          <h2 className="text-3xl font-black md:text-4xl">Quer organizar seu atendimento agora?</h2>
-          <p className="mx-auto mt-4 max-w-2xl text-white/70">
-            Enquanto os artigos estao sendo preparados, conheca os planos do ShamarConnect e veja como centralizar sua operacao comercial.
-          </p>
-          <Link href="/planos" className="mt-8 inline-flex rounded-full bg-[#2ABFAB] px-8 py-4 font-black text-white">
-            Ver planos
-          </Link>
+            ))}
+          </div>
         </div>
       </section>
-    </main>
+
+      {/* Featured — only on unfiltered view */}
+      {!activeCategory && <BlogFeatured />}
+
+      {/* Post grid */}
+      <section className="py-16">
+        <div className="mx-auto max-w-7xl px-5 md:px-8">
+          {activeCategory && (
+            <div className="mb-8 flex items-center gap-3">
+              <h2 className="text-xl font-black text-[#1B2F5B]">{CATEGORIES[activeCategory]}</h2>
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">
+                {filtered.length} artigos
+              </span>
+            </div>
+          )}
+
+          {!activeCategory && (
+            <div className="mb-8">
+              <h2 className="text-xl font-black text-[#1B2F5B]">Todos os artigos</h2>
+              <p className="mt-1 text-sm text-slate-500">{posts.length} artigos publicados</p>
+            </div>
+          )}
+
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {filtered.map((post) => (
+              <article
+                key={post.href}
+                className="group rounded-[2rem] border border-slate-200 bg-white p-7 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+              >
+                <div className="flex items-center gap-2">
+                  <Link
+                    href={`/blog?categoria=${post.category}`}
+                    className="rounded-full bg-[#2ABFAB]/10 px-3 py-1 text-xs font-black text-[#13796D] hover:bg-[#2ABFAB]/20"
+                  >
+                    {post.categoryLabel}
+                  </Link>
+                  <span className="text-xs text-slate-400">{post.readTime}</span>
+                </div>
+                <h2 className="mt-4 text-xl font-black leading-snug text-[#1B2F5B]">{post.title}</h2>
+                <p className="mt-3 text-sm leading-7 text-slate-600">{post.description}</p>
+                <Link
+                  href={post.href}
+                  className="mt-6 inline-flex rounded-full bg-[#2ABFAB] px-5 py-2.5 text-sm font-black text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                >
+                  Ler artigo
+                </Link>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Casos Reais — only on unfiltered view */}
+      {!activeCategory && <BlogCasosReais />}
+
+      {/* CTA */}
+      <section className="bg-white py-16">
+        <div className="mx-auto max-w-6xl px-5 md:px-8">
+          <div className="overflow-hidden rounded-[2rem] bg-[#1B2F5B] px-6 py-14 text-center text-white shadow-2xl md:px-12">
+            <p className="text-xs font-black uppercase tracking-[0.25em] text-[#2ABFAB]">ShamarConnect</p>
+            <h2 className="mx-auto mt-4 max-w-2xl text-3xl font-black tracking-tight md:text-4xl">
+              Pronto para organizar seu atendimento?
+            </h2>
+            <p className="mx-auto mt-4 max-w-xl text-sm leading-7 text-white/70">
+              Veja como centralizar WhatsApp, CRM, histórico e IA em uma única plataforma.
+            </p>
+            <Link
+              href="/planos"
+              className="mt-8 inline-flex rounded-full bg-[#2ABFAB] px-8 py-4 text-sm font-black text-white shadow-lg shadow-black/10 transition hover:-translate-y-0.5 hover:shadow-xl"
+            >
+              Ver planos
+            </Link>
+          </div>
+        </div>
+      </section>
+    </>
   );
 }
