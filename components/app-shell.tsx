@@ -4,6 +4,7 @@ import { BrandIcon } from "@/components/brand/brand-logo";
 import { cn } from "@/lib/utils";
 import { getCurrentSession } from "@/lib/auth/session";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
+import type { ShamarSession } from "@/lib/auth/session";
 
 const navigationGroups = [
   {
@@ -78,7 +79,7 @@ const navigationGroups = [
   },
 ];
 
-function SidebarContent({ active }: { active?: string }) {
+function SidebarContent({ active, session }: { active?: string; session: ShamarSession }) {
   return (
     <div className="flex h-full flex-col">
       <Link href="/dashboard" className="mb-7 flex items-center gap-3 rounded-3xl bg-white/10 p-3 ring-1 ring-white/10">
@@ -122,6 +123,34 @@ function SidebarContent({ active }: { active?: string }) {
           </div>
         ))}
       </nav>
+
+      {/* User info + logout */}
+      <div className="mt-4 border-t border-white/10 pt-4">
+        <Link
+          href="/settings/whatsapp"
+          className="mb-2 flex items-center gap-3 rounded-2xl px-3 py-2.5 transition hover:bg-white/10"
+        >
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#2ABFAB]/20 text-sm font-black text-[#2ABFAB]">
+            {(session.userName || session.companyName || "?").charAt(0).toUpperCase()}
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-bold text-white">{session.userName || session.companyName}</p>
+            <p className="truncate text-xs text-white/45">{session.companyName}</p>
+          </div>
+        </Link>
+
+        <form action="/api/auth/logout" method="POST">
+          <button
+            type="submit"
+            className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-bold text-white/50 transition hover:bg-white/10 hover:text-white"
+          >
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-lg bg-white/10 text-[10px] font-black">
+              ↩
+            </span>
+            Sair
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
@@ -162,17 +191,17 @@ async function assertAuthorizedSession() {
 }
 
 export async function AppShell({ children, active }: { children: React.ReactNode; active?: string }) {
-  await assertAuthorizedSession();
+  const session = await assertAuthorizedSession();
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-950 lg:grid lg:grid-cols-[280px_1fr]">
       <aside className="hidden h-screen bg-[#1B2F5B] p-5 lg:sticky lg:top-0 lg:block">
-        <SidebarContent active={active} />
+        <SidebarContent active={active} session={session} />
       </aside>
 
       <div className="min-w-0">
         <div className="border-b border-slate-200 bg-white px-5 py-4 lg:hidden">
-          <SidebarContent active={active} />
+          <SidebarContent active={active} session={session} />
         </div>
         {children}
       </div>
