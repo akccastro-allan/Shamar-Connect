@@ -1,38 +1,37 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { BrandLogo } from "@/components/brand/brand-logo";
+import { Suspense } from "react";
 
-export default function AuthConfirmPage() {
+function AuthConfirmInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [status, setStatus] = useState<"loading" | "error">("loading");
   const [errorMsg, setErrorMsg] = useState("");
 
   useEffect(() => {
-    const hash = window.location.hash.slice(1);
-    const params = new URLSearchParams(hash);
-    const accessToken = params.get("access_token");
-    const refreshToken = params.get("refresh_token");
-    const type = params.get("type");
+    const tokenHash = searchParams.get("token_hash");
+    const type = searchParams.get("type");
 
-    if (!accessToken || !refreshToken || type !== "recovery") {
+    if (!tokenHash || type !== "recovery") {
       setErrorMsg("Link inválido ou expirado. Solicite uma nova recuperação de senha.");
       setStatus("error");
       return;
     }
 
     const supabase = createSupabaseBrowserClient();
-    supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken }).then(({ error }) => {
+    supabase.auth.verifyOtp({ token_hash: tokenHash, type: "recovery" }).then(({ error }) => {
       if (error) {
-        setErrorMsg("Sessão inválida. Solicite uma nova recuperação de senha.");
+        setErrorMsg("Link inválido ou expirado. Solicite uma nova recuperação de senha.");
         setStatus("error");
         return;
       }
       router.replace("/login/reset-password");
     });
-  }, [router]);
+  }, [router, searchParams]);
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#F8FAFC] px-6">
@@ -57,5 +56,13 @@ export default function AuthConfirmPage() {
         )}
       </div>
     </main>
+  );
+}
+
+export default function AuthConfirmPage() {
+  return (
+    <Suspense>
+      <AuthConfirmInner />
+    </Suspense>
   );
 }

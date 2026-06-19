@@ -22,11 +22,12 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    if (error || !data?.properties?.action_link) {
+    if (error || !data?.properties?.hashed_token) {
       return NextResponse.json({ ok: false, error: error?.message ?? "Falha ao gerar link." }, { status: 400 });
     }
 
-    await sendPasswordRecoveryEmail(email, data.properties.action_link);
+    const confirmUrl = `${siteUrl}/auth/confirm?token_hash=${data.properties.hashed_token}&type=recovery`;
+    await sendPasswordRecoveryEmail(email, confirmUrl);
 
     // Always return ok=true to avoid user enumeration
     return NextResponse.json({ ok: true });
