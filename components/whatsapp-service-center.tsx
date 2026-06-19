@@ -222,7 +222,7 @@ export function WhatsappServiceCenter() {
   const [conversationFlows, setConversationFlows] = useState<ConversationFlow[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState("");
   const [query, setQuery] = useState("");
-  const [queueFilter, setQueueFilter] = useState<"all" | "breached" | "human" | "unanswered">("all");
+  const [queueFilter, setQueueFilter] = useState<"all" | "breached" | "human" | "unanswered" | "groups" | "individuals">("all");
   const [quickReplyQuery, setQuickReplyQuery] = useState("");
   const [flowQuery, setFlowQuery] = useState("");
   const [replyBody, setReplyBody] = useState("");
@@ -262,6 +262,8 @@ export function WhatsappServiceCenter() {
     if (queueFilter === "breached") items = items.filter((conversation) => conversation.sla_status === "breached");
     if (queueFilter === "human") items = items.filter((conversation) => conversation.requires_human);
     if (queueFilter === "unanswered") items = items.filter(isUnanswered);
+    if (queueFilter === "groups") items = items.filter((conversation) => conversation.is_group);
+    if (queueFilter === "individuals") items = items.filter((conversation) => !conversation.is_group);
 
     if (term) {
       items = items.filter((conversation) => [conversation.name, conversation.external_chat_id, conversation.crm_contacts?.name, conversation.crm_contacts?.phone, conversation.latest_message?.body, conversation.pending_reason]
@@ -417,6 +419,11 @@ export function WhatsappServiceCenter() {
     }
   }
 
+  function attendNext() {
+    const next = filteredConversations[0];
+    if (next) selectConversation(next.id);
+  }
+
   async function sendReply() {
     if (!selectedConversation?.id || !replyBody.trim()) return;
     setSending(true);
@@ -454,10 +461,11 @@ export function WhatsappServiceCenter() {
               <CardDescription className="mt-2 max-w-3xl">Fila operacional por SLA: conversas antigas e atrasadas aparecem primeiro; chamadas novas entram no final da fila.</CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
+              <Button onClick={attendNext} disabled={filteredConversations.length === 0} className="bg-emerald-700 hover:bg-emerald-800"><UserPlus className="mr-2 h-4 w-4" />Atender próximo</Button>
               <Button onClick={loadConversations} disabled={loading} variant="outline"><RefreshCcw className="mr-2 h-4 w-4" />Atualizar</Button>
               <Button onClick={runWatchdog} disabled={watchdogRunning} variant="outline"><Clock className="mr-2 h-4 w-4" />Verificar pendências</Button>
               <Button onClick={enableSound} disabled={soundEnabled} variant="outline">{soundEnabled ? "Som ativo" : "Ativar som"}</Button>
-              <Button asChild><Link href="/whatsapp-import"><Download className="mr-2 h-4 w-4" />Importar WhatsApp</Link></Button>
+              <Button asChild variant="outline"><Link href="/whatsapp-import"><Download className="mr-2 h-4 w-4" />Importar WhatsApp</Link></Button>
             </div>
           </div>
         </CardHeader>
@@ -488,23 +496,40 @@ export function WhatsappServiceCenter() {
               <Button size="sm" variant={queueFilter === "breached" ? "default" : "outline"} onClick={() => setQueueFilter("breached")}>Atrasadas</Button>
               <Button size="sm" variant={queueFilter === "human" ? "default" : "outline"} onClick={() => setQueueFilter("human")}>Precisa humano</Button>
               <Button size="sm" variant={queueFilter === "unanswered" ? "default" : "outline"} onClick={() => setQueueFilter("unanswered")}>Sem resposta</Button>
+              <Button size="sm" variant={queueFilter === "groups" ? "default" : "outline"} onClick={() => setQueueFilter("groups")}>Grupos</Button>
+              <Button size="sm" variant={queueFilter === "individuals" ? "default" : "outline"} onClick={() => setQueueFilter("individuals")}>Individuais</Button>
             </div>
           </CardHeader>
           <CardContent className="p-0">
             <div className="max-h-[680px] divide-y overflow-auto">
               {filteredConversations.map((conversation) => {
                 const selected = selectedConversation?.id === conversation.id;
+                const isBreached = conversation.sla_status === "breached";
+                const needsHuman = conversation.requires_human;
+                const lastInboundIsLatest = conversation.latest_message?.direction === "inbound";
+                const waitingRef = conversation.last_inbound_at || (lastInboundIsLatest ? conversation.latest_message?.created_at : null);
+                const waitLabel = formatWaiting(waitingRef);
+
+                let rowBg = selected ? "bg-emerald-50" : "bg-white";
+                if (isBreached) rowBg = selected ? "bg-red-100" : "bg-red-50";
+
                 return (
-                  <button key={conversation.id} onClick={() => selectConversation(conversation.id)} className={`w-full p-4 text-left transition hover:bg-slate-50 ${selected ? "bg-emerald-50" : "bg-white"}`}>
+                  <button key={conversation.id} onClick={() => selectConversation(conversation.id)} className={`w-full border-l-4 p-4 text-left transition hover:brightness-95 ${rowBg} ${isBreached ? "border-l-red-500" : needsHuman ? "border-l-amber-400" : conversation.is_group ? "border-l-blue-400" : "border-l-transparent"}`}>
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="truncate font-medium text-slate-950">{getConversationName(conversation)}</p>
                         <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{conversation.latest_message?.body || "Sem mensagem salva ainda"}</p>
                       </div>
-                      <span className="shrink-0 text-xs text-muted-foreground">{formatDate(conversation.last_message_at || conversation.latest_message?.created_at)}</span>
+                      <div className="flex shrink-0 flex-col items-end gap-1">
+                        <span className="text-xs text-muted-foreground">{formatDate(conversation.last_message_at || conversation.latest_message?.created_at)}</span>
+                        {waitLabel !== "—" ? <span className={`text-[11px] font-medium ${isBreached ? "text-red-600" : "text-amber-600"}`}>esperando há {waitLabel}</span> : null}
+                      </div>
                     </div>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {conversation.is_group ? <Badge variant="outline">Grupo</Badge> : <Badge variant="secondary">Contato</Badge>}
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {conversation.is_group ? <Badge variant="outline" className="border-blue-300 text-blue-700">Grupo</Badge> : <Badge variant="secondary">Contato</Badge>}
+                      {isBreached ? <Badge className="bg-red-600 text-white">SLA estourado</Badge> : null}
+                      {needsHuman && !isBreached ? <Badge className="bg-amber-500 text-white">Precisa humano</Badge> : null}
+                      {lastInboundIsLatest && !needsHuman && !isBreached ? <Badge variant="outline" className="border-orange-300 text-orange-700">Aguardando resposta</Badge> : null}
                       {conversation.unread_count ? <Badge variant="destructive">{conversation.unread_count}</Badge> : null}
                     </div>
                   </button>
