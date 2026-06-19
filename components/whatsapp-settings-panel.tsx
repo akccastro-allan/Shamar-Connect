@@ -7,12 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ProviderStatus } from "@/types/messaging-provider";
 
-type SessionId = "hall-main" | "lips-main";
-
-const SESSIONS: { id: SessionId; label: string; description: string }[] = [
-  { id: "hall-main", label: "Hall Donous", description: "Sessão principal Hall." },
-  { id: "lips-main", label: "Lips", description: "Sessão Lips." },
-];
+type SessionId = string;
 
 function statusVariant(status?: string) {
   if (status === "ready" || status === "authenticated") return "success";
@@ -38,8 +33,10 @@ async function readJson<T>(url: string, init?: RequestInit): Promise<T> {
   return data;
 }
 
-export function WhatsappSettingsPanel() {
-  const [session, setSession] = useState<SessionId>("hall-main");
+type SessionOption = { id: string; label: string };
+
+export function WhatsappSettingsPanel({ allowedSessions }: { allowedSessions: SessionOption[] }) {
+  const [session, setSession] = useState<SessionId>(allowedSessions[0]?.id ?? "hall-main");
   const [status, setStatus] = useState<ProviderStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -100,7 +97,7 @@ export function WhatsappSettingsPanel() {
     return () => window.clearInterval(interval);
   }, [session]);
 
-  const sessionInfo = SESSIONS.find((s) => s.id === session)!;
+  const sessionInfo = allowedSessions.find((s) => s.id === session) ?? allowedSessions[0]!;
   const isConnected = status?.status === "ready" || status?.status === "authenticated";
 
   return (
@@ -113,7 +110,7 @@ export function WhatsappSettingsPanel() {
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-2">
-            {SESSIONS.map((s) => (
+            {allowedSessions.map((s) => (
               <button
                 key={s.id}
                 onClick={() => setSession(s.id)}
