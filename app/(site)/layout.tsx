@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 
 import { BrandLogo } from "@/components/brand/brand-logo";
 import { SiteFooter } from "@/components/site/site-footer";
+import { getCurrentSession } from "@/lib/auth/session";
 
 const navLinks = [
   { href: "/", label: "Início" },
@@ -32,7 +33,10 @@ export const metadata: Metadata = {
   ],
 };
 
-export default function SiteLayout({ children }: { children: ReactNode }) {
+export default async function SiteLayout({ children }: { children: ReactNode }) {
+  const session = await getCurrentSession();
+  const isAuthenticated = session !== null;
+
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-950">
       <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur">
@@ -50,18 +54,29 @@ export default function SiteLayout({ children }: { children: ReactNode }) {
           </nav>
 
           <div className="flex items-center gap-3">
-            <Link
-              href="/planos"
-              className="hidden rounded-full border border-[#2ABFAB] px-4 py-2 text-sm font-black text-[#2ABFAB] transition hover:bg-[#2ABFAB] hover:text-white sm:inline-flex"
-            >
-              Ver planos
-            </Link>
-            <Link
-              href="/login"
-              className="rounded-full bg-[#1B2F5B] px-5 py-2.5 text-sm font-black text-white transition hover:bg-[#132344]"
-            >
-              Entrar
-            </Link>
+            {isAuthenticated ? (
+              <Link
+                href="/operations"
+                className="rounded-full bg-[#2ABFAB] px-5 py-2.5 text-sm font-black text-white transition hover:bg-[#22a898]"
+              >
+                Abrir Plataforma
+              </Link>
+            ) : (
+              <>
+                <Link
+                  href="/planos"
+                  className="hidden rounded-full border border-[#2ABFAB] px-4 py-2 text-sm font-black text-[#2ABFAB] transition hover:bg-[#2ABFAB] hover:text-white sm:inline-flex"
+                >
+                  Ver planos
+                </Link>
+                <Link
+                  href="/login"
+                  className="rounded-full bg-[#1B2F5B] px-5 py-2.5 text-sm font-black text-white transition hover:bg-[#132344]"
+                >
+                  Entrar
+                </Link>
+              </>
+            )}
           </div>
         </div>
 
@@ -71,6 +86,15 @@ export default function SiteLayout({ children }: { children: ReactNode }) {
               {link.label}
             </Link>
           ))}
+          {isAuthenticated ? (
+            <Link href="/operations" className="font-black text-[#2ABFAB]">
+              Plataforma
+            </Link>
+          ) : (
+            <Link href="/login" className="font-black text-[#1B2F5B]">
+              Entrar
+            </Link>
+          )}
         </nav>
       </header>
 

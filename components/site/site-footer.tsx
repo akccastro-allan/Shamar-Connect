@@ -25,6 +25,7 @@ const companyLinks = [
   { href: "/sobre", label: "Sobre" },
   { href: "/contato", label: "Contato" },
   { href: "/planos", label: "Planos e preços" },
+  { href: "/login", label: "Login" },
 ];
 
 const legalLinks = [

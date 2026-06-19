@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 
+import { getCurrentSession } from "@/lib/auth/session";
+
 export const metadata: Metadata = {
   title: "ShamarConnect — WhatsApp + CRM + IA para empresas",
   description:
@@ -109,7 +111,9 @@ function CheckMark() {
   );
 }
 
-export default function HomePage() {
+export default async function HomePage() {
+  const session = await getCurrentSession();
+  const isAuthenticated = session !== null;
   return (
     <>
       {/* Hero */}
@@ -133,6 +137,12 @@ export default function HomePage() {
                 className="rounded-full bg-[#2ABFAB] px-8 py-4 text-base font-black text-white shadow-lg shadow-[#2ABFAB]/25 transition hover:-translate-y-0.5 hover:shadow-xl"
               >
                 Ver planos
+              </Link>
+              <Link
+                href={isAuthenticated ? "/operations" : "/login"}
+                className="rounded-full border border-[#1B2F5B] bg-white px-8 py-4 text-base font-black text-[#1B2F5B] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#1B2F5B] hover:text-white hover:shadow-md"
+              >
+                {isAuthenticated ? "Abrir Plataforma" : "Entrar na Plataforma"}
               </Link>
               <Link
                 href="/contato"
