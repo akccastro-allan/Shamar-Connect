@@ -38,6 +38,8 @@ const navigationGroups = [
       { href: "/conversation-flows", label: "Fluxos", marker: "F" },
       { href: "/automations", label: "Automações", marker: "Z" },
       { href: "/knowledge", label: "Conhecimento", marker: "K" },
+      { href: "/whatsapp-diagnostics", label: "Diagnóstico WhatsApp", marker: "G" },
+      { href: "/settings/whatsapp-automation", label: "Config. Automação", marker: "A" },
       { href: "/whatsapp-import", label: "Importação WhatsApp", marker: "I" },
       { href: "/contact-import", label: "Importar contatos", marker: "U" },
       { href: "/group-import-lists", label: "Listas importadas", marker: "L" },
