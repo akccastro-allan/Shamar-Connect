@@ -1,13 +1,35 @@
 # Hall Donous & Lips — Go-live Checklist
 
-## 1. Como conectar Hall Donous
+**Última revisão:** 2026-06-19
+**Status do sistema:** ✅ Pronto para conexão
+
+---
+
+## Status pré-conexão
+
+| Item | Status |
+|------|--------|
+| Auth — login/logout | ✅ |
+| Sessões isoladas por channel_id | ✅ |
+| Migration 0014 aplicada (channels hall/lips) | ✅ |
+| Diagnóstico filtra por sessão | ✅ |
+| Automação aceita sessionId | ✅ |
+| Automação usa gateway correto por sessão | ✅ |
+| Grupos nunca recebem resposta automática | ✅ |
+| Build + TypeScript limpos | ✅ |
+| Hall conectado (QR escaneado) | ⬜ |
+| Lips conectado (QR escaneado) | ⬜ |
+
+---
+
+## 1. Conectar Hall Donous
 
 1. Acesse `/settings/whatsapp`
-2. Selecione **Hall Donous** no seletor de unidades
-3. Clique **Conectar** → aguarde o QR Code aparecer
+2. Selecione **Hall Donous** → clique **Conectar**
+3. Aguarde o QR Code aparecer
 4. No celular do Hall: WhatsApp → Dispositivos conectados → Escanear QR
 5. Status deve mudar para `ready` ou `authenticated`
-6. Confirme em `/whatsapp-diagnostics` → selecione Hall Donous → clique **Diagnóstico Hall Donous**
+6. Confirme em `/whatsapp-diagnostics?session=hall-main`
 
 **Esperado:**
 ```
@@ -18,172 +40,124 @@ Telefone: +55 (número do Hall)
 
 ---
 
-## 2. Como conectar Lips
+## 2. Conectar Lips
 
 1. Acesse `/settings/whatsapp`
-2. Selecione **Lips** no seletor de unidades
-3. Clique **Conectar** → aguarde o QR Code aparecer
-4. No celular do Lips: WhatsApp → Dispositivos conectados → Escanear QR
-5. Status deve mudar para `ready` ou `authenticated`
-6. Confirme em `/whatsapp-diagnostics` → selecione Lips → clique **Diagnóstico Lips**
+2. Selecione **Lips** → clique **Conectar**
+3. Mesmo fluxo com o celular do Lips
+4. Confirme em `/whatsapp-diagnostics?session=lips-main`
 
-**Importante:** Conectar Lips NÃO afeta Hall. São sessões independentes (`hall-main` e `lips-main`).
+**Importante:** Conectar Lips NÃO afeta Hall. São sessões e gateways independentes.
 
 ---
 
-## 3. Como testar status
+## 3. Primeiro sync de conversas
 
-**Via tela:**
-- `/operations` — cards de status em tempo real de Hall e Lips
-- `/whatsapp-diagnostics` — selecionar unidade e carregar diagnóstico completo
+Após conectar, rodar sync para trazer o histórico:
 
-**Via API:**
-```
-GET /api/whatsapp-web/status?sessionId=hall-main
-GET /api/whatsapp-web/status?sessionId=lips-main
-```
-
-Retorno esperado (ready):
-```json
-{ "status": "ready", "phone": "5521...", "provider": "whatsapp_web" }
-```
-
----
-
-## 4. Como sincronizar mensagens
-
-**Via tela:**
-- `/whatsapp-diagnostics` → selecionar unidade → **Sincronizar conversas**
-- `/whatsapp-messages` → selecionar conversa → **Sincronizar histórico**
-
-**Via API:**
 ```
 GET /api/whatsapp-web/sync-chat-messages?sessionId=hall-main&chatLimit=20&limit=30
 GET /api/whatsapp-web/sync-chat-messages?sessionId=lips-main&chatLimit=20&limit=30
 ```
 
----
+Ou via `/whatsapp-diagnostics?session=hall-main` → **Sincronizar conversas**
 
-## 5. Como sincronizar contatos de grupo
-
-**Via tela:**
-- `/whatsapp-diagnostics` → selecionar unidade → **Sincronizar grupos**
-- `/whatsapp-import` → selecionar grupo → **Importar contatos deste grupo**
-
-**Via API:**
-```
-GET /api/whatsapp-web/sync-group-contacts?sessionId=hall-main&groupLimit=10
-GET /api/whatsapp-web/sync-group-contacts?sessionId=lips-main&groupLimit=10
-```
+As conversas agora são tagueadas com `channel_id` correto ao sincronizar — Hall e Lips ficam separados mesmo compartilhando a mesma organização no banco.
 
 ---
 
-## 6. Como validar que grupo não recebe bot/IA
+## 4. Validar isolamento após sync
 
-**Teste manual:**
-1. Selecione uma conversa de grupo na central `/whatsapp-messages`
-2. Verifique que o badge "Grupo" aparece
-3. Verifique que o campo de resposta está disponível para envio HUMANO (não automático)
-4. Verifique que a seção de IA mostra: _"IA desativada em grupos. Grupos são usados apenas para captação de leads."_
+```sql
+-- Confirmar que conversas estão separadas por channel
+select c.session_id, count(wc.id) as conversas
+from channels c
+left join whatsapp_conversations wc on wc.channel_id = c.id
+where c.session_id in ('hall-main', 'lips-main')
+group by c.session_id;
+```
 
-**Via dryRun:**
-```
-GET /api/whatsapp-web/automation/process?dryRun=1&limit=20
-```
-Verifique em `skippedItems` que grupos aparecem com `skippedReason: "group_lead_source_only"`.
+Esperado: dois rows separados com contagens distintas.
 
 ---
 
-## 7. Como rodar watchdog
+## 5. Validar que grupos não recebem bot
 
-**Via tela:**
-- `/whatsapp-diagnostics` → **Rodar watchdog**
-- `/whatsapp-messages` → **Verificar pendências**
+**Via dryRun (sempre usar antes da primeira automação real):**
+```
+GET /api/whatsapp-web/automation/process?sessionId=hall-main&dryRun=1&limit=20
+GET /api/whatsapp-web/automation/process?sessionId=lips-main&dryRun=1&limit=20
+```
 
-**Via API:**
+Verificar em `skippedItems`: grupos devem aparecer com `skippedReason: "group_lead_source_only"`.
+Verificar que `items` não contém nenhuma conversa com `external_chat_id` terminando em `@g.us`.
+
+---
+
+## 6. Testar envio manual
+
+1. Acesse `/whatsapp-messages`
+2. Selecione uma conversa
+3. Digite e envie uma mensagem
+4. Confirme que chegou no celular
+
+SLA deve limpar: `sla_status = ok`, `requires_human = false`.
+
+---
+
+## 7. Monitorar via Operations
+
+`/operations` → cards Hall Donous e Lips mostram:
+- Status do gateway (`ready` / `offline`)
+- Conversas totais por sessão
+- Precisa humano
+- SLA estourado
+
+Atualiza automaticamente a cada 30s.
+
+---
+
+## 8. Watchdog
+
+Rodar antes de cada turno:
 ```
 GET /api/whatsapp-web/watchdog?staleMinutes=5
 ```
 
-Parâmetros:
-- `staleMinutes=5` — considera SLA estourado se sem resposta há mais de 5 min (padrão: 15)
-- `limit=500` — máximo de conversas verificadas
-
-Retorno: `{ scannedConversations, requiresHuman, breached, pending }`
+Ou `/whatsapp-diagnostics?session=hall-main` → **Rodar watchdog**
 
 ---
 
-## 8. Como rodar automação em dryRun
+## 9. Checklist de prontidão operacional
 
-**SEMPRE USE dryRun PARA TESTAR:**
-```
-GET /api/whatsapp-web/automation/process?dryRun=1&limit=20
-```
-
-Inspecionar `items` (o que seria respondido) e `skippedItems` (por que pulou).
-
-**Verificar no retorno:**
-- `wouldReply: true/false`
-- `skippedReason: "group_lead_source_only" | "already_processed_latest_inbound" | ...`
-- `isGroup: true/false`
-- `requiresHuman: true/false`
-- `dryRun: true`
-
----
-
-## 9. Como testar resposta manual
-
-1. Acesse `/whatsapp-messages`
-2. Aguarde carregar a fila
-3. Clique em **Atender próximo** ou selecione uma conversa
-4. Digite a mensagem no campo de resposta
-5. Clique **Enviar mensagem**
-6. Verifique que a mensagem aparece na lista (cor verde = outbound)
-7. Verifique que o SLA foi limpo: `sla_status = ok`, `requires_human = false`
-
-Para grupos: responder manualmente funciona normalmente. Bot/IA são bloqueados, mas o atendente humano pode digitar e enviar.
-
----
-
-## 10. Como saber se está pronto para operar
-
-Hall está pronto quando:
-- [ ] `/api/whatsapp-web/status?sessionId=hall-main` retorna `status: ready`
-- [ ] Teste de envio manual funciona (mensagem chega no celular)
-- [ ] Sincronização retorna conversas
+**Hall está pronto quando:**
+- [ ] Status `ready` confirmado em `/whatsapp-diagnostics?session=hall-main`
+- [ ] Sync retornou conversas
+- [ ] dryRun mostra conversas sendo processadas corretamente, grupos skipped
+- [ ] Envio manual testado (mensagem chegou no celular)
 - [ ] Watchdog roda sem erros
-- [ ] dryRun mostra conversas sendo processadas corretamente
 
-Lips está pronto quando:
-- [ ] `/api/whatsapp-web/status?sessionId=lips-main` retorna `status: ready`
-- [ ] `/operations` mostra Lips como "ready"
-- [ ] Sincronização retorna conversas do número do Lips
-- [ ] Teste de envio manual funciona
-
----
-
-## 11. O que NÃO fazer
-
-### Nunca
-- ❌ Não rodar automação real em lote (`/api/whatsapp-web/automation/process` sem `dryRun=1`) antes de validar manualmente
-- ❌ Não responder grupos com bot (regra absoluta — qualquer tentar resultará em `group_lead_source_only` no log)
-- ❌ Não fazer disparo em massa (campanhas são somente leitura por enquanto)
-- ❌ Não abrir PR para main sem testar em preview
-
-### Com cuidado
-- ⚠️ sessionId inválido retorna 400 — aceitos apenas `hall-main` e `lips-main`
-- ⚠️ Conversas de uma sessão não se misturam com outra (tenant_id + organization_id + provider separam)
-- ⚠️ Automação usa `hall-main` por padrão — Lips não tem automação ainda
-- ⚠️ Watchdog opera em conversas de todas as sessões que já foram sincronizadas para o banco
+**Lips está pronto quando:**
+- [ ] Status `ready` confirmado em `/whatsapp-diagnostics?session=lips-main`
+- [ ] Sync retornou conversas do número do Lips
+- [ ] dryRun limpo
+- [ ] Envio manual testado
 
 ---
 
-## Limitações conhecidas
+## 10. O que NÃO fazer
 
-1. **Automação sempre usa `hall-main`** — a rota `/api/whatsapp-web/automation/process` não aceita `sessionId` ainda. Para Lips, usar apenas envio manual via central.
+- ❌ Não rodar automação real (`without dryRun=1`) antes do dryRun validado
+- ❌ Não responder grupos com bot — regra absoluta, bloqueado no código
+- ❌ Não fazer disparo em massa — campanhas são somente leitura
+- ❌ Não fazer PR para main sem testar em preview
 
-2. **Conversas não são marcadas por sessão no banco** — a tabela `whatsapp_conversations` não tem campo `session_id`. Conversas são separadas por `tenant_id + organization_id + provider + external_chat_id`. Se Hall e Lips tiverem o mesmo número como contato, podem colidir. Documentado — não é um bug crítico para MVP.
+---
 
-3. **Modo de automação é global** — não há configuração por sessão. Copilot/Assistido são os mesmos para todos.
+## Limitações remanescentes (pós 2026-06-19)
 
-4. **Lips ainda não foi sincronizado** — primeiro sync pode demorar se houver muitas conversas.
+1. **Mesmo contato em Hall e Lips** — se o mesmo número de telefone aparecer nas duas sessões, o registro em `crm_contacts` é compartilhado (upsert por phone). A conversa fica separada por `channel_id`. Comportamento documentado, não é blocker.
+
+2. **Modo de automação global** — não há toggle por sessão. Copilot/Assistido é o mesmo para todas as sessões.
+
+3. **Automação para Lips** — a rota aceita `?sessionId=lips-main` e usa o gateway correto, mas o fluxo de automação (textos, menu, intenções) foi calibrado para Hall. Validar se os textos fazem sentido para Lips antes de ativar automação nessa sessão.
