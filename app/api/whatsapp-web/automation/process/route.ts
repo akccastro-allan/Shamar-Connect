@@ -11,6 +11,7 @@ type ConversationRow = {
   contact_id: string | null;
   name: string | null;
   status: string | null;
+  is_group: boolean | null;
   requires_human: boolean | null;
 };
 
@@ -67,8 +68,8 @@ function getLatest(messages: MessageRow[], direction?: "inbound" | "outbound") {
   return messages.find((message) => !direction || message.direction === direction) || null;
 }
 
-function isGroupChat(externalChatId: string) {
-  return externalChatId.endsWith("@g.us");
+function isGroupChat(conversation: ConversationRow) {
+  return Boolean(conversation.is_group) || Boolean(conversation.external_chat_id?.endsWith("@g.us"));
 }
 
 function isOutsideBusinessHours(now = new Date()) {
@@ -271,7 +272,7 @@ export async function GET(request: NextRequest) {
 
     const { data: conversations, error: conversationsError } = await db
       .from("whatsapp_conversations")
-      .select("id, tenant_id, organization_id, external_chat_id, contact_id, name, status, requires_human")
+      .select("id, tenant_id, organization_id, external_chat_id, contact_id, name, status, is_group, requires_human")
       .eq("tenant_id", context.tenantId)
       .eq("organization_id", context.organizationId)
       .eq("provider", "whatsapp_web")
@@ -361,8 +362,8 @@ export async function GET(request: NextRequest) {
         continue;
       }
 
-      // Groups are never replied to automatically — hand off to human immediately
-      if (isGroupChat(conversation.external_chat_id)) {
+      // Groups are never replied to automatically — mark requires_human and skip sending
+      if (isGroupChat(conversation)) {
         if (!dryRun) {
           try {
             const now = new Date().toISOString();
@@ -407,14 +408,12 @@ export async function GET(request: NextRequest) {
           }
         }
 
-        processed.push({
+        skipped.push({
           conversationId: conversation.id,
           name: conversation.name,
           externalChatId: conversation.external_chat_id,
           latestInboundId: latestInbound.id,
-          intent: "group_handoff",
-          replied: false,
-          sentMessageId: null,
+          reason: "group_auto_reply_disabled",
           requiresHuman: true,
           pendingReason: "group_requires_human",
           dryRun,
