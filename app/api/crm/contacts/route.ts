@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
     if (birthDate) payload.birth_date = birthDate;
     if (lastPurchaseAt) payload.last_purchase_at = lastPurchaseAt;
     if (lastServiceAt) payload.last_service_at = lastServiceAt;
-    if (notes) payload.notes = notes;
+    // notes goes to crm_contact_notes (separate table), not crm_contacts
 
     const { data: created, error: insertError } = await db
       .from("crm_contacts")
@@ -105,6 +105,15 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ ok: true, contact: race, existing: true, message: "Este contato já existe." });
       }
       return NextResponse.json({ ok: false, error: insertError.message }, { status: 500 });
+    }
+
+    // Save notes to separate table if provided
+    if (notes && created?.id) {
+      await db.from("crm_contact_notes").insert({
+        contact_id: created.id,
+        note: notes,
+        created_by: "contact_create_dialog",
+      });
     }
 
     return NextResponse.json({ ok: true, contact: created, existing: false });
