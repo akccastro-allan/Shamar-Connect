@@ -238,6 +238,15 @@ export function WhatsappServiceCenter() {
   const [notice, setNotice] = useState<string | null>(null);
   const [saveContactOpen, setSaveContactOpen] = useState(false);
 
+  // Supervised AI state
+  const [aiSuggestion, setAiSuggestion] = useState<string | null>(null);
+  const [aiLogId, setAiLogId] = useState<string | null>(null);
+  const [aiRiskLevel, setAiRiskLevel] = useState<string | null>(null);
+  const [aiIntent, setAiIntent] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiEditMode, setAiEditMode] = useState(false);
+  const [aiEditBody, setAiEditBody] = useState("");
+
   const selectedConversation = useMemo(() => conversations.find((conversation) => conversation.id === selectedConversationId) || conversations[0], [conversations, selectedConversationId]);
 
   const queueStats = useMemo(() => {
@@ -342,6 +351,12 @@ export function WhatsappServiceCenter() {
     setSelectedConversationId(conversationId);
     setReplyBody("");
     setNotice(null);
+    setAiSuggestion(null);
+    setAiLogId(null);
+    setAiRiskLevel(null);
+    setAiIntent(null);
+    setAiEditMode(false);
+    setAiEditBody("");
     await loadMessages(conversationId);
   }
 
@@ -419,6 +434,85 @@ export function WhatsappServiceCenter() {
       });
     } catch {
       // iniciar sessão é útil, mas não deve bloquear a aplicação da mensagem
+    }
+  }
+
+  async function suggestAiReply() {
+    if (!selectedConversation?.id) return;
+    setAiLoading(true);
+    setAiSuggestion(null);
+    setAiLogId(null);
+    setAiEditMode(false);
+    try {
+      const data = await readJson<{
+        ok: boolean;
+        blocked?: boolean;
+        blockedReason?: string;
+        suggestion?: string;
+        logId?: string;
+        riskLevel?: string;
+        intent?: string;
+        error?: string;
+      }>("/api/ai/whatsapp/suggest-reply", {
+        method: "POST",
+        body: JSON.stringify({ conversationId: selectedConversation.id, mode: "copilot" }),
+      });
+      if (!data.ok) throw new Error(data.error);
+      if (data.blocked) {
+        setNotice("IA bloqueada: " + (data.blockedReason || "grupo ou regra de segurança"));
+        return;
+      }
+      setAiSuggestion(data.suggestion ?? null);
+      setAiLogId(data.logId ?? null);
+      setAiRiskLevel(data.riskLevel ?? null);
+      setAiIntent(data.intent ?? null);
+      setAiEditBody(data.suggestion ?? "");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao gerar sugestão de IA");
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
+  async function sendAiReply(edited: boolean) {
+    if (!aiLogId) return;
+    const body = edited ? aiEditBody.trim() : (aiSuggestion || "");
+    if (!body) return;
+    setSending(true);
+    setError(null);
+    try {
+      const data = await readJson<{ ok: boolean; messageId?: string; error?: string; requiresConfirmation?: boolean }>("/api/ai/whatsapp/send-approved", {
+        method: "POST",
+        body: JSON.stringify({ logId: aiLogId, finalResponse: body, editedFromSuggestion: edited }),
+      });
+      if (!data.ok) throw new Error(data.error);
+      setAiSuggestion(null);
+      setAiLogId(null);
+      setAiEditMode(false);
+      setAiEditBody("");
+      setNotice("Resposta de IA aprovada e enviada.");
+      await loadConversations();
+      await loadMessages(selectedConversation!.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao enviar resposta de IA");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function ignoreAiReply() {
+    setAiSuggestion(null);
+    setAiLogId(null);
+    setAiEditMode(false);
+    setAiEditBody("");
+    // Best-effort update log status to ignored
+    if (aiLogId) {
+      fetch("/api/ai/logs/ignore", {
+        method: "POST",
+        body: JSON.stringify({ logId: aiLogId }),
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+      }).catch(() => undefined);
     }
   }
 
@@ -696,7 +790,52 @@ export function WhatsappServiceCenter() {
                 </button>
               ))}
               {filteredQuickReplies.length === 0 ? <div className="rounded-2xl border border-dashed p-4 text-center text-xs text-muted-foreground">Nenhuma resposta rápida encontrada.</div> : null}
-              <Button variant="outline" className="w-full justify-start" disabled><Bot className="mr-2 h-4 w-4" />Gerar resposta com IA</Button>
+              {/* Supervised AI block */}
+              {selectedConversation?.is_group ? (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs text-muted-foreground">
+                  <Bot className="mb-1.5 h-4 w-4" />
+                  IA desativada em grupos. Grupos são usados apenas para captação de leads.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Button
+                    onClick={suggestAiReply}
+                    disabled={aiLoading || !selectedConversation}
+                    variant="outline"
+                    className="w-full justify-start"
+                  >
+                    <Bot className="mr-2 h-4 w-4" />
+                    {aiLoading ? "Gerando sugestão..." : "Sugerir resposta com IA"}
+                  </Button>
+                  {aiSuggestion && !aiEditMode && (
+                    <div className="rounded-2xl border border-blue-200 bg-blue-50 p-3 space-y-2">
+                      <div className="flex flex-wrap gap-1.5 items-center">
+                        <Bot className="h-3.5 w-3.5 text-blue-700" />
+                        <span className="text-xs font-semibold text-blue-800">Sugestão de IA</span>
+                        {aiRiskLevel && <span className={`text-[10px] rounded px-1.5 py-0.5 text-white ${aiRiskLevel === "high" ? "bg-red-600" : aiRiskLevel === "medium" ? "bg-amber-500" : "bg-emerald-600"}`}>{aiRiskLevel}</span>}
+                        {aiIntent && <span className="text-[10px] rounded border px-1.5 py-0.5 text-slate-700">{aiIntent}</span>}
+                      </div>
+                      <p className="text-xs text-slate-700 whitespace-pre-wrap leading-5">{aiSuggestion}</p>
+                      <p className="text-[10px] text-amber-700 font-medium">IA supervisionada: revise antes de enviar.</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        <Button size="sm" onClick={() => sendAiReply(false)} disabled={sending} className="bg-emerald-700 hover:bg-emerald-800 text-xs h-7 px-3">Enviar sugestão</Button>
+                        <Button size="sm" variant="outline" onClick={() => { setAiEditMode(true); setAiEditBody(aiSuggestion); }} className="text-xs h-7 px-3">Editar</Button>
+                        <Button size="sm" variant="ghost" onClick={ignoreAiReply} className="text-xs h-7 px-3 text-muted-foreground">Ignorar</Button>
+                      </div>
+                    </div>
+                  )}
+                  {aiEditMode && (
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 space-y-2">
+                      <p className="text-xs font-semibold text-amber-800">Editando sugestão de IA</p>
+                      <textarea value={aiEditBody} onChange={(e) => setAiEditBody(e.target.value)} rows={4} className="w-full resize-none rounded-xl border bg-white p-2 text-xs outline-none focus:ring-2 focus:ring-amber-200" />
+                      <div className="flex flex-wrap gap-1.5">
+                        <Button size="sm" onClick={() => sendAiReply(true)} disabled={sending || !aiEditBody.trim()} className="bg-emerald-700 hover:bg-emerald-800 text-xs h-7 px-3">Enviar editada</Button>
+                        <Button size="sm" variant="ghost" onClick={ignoreAiReply} className="text-xs h-7 px-3 text-muted-foreground">Cancelar</Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
               <Button variant="outline" className="w-full justify-start" disabled>Criar tarefa de follow-up</Button>
             </CardContent>
           </Card>
