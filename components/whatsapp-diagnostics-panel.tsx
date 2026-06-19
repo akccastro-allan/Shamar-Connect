@@ -7,9 +7,18 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
+type SessionId = "hall-main" | "lips-main";
+
+const SESSIONS: { id: SessionId; label: string }[] = [
+  { id: "hall-main", label: "Hall Donous" },
+  { id: "lips-main", label: "Lips" },
+];
+
 type DiagnosticsData = {
   ok: boolean;
   checkedAt: string;
+  sessionId: string;
+  sessionLabel: string;
   gateway: {
     status: Record<string, unknown> | null;
     error: string | null;
@@ -32,18 +41,21 @@ function formatDate(value?: string | null) {
 }
 
 export function WhatsappDiagnosticsPanel() {
+  const [session, setSession] = useState<SessionId>("hall-main");
   const [data, setData] = useState<DiagnosticsData | null>(null);
   const [loading, setLoading] = useState(false);
   const [watchdogRunning, setWatchdogRunning] = useState(false);
   const [automationRunning, setAutomationRunning] = useState(false);
+  const [syncRunning, setSyncRunning] = useState(false);
   const [actionResult, setActionResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function loadDiagnostics() {
     setLoading(true);
     setError(null);
+    setActionResult(null);
     try {
-      const response = await fetch("/api/whatsapp-web/diagnostics", { cache: "no-store" });
+      const response = await fetch(`/api/whatsapp-web/diagnostics?sessionId=${encodeURIComponent(session)}`, { cache: "no-store" });
       const result = await response.json();
       if (!result.ok) throw new Error(result.error);
       setData(result);
@@ -83,12 +95,74 @@ export function WhatsappDiagnosticsPanel() {
     }
   }
 
+  async function syncChats() {
+    setSyncRunning(true);
+    setActionResult(null);
+    try {
+      const response = await fetch(`/api/whatsapp-web/sync-chat-messages?sessionId=${encodeURIComponent(session)}&chatLimit=20&limit=30`, { cache: "no-store" });
+      const result = await response.json();
+      setActionResult(`Sync (${session}): ${result.syncedChats} conversas sincronizadas, ${result.savedMessages} mensagens salvas.`);
+      await loadDiagnostics();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao sincronizar conversas");
+    } finally {
+      setSyncRunning(false);
+    }
+  }
+
+  async function syncGroups() {
+    setSyncRunning(true);
+    setActionResult(null);
+    try {
+      const response = await fetch(`/api/whatsapp-web/sync-group-contacts?sessionId=${encodeURIComponent(session)}&groupLimit=10`, { cache: "no-store" });
+      const result = await response.json();
+      setActionResult(`Grupos (${session}): ${result.syncedGroups} grupos, ${result.created} contatos criados, ${result.updated} atualizados.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao sincronizar grupos");
+    } finally {
+      setSyncRunning(false);
+    }
+  }
+
+  const sessionLabel = SESSIONS.find((s) => s.id === session)?.label ?? session;
+
   return (
     <div className="space-y-6">
+      {/* Session selector */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Selecionar unidade</CardTitle>
+          <CardDescription>Cada unidade tem sua própria sessão WhatsApp no gateway Railway.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-2">
+            {SESSIONS.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => { setSession(s.id); setData(null); setActionResult(null); setError(null); }}
+                className={`rounded-2xl border px-5 py-3 text-sm font-bold transition ${session === s.id ? "border-emerald-600 bg-emerald-600 text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}
+              >
+                {s.label}
+                <span className="ml-2 text-xs font-normal opacity-70">({s.id})</span>
+              </button>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Action buttons */}
       <div className="flex flex-wrap gap-2">
         <Button onClick={loadDiagnostics} disabled={loading} className="bg-emerald-700 hover:bg-emerald-800">
           <RefreshCcw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          {loading ? "Carregando..." : "Carregar diagnóstico"}
+          {loading ? "Carregando..." : `Diagnóstico ${sessionLabel}`}
+        </Button>
+        <Button onClick={syncChats} disabled={syncRunning} variant="outline">
+          <RefreshCcw className="mr-2 h-4 w-4" />
+          {syncRunning ? "Sincronizando..." : "Sincronizar conversas"}
+        </Button>
+        <Button onClick={syncGroups} disabled={syncRunning} variant="outline">
+          <Users className="mr-2 h-4 w-4" />
+          Sincronizar grupos
         </Button>
         <Button onClick={runWatchdog} disabled={watchdogRunning} variant="outline">
           <Clock className="mr-2 h-4 w-4" />
@@ -107,27 +181,35 @@ export function WhatsappDiagnosticsPanel() {
 
       {data && (
         <>
-          {/* Gateway */}
+          {/* Gateway status */}
           <Card className={data.gateway.online ? "border-emerald-200" : "border-red-200"}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
-                Gateway WhatsApp
+                Gateway — {data.sessionLabel ?? session}
                 <Badge className={data.gateway.online ? "bg-emerald-600" : "bg-red-600"}>
                   {data.gateway.online ? "Online" : "Offline"}
                 </Badge>
               </CardTitle>
-              <CardDescription>Verificado em {formatDate(data.checkedAt)}</CardDescription>
+              <CardDescription>Sessão: <code className="font-mono text-xs">{data.sessionId ?? session}</code> · Verificado em {formatDate(data.checkedAt)}</CardDescription>
             </CardHeader>
             {data.gateway.error ? (
-              <CardContent><p className="text-sm text-red-700">{data.gateway.error}</p></CardContent>
+              <CardContent>
+                <p className="text-sm text-red-700">{data.gateway.error}</p>
+                <p className="mt-2 text-xs text-muted-foreground">Verifique os logs do Railway ou conecte a sessão em /settings/whatsapp</p>
+              </CardContent>
             ) : (
               <CardContent>
+                <div className="grid gap-3 sm:grid-cols-3 mb-4">
+                  <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Status</p><p className="font-semibold">{String((data.gateway.status as any)?.status ?? "—")}</p></div>
+                  <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Telefone</p><p className="font-semibold">{String((data.gateway.status as any)?.phone ?? "—")}</p></div>
+                  <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Provider</p><p className="font-semibold">{String((data.gateway.status as any)?.provider ?? "whatsapp_web")}</p></div>
+                </div>
                 <pre className="overflow-auto rounded-xl bg-slate-50 p-3 text-xs">{JSON.stringify(data.gateway.status, null, 2)}</pre>
               </CardContent>
             )}
           </Card>
 
-          {/* Counts */}
+          {/* Stats */}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-2xl border bg-white p-4">
               <p className="text-xs text-muted-foreground">Conversas</p>
@@ -147,11 +229,9 @@ export function WhatsappDiagnosticsPanel() {
             </div>
           </div>
 
-          {/* Recent automation events */}
+          {/* Automation events */}
           <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Últimos eventos da automação</CardTitle>
-            </CardHeader>
+            <CardHeader><CardTitle className="text-base">Últimos eventos da automação</CardTitle></CardHeader>
             <CardContent>
               {data.recentAutomationEvents.length === 0 ? (
                 <p className="text-sm text-muted-foreground">Nenhum evento registrado.</p>
@@ -171,11 +251,9 @@ export function WhatsappDiagnosticsPanel() {
             </CardContent>
           </Card>
 
-          {/* Recent watchdog events */}
+          {/* Watchdog events */}
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base"><Users className="h-4 w-4" />Últimos eventos do watchdog</CardTitle>
-            </CardHeader>
+            <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Users className="h-4 w-4" />Últimos eventos do watchdog</CardTitle></CardHeader>
             <CardContent>
               {data.recentWatchdogEvents.length === 0 ? (
                 <p className="text-sm text-muted-foreground">Nenhum evento registrado.</p>
@@ -195,11 +273,9 @@ export function WhatsappDiagnosticsPanel() {
             </CardContent>
           </Card>
 
-          {/* Recent auto messages */}
+          {/* Auto messages */}
           <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Últimas mensagens automáticas enviadas</CardTitle>
-            </CardHeader>
+            <CardHeader><CardTitle className="text-base">Últimas mensagens automáticas enviadas</CardTitle></CardHeader>
             <CardContent>
               {data.recentAutoMessages.length === 0 ? (
                 <p className="text-sm text-muted-foreground">Nenhuma mensagem automática recente.</p>
@@ -223,7 +299,7 @@ export function WhatsappDiagnosticsPanel() {
 
       {!data && !loading && (
         <div className="rounded-2xl border border-dashed p-12 text-center text-sm text-muted-foreground">
-          Clique em "Carregar diagnóstico" para ver o estado atual do gateway e das conversas.
+          Selecione uma unidade e clique em "Diagnóstico" para ver o estado atual do gateway e das conversas.
         </div>
       )}
     </div>
