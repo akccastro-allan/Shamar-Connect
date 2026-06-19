@@ -17,6 +17,9 @@ type Result = {
   uniqueContacts?: number;
   totalParticipants?: number;
   duplicatesRemoved?: number;
+  created?: number;
+  updated?: number;
+  skipped?: number;
 };
 
 async function readJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -113,6 +116,23 @@ export function WhatsappImportPanel() {
     }
   }
 
+  async function importGroupLeads() {
+    if (!selectedGroupId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await readJson<Result>("/api/whatsapp-web/sync-group-contacts", {
+        method: "POST",
+        body: JSON.stringify({ groupId: selectedGroupId }),
+      });
+      setResult(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao importar contatos do grupo");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
     loadChats();
     loadGroups();
@@ -136,7 +156,7 @@ export function WhatsappImportPanel() {
             <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Modo</p><p className="text-2xl font-semibold">Manual</p></div>
           </div>
           {error ? <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</div> : null}
-          {result ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">Operação concluída. {result.total ? `Conversas: ${result.total}. ` : ""}{result.saved ? `Mensagens salvas: ${result.saved}. ` : ""}{result.uniqueContacts ? `Contatos únicos: ${result.uniqueContacts}. ` : ""}{result.duplicatesRemoved ? `Duplicados removidos: ${result.duplicatesRemoved}.` : ""}</div> : null}
+          {result ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">Operação concluída. {result.total ? `Conversas: ${result.total}. ` : ""}{result.saved ? `Mensagens salvas: ${result.saved}. ` : ""}{result.created != null ? `Contatos criados: ${result.created}. ` : ""}{result.updated != null ? `Atualizados: ${result.updated}. ` : ""}{result.skipped != null ? `Ignorados: ${result.skipped}. ` : ""}{result.uniqueContacts ? `Contatos únicos: ${result.uniqueContacts}. ` : ""}{result.duplicatesRemoved ? `Duplicados removidos: ${result.duplicatesRemoved}.` : ""}</div> : null}
         </CardContent>
       </Card>
 
@@ -169,9 +189,19 @@ export function WhatsappImportPanel() {
             <select value={selectedGroupId} onChange={(event) => setSelectedGroupId(event.target.value)} className="w-full rounded-xl border bg-white px-3 py-2 text-sm">
               {groups.map((group) => <option key={group.id} value={group.id}>{group.name || group.id}</option>)}
             </select>
-            <div className="rounded-2xl border bg-amber-50 p-4 text-sm text-amber-900">A lista entra como rascunho. Contatos importados de grupo precisam de revisão antes de qualquer campanha em massa.</div>
-            <div className="flex flex-wrap gap-2"><Badge variant="secondary">Lista rascunho</Badge><Badge variant="outline">CRM</Badge><Badge variant="outline">Sem duplicados</Badge></div>
-            <Button onClick={exportGroupContacts} disabled={loading || !selectedGroupId} className="w-full"><Users className="mr-2 h-4 w-4" />Exportar para CRM</Button>
+            <div className="rounded-2xl border bg-amber-50 p-4 text-sm text-amber-900">
+              Grupos são usados somente para captação de leads. O bot nunca responde automaticamente em grupos.
+              Use os botões abaixo para salvar participantes como contatos no CRM.
+            </div>
+            <div className="flex flex-wrap gap-2"><Badge variant="secondary">Captação de leads</Badge><Badge variant="outline">CRM</Badge><Badge variant="outline">Sem duplicados</Badge></div>
+            <div className="flex flex-col gap-2">
+              <Button onClick={importGroupLeads} disabled={loading || !selectedGroupId} className="w-full bg-emerald-700 hover:bg-emerald-800">
+                <Users className="mr-2 h-4 w-4" />Importar contatos deste grupo
+              </Button>
+              <Button onClick={exportGroupContacts} disabled={loading || !selectedGroupId} variant="outline" className="w-full">
+                <Users className="mr-2 h-4 w-4" />Exportar para lista rascunho
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>
