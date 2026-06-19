@@ -33,6 +33,13 @@ const navigationGroups = [
     ],
   },
   {
+    label: "Suporte",
+    items: [
+      { href: "/support", label: "Meus chamados", marker: "?" },
+      { href: "/admin/support", label: "Admin suporte", marker: "!" },
+    ],
+  },
+  {
     label: "Gestão interna",
     items: [
       { href: "/admin", label: "Administração", marker: "A" },
