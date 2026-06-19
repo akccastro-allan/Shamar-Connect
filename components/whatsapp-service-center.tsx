@@ -6,6 +6,8 @@ import { Bot, Clock, Download, FileText, GitBranch, MessageCircle, RefreshCcw, S
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ContactCreateDialog } from "@/components/contact-create-dialog";
+import { phoneFromChatId } from "@/lib/phone";
 
 type Conversation = {
   id: string;
@@ -234,6 +236,7 @@ export function WhatsappServiceCenter() {
   const [lastAlertKey, setLastAlertKey] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [saveContactOpen, setSaveContactOpen] = useState(false);
 
   const selectedConversation = useMemo(() => conversations.find((conversation) => conversation.id === selectedConversationId) || conversations[0], [conversations, selectedConversationId]);
 
@@ -453,6 +456,19 @@ export function WhatsappServiceCenter() {
 
   return (
     <div className="space-y-6">
+      <ContactCreateDialog
+        open={saveContactOpen}
+        onClose={() => setSaveContactOpen(false)}
+        onSaved={(contact, existing) => {
+          setSaveContactOpen(false);
+          setNotice(existing ? "Este contato já existe na base." : `Contato "${contact.name || contact.phone}" salvo.`);
+          loadConversations();
+        }}
+        initialPhone={selectedConversation?.external_chat_id ? phoneFromChatId(selectedConversation.external_chat_id) : ""}
+        initialName={selectedConversation?.crm_contacts?.name || selectedConversation?.name || ""}
+        defaultSource="whatsapp"
+        defaultTags={["whatsapp"]}
+      />
       <Card className="border-emerald-100 bg-gradient-to-br from-white via-white to-emerald-50/70">
         <CardHeader>
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -617,6 +633,11 @@ export function WhatsappServiceCenter() {
               <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Telefone/Chat ID</p><p className="break-all font-medium">{selectedConversation?.crm_contacts?.phone || selectedConversation?.external_chat_id || "—"}</p></div>
               <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Empresa</p><p className="font-medium">{selectedConversation?.crm_contacts?.company || "—"}</p></div>
               <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Consentimento</p><p className="font-medium">{selectedConversation?.crm_contacts?.consent_status || "unknown"}</p></div>
+              {!selectedConversation?.crm_contacts && selectedConversation?.external_chat_id && (
+                <Button onClick={() => setSaveContactOpen(true)} className="w-full bg-emerald-700 hover:bg-emerald-800">
+                  <UserPlus className="mr-2 h-4 w-4" />Salvar contato
+                </Button>
+              )}
               <Button asChild variant="outline" className="w-full"><Link href="/contacts"><UserPlus className="mr-2 h-4 w-4" />Abrir contatos</Link></Button>
             </CardContent>
           </Card>
