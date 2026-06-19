@@ -63,7 +63,16 @@ async function gatewayFetch<T>(path: string, init?: RequestInit): Promise<T> {
   throw new Error(`WhatsApp Web Gateway error ${response.status}: ${errorBody}`);
 }
 
-export const ALLOWED_SESSION_IDS = ["hall-main", "lips-main"] as const;
+export const ALLOWED_SESSION_IDS = [
+  "hall-main",
+  "lips-main",
+  "viciados-main",
+  "mkshalom-main",
+  "oriahfin-main",
+  "shamar-main",
+  "shamarerp-main",
+  "shamarkids-main",
+] as const;
 export type AllowedSessionId = (typeof ALLOWED_SESSION_IDS)[number];
 
 export function isAllowedSessionId(value: unknown): value is AllowedSessionId {

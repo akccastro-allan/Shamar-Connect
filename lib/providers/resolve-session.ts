@@ -5,6 +5,12 @@ import { NextResponse } from "next/server";
 export const SESSION_LABELS: Record<AllowedSessionId, string> = {
   "hall-main": "Hall Donous",
   "lips-main": "Lips",
+  "viciados-main": "Viciados em Trilhas",
+  "mkshalom-main": "MK Shalom",
+  "oriahfin-main": "Oriahfin",
+  "shamar-main": "Shamar Connect",
+  "shamarerp-main": "Shamar ERP",
+  "shamarkids-main": "Shamar Kids",
 };
 
 export function resolveSessionClient(sessionId?: string | null) {
