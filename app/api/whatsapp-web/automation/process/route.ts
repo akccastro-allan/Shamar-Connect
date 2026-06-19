@@ -374,7 +374,7 @@ export async function GET(request: NextRequest) {
               .from("whatsapp_conversations")
               .update({
                 requires_human: true,
-                pending_reason: "group_requires_human",
+                pending_reason: "group_lead_source_only",
                 sla_status: slaStatus,
                 sla_due_at: slaDueAt,
                 last_message_at: latestInbound.created_at,
@@ -388,9 +388,9 @@ export async function GET(request: NextRequest) {
               tenant_id: context.tenantId,
               organization_id: context.organizationId,
               conversation_id: conversation.id,
-              event_type: "automation.group_handoff",
+              event_type: "automation.group_skipped",
               event_source: "safe_automation",
-              description: "Mensagem de grupo encaminhada para atendimento humano.",
+              description: "Grupo ignorado pela automacao. Somente leitura e captacao de leads.",
               metadata: {
                 latestInboundId: latestInbound.id,
                 latestInboundAt: latestInbound.created_at,
@@ -413,9 +413,11 @@ export async function GET(request: NextRequest) {
           name: conversation.name,
           externalChatId: conversation.external_chat_id,
           latestInboundId: latestInbound.id,
-          reason: "group_auto_reply_disabled",
+          reason: "group_lead_source_only",
+          replied: false,
+          skippedReason: "group_lead_source_only",
           requiresHuman: true,
-          pendingReason: "group_requires_human",
+          pendingReason: "group_lead_source_only",
           dryRun,
         });
         continue;
