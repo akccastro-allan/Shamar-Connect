@@ -1,18 +1,22 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
-import { whatsappWebGatewayClient } from "@/lib/providers/whatsapp-web-gateway-client";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { resolveSessionClient, sessionIdErrorResponse, SESSION_LABELS } from "@/lib/providers/resolve-session";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const context = await getRequiredAppContext();
+    const sessionId = request.nextUrl.searchParams.get("sessionId");
+    const resolved = resolveSessionClient(sessionId);
+    if (!resolved) return sessionIdErrorResponse();
+
     const db = createSupabaseServerClient();
 
     // Gateway status (may fail if offline — capture gracefully)
     let gatewayStatus: Record<string, unknown> | null = null;
     let gatewayError: string | null = null;
     try {
-      gatewayStatus = await whatsappWebGatewayClient.getStatus() as unknown as Record<string, unknown>;
+      gatewayStatus = await resolved.client.getStatus() as unknown as Record<string, unknown>;
     } catch (err) {
       gatewayError = err instanceof Error ? err.message : "Gateway indisponível";
     }
@@ -78,6 +82,8 @@ export async function GET() {
     return NextResponse.json({
       ok: true,
       checkedAt: new Date().toISOString(),
+      sessionId: resolved.sessionId,
+      sessionLabel: SESSION_LABELS[resolved.sessionId],
       gateway: {
         status: gatewayStatus,
         error: gatewayError,

@@ -63,6 +63,57 @@ async function gatewayFetch<T>(path: string, init?: RequestInit): Promise<T> {
   throw new Error(`WhatsApp Web Gateway error ${response.status}: ${errorBody}`);
 }
 
+export const ALLOWED_SESSION_IDS = ["hall-main", "lips-main"] as const;
+export type AllowedSessionId = (typeof ALLOWED_SESSION_IDS)[number];
+
+export function isAllowedSessionId(value: unknown): value is AllowedSessionId {
+  return ALLOWED_SESSION_IDS.includes(value as AllowedSessionId);
+}
+
+// Factory: creates a gateway client scoped to a specific session.
+// The default export (whatsappWebGatewayClient) uses the env-configured session.
+export function createWhatsappGatewayClient(sessionId: AllowedSessionId): MessagingProviderClient {
+  function sessionFetch<T>(path: string, init?: RequestInit): Promise<T> {
+    const baseUrl = getGatewayBaseUrl();
+    if (!baseUrl) throw new Error("WHATSAPP_WEB_GATEWAY_URL is not configured.");
+
+    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+    const sessionPath = normalizedPath.startsWith("/sessions/")
+      ? normalizedPath
+      : `/sessions/${encodeURIComponent(sessionId)}${normalizedPath}`;
+
+    const url = `${baseUrl}${sessionPath}`;
+    return fetch(url, {
+      ...init,
+      headers: {
+        "content-type": "application/json",
+        ...(getGatewayToken() ? { authorization: `Bearer ${getGatewayToken()}` } : {}),
+        ...(init?.headers || {}),
+      },
+      cache: "no-store",
+    }).then(async (response) => {
+      if (response.ok) return response.json() as Promise<T>;
+      const errorBody = await response.text();
+      throw new Error(`WhatsApp Web Gateway error ${response.status}: ${errorBody}`);
+    });
+  }
+
+  return {
+    getStatus: () => sessionFetch<ProviderStatus>("/status"),
+    connect: () => sessionFetch<ProviderStatus>("/connect", { method: "POST" }),
+    getQr: () => sessionFetch<ProviderStatus>("/qr"),
+    sendMessage: (payload: ProviderMessagePayload) =>
+      sessionFetch<{ id: string; status: "queued" | "sent" }>("/send-message", { method: "POST", body: JSON.stringify(payload) }),
+    listChats: () => sessionFetch<ProviderChatSummary[]>("/chats"),
+    listGroups: () => sessionFetch<ProviderGroupSummary[]>("/groups"),
+    listGroupParticipants: (groupId: string) =>
+      sessionFetch<ProviderGroupParticipant[]>(`/groups/${encodeURIComponent(groupId)}/participants`),
+    listChatMessages: (chatId: string, limit = 50) =>
+      sessionFetch<ProviderSyncedMessage[]>(`/chats/${encodeURIComponent(chatId)}/messages?limit=${limit}`),
+    logout: () => sessionFetch<ProviderStatus>("/logout", { method: "POST" }),
+  };
+}
+
 export const whatsappWebGatewayClient: MessagingProviderClient = {
   getStatus() {
     return gatewayFetch<ProviderStatus>("/status");

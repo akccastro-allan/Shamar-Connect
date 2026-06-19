@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
-import { whatsappWebGatewayClient } from "@/lib/providers/whatsapp-web-gateway-client";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
+import { resolveSessionClient, sessionIdErrorResponse } from "@/lib/providers/resolve-session";
 import type { ProviderChatSummary, ProviderSyncedMessage } from "@/types/messaging-provider";
 
 function normalizePhone(value?: string) {
@@ -250,8 +250,9 @@ async function syncChat(
   context: AppContext,
   chat: ProviderChatSummary,
   limit: number,
+  gatewayClient = resolveSessionClient(null)!.client,
 ) {
-  const messages = await whatsappWebGatewayClient.listChatMessages(chat.id, limit);
+  const messages = await gatewayClient.listChatMessages(chat.id, limit);
   const latestMessage = messages[0];
   const phone = normalizePhone(latestMessage?.phone || latestMessage?.from || latestMessage?.to || chat.id);
   const contactId = phone ? await upsertContact(client, context, phone, latestMessage?.contactName || chat.name || phone) : null;
@@ -296,10 +297,12 @@ async function syncChat(
   return { chatId: chat.id, scanned: messages.length, savedMessages, conversationId, errors };
 }
 
-async function syncChats(chatIds?: string[], messageLimit = 50, chatLimit = 20) {
+async function syncChats(chatIds?: string[], messageLimit = 50, chatLimit = 20, sessionId?: string | null) {
   const context = await getRequiredAppContext();
+  const resolved = resolveSessionClient(sessionId);
+  if (!resolved) throw new Error(`sessionId inválido: ${sessionId}`);
   const client = createSupabaseWriteClient();
-  const allChats = await whatsappWebGatewayClient.listChats();
+  const allChats = await resolved.client.listChats();
   const selectedChats = Array.isArray(chatIds) && chatIds.length > 0
     ? allChats.filter((chat) => chatIds.includes(chat.id))
     : allChats.slice(0, chatLimit);
@@ -309,7 +312,7 @@ async function syncChats(chatIds?: string[], messageLimit = 50, chatLimit = 20) 
 
   for (const chat of selectedChats) {
     try {
-      results.push(await syncChat(client, context, chat, messageLimit));
+      results.push(await syncChat(client, context, chat, messageLimit, resolved.client));
     } catch (error) {
       chatErrors.push({
         chatId: chat.id,
@@ -339,9 +342,11 @@ export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const chatId = searchParams.get("chatId");
+    const sessionId = searchParams.get("sessionId");
     const limit = Math.min(Number(searchParams.get("limit") || 30), 200);
     const chatLimit = Math.min(Number(searchParams.get("chatLimit") || 20), 100);
-    const result = await syncChats(chatId ? [chatId] : undefined, limit, chatLimit);
+    if (sessionId && !resolveSessionClient(sessionId)) return sessionIdErrorResponse();
+    const result = await syncChats(chatId ? [chatId] : undefined, limit, chatLimit, sessionId);
     return NextResponse.json(result);
   } catch (error) {
     if (isUnauthorizedError(error)) {
@@ -365,8 +370,10 @@ export async function POST(request: NextRequest) {
         : undefined;
     const messageLimit = Math.min(Number(body?.limit || 50), 200);
     const chatLimit = Math.min(Number(body?.chatLimit || 20), 100);
+    const sessionId = body?.sessionId ? String(body.sessionId) : null;
+    if (sessionId && !resolveSessionClient(sessionId)) return sessionIdErrorResponse();
 
-    const result = await syncChats(chatIds, messageLimit, chatLimit);
+    const result = await syncChats(chatIds, messageLimit, chatLimit, sessionId);
     return NextResponse.json(result);
   } catch (error) {
     if (isUnauthorizedError(error)) {

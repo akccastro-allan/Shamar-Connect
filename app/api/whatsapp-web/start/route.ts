@@ -1,14 +1,18 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
-import { whatsappWebGatewayClient } from "@/lib/providers/whatsapp-web-gateway-client";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
+import { resolveSessionClient, sessionIdErrorResponse } from "@/lib/providers/resolve-session";
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
     const context = await getRequiredAppContext();
-    const client = createSupabaseWriteClient();
+    const body = await request.json().catch(() => ({}));
+    const sessionId = body?.sessionId ? String(body.sessionId) : null;
+    const resolved = resolveSessionClient(sessionId);
+    if (!resolved) return sessionIdErrorResponse();
 
-    const result = await whatsappWebGatewayClient.connect();
+    const client = createSupabaseWriteClient();
+    const result = await resolved.client.connect();
 
     await client
       .from("whatsapp_connections")

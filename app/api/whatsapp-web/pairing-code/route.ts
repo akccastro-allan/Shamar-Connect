@@ -1,9 +1,12 @@
-import { NextResponse } from "next/server";
-import { whatsappWebGatewayClient } from "@/lib/providers/whatsapp-web-gateway-client";
+import { NextRequest, NextResponse } from "next/server";
+import { resolveSessionClient, sessionIdErrorResponse } from "@/lib/providers/resolve-session";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const result = await whatsappWebGatewayClient.getQr();
+    const sessionId = request.nextUrl.searchParams.get("sessionId");
+    const resolved = resolveSessionClient(sessionId);
+    if (!resolved) return sessionIdErrorResponse();
+    const result = await resolved.client.getQr();
     return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to load pairing code";

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
-import { whatsappWebGatewayClient } from "@/lib/providers/whatsapp-web-gateway-client";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
+import { resolveSessionClient, sessionIdErrorResponse } from "@/lib/providers/resolve-session";
 import type { ProviderGroupParticipant, ProviderGroupSummary } from "@/types/messaging-provider";
 
 function normalizePhone(value?: string) {
@@ -81,10 +81,12 @@ async function upsertGroupParticipantContact(
   return { ok: true, action: "created", contact: data, participant };
 }
 
-async function syncGroupContacts(groupIds?: string[], groupLimit = 20) {
+async function syncGroupContacts(groupIds?: string[], groupLimit = 20, sessionId?: string | null) {
   const context = await getRequiredAppContext();
+  const resolved = resolveSessionClient(sessionId);
+  if (!resolved) throw new Error(`sessionId inválido: ${sessionId}`);
   const client = createSupabaseWriteClient();
-  const groups = await whatsappWebGatewayClient.listGroups();
+  const groups = await resolved.client.listGroups();
   const selectedGroups = Array.isArray(groupIds) && groupIds.length > 0
     ? groups.filter((group) => groupIds.includes(group.id))
     : groups.slice(0, groupLimit);
@@ -97,7 +99,7 @@ async function syncGroupContacts(groupIds?: string[], groupLimit = 20) {
 
   for (const group of selectedGroups) {
     try {
-      const participants = await whatsappWebGatewayClient.listGroupParticipants(group.id);
+      const participants = await resolved.client.listGroupParticipants(group.id);
       const participantResults = [];
 
       for (const participant of participants) {
@@ -149,8 +151,10 @@ export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const groupId = searchParams.get("groupId");
+    const sessionId = searchParams.get("sessionId");
     const groupLimit = Math.min(Number(searchParams.get("groupLimit") || 20), 100);
-    const result = await syncGroupContacts(groupId ? [groupId] : undefined, groupLimit);
+    if (sessionId && !resolveSessionClient(sessionId)) return sessionIdErrorResponse();
+    const result = await syncGroupContacts(groupId ? [groupId] : undefined, groupLimit, sessionId);
     return NextResponse.json(result);
   } catch (error) {
     if (isUnauthorizedError(error)) {
@@ -173,7 +177,9 @@ export async function POST(request: NextRequest) {
         ? [String(body.groupId)]
         : undefined;
     const groupLimit = Math.min(Number(body?.groupLimit || 20), 100);
-    const result = await syncGroupContacts(groupIds, groupLimit);
+    const sessionId = body?.sessionId ? String(body.sessionId) : null;
+    if (sessionId && !resolveSessionClient(sessionId)) return sessionIdErrorResponse();
+    const result = await syncGroupContacts(groupIds, groupLimit, sessionId);
     return NextResponse.json(result);
   } catch (error) {
     if (isUnauthorizedError(error)) {
