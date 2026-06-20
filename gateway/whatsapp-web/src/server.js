@@ -55,7 +55,24 @@ function requireToken(req, res, next) {
 }
 
 function normalizePhoneFromWid(id = "") {
-  return id.replace("@c.us", "").replace("@g.us", "");
+  return String(id).replace(/@(c\.us|g\.us|lid)$/, "");
+}
+
+function digitsOnly(value = "") {
+  return String(value).replace(/\D/g, "");
+}
+
+// Resolve the real phone number of the other party. The WhatsApp WID can be a
+// @lid (LinkedID) alias that hides the real number, so prefer the resolved
+// Contact.number; fall back to the WID only when it is a real @c.us number.
+function resolveContactPhone(message, contact, from, to) {
+  if (!message.fromMe) {
+    if (contact?.number) return digitsOnly(contact.number);
+    if (contact?.id?.server === "c.us" && contact?.id?.user) return digitsOnly(contact.id.user);
+  }
+  const wid = message.fromMe ? to : from;
+  if (typeof wid === "string" && wid.endsWith("@c.us")) return digitsOnly(wid);
+  return normalizePhoneFromWid(wid);
 }
 
 function getMessageDirection(message) {
@@ -143,7 +160,7 @@ async function mapMessage(message, chat) {
     timestamp: message.timestamp,
     direction: getMessageDirection(message),
     contactName: contact?.pushname || contact?.name,
-    phone: normalizePhoneFromWid(message.fromMe ? to : from),
+    phone: resolveContactPhone(message, contact, from, to),
     type: message.type || "text",
     hasMedia,
   };
