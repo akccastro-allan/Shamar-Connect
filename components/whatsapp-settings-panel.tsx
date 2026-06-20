@@ -73,6 +73,10 @@ export function WhatsappSettingsPanel({ allowedSessions }: { allowedSessions: Se
   }
 
   async function loadPairingCode() {
+    const currentStatus = status?.status;
+    if (!currentStatus || currentStatus === "idle" || currentStatus === "disconnected" || currentStatus === "error") {
+      return startConnection();
+    }
     setLoading(true);
     setError(null);
     try {
