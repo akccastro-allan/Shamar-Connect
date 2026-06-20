@@ -19,11 +19,6 @@ type SessionStatus = {
   checkedAt: string | null;
 };
 
-// Active sessions with WhatsApp gateway (expanded as new channels come online)
-const ACTIVE_GATEWAY_SESSIONS = [
-  { id: "hall-main", label: "Hall Donous" },
-  { id: "lips-main", label: "Lips" },
-];
 
 function statusColor(status: string | null) {
   if (status === "ready" || status === "authenticated") return "bg-emerald-600";
@@ -100,13 +95,15 @@ export function OperationsDashboard() {
   async function loadAll() {
     setLoading(true);
     try {
-      const [statuses, channelsRes] = await Promise.all([
-        Promise.all(ACTIVE_GATEWAY_SESSIONS.map((s) => fetchSessionStatus(s.id, s.label))),
-        fetch("/api/channels"),
-      ]);
-      setSessions(statuses);
+      const channelsRes = await fetch("/api/channels");
       const channelsData = await channelsRes.json();
-      if (channelsData.ok) setChannels(channelsData.channels);
+      const tenantChannels: ChannelRow[] = channelsData.ok ? channelsData.channels : [];
+      if (channelsData.ok) setChannels(tenantChannels);
+
+      const statuses = await Promise.all(
+        tenantChannels.map((ch) => fetchSessionStatus(ch.session_id, ch.name))
+      );
+      setSessions(statuses);
       setLastChecked(new Date().toISOString());
       await fetchContactsToday();
     } finally {

@@ -8,12 +8,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
-type SessionId = "hall-main" | "lips-main";
+type SessionId = string;
 
-const SESSIONS: { id: SessionId; label: string }[] = [
-  { id: "hall-main", label: "Hall Donous" },
-  { id: "lips-main", label: "Lips" },
-];
+type SessionOption = { id: string; label: string };
 
 type DiagnosticsData = {
   ok: boolean;
@@ -41,11 +38,11 @@ function formatDate(value?: string | null) {
   }
 }
 
-export function WhatsappDiagnosticsPanel() {
+export function WhatsappDiagnosticsPanel({ sessions }: { sessions: SessionOption[] }) {
   const searchParams = useSearchParams();
-  const initialSession = (searchParams.get("session") as SessionId | null) ?? "hall-main";
+  const initialSession = searchParams.get("session") ?? sessions[0]?.id ?? "";
   const [session, setSession] = useState<SessionId>(
-    SESSIONS.some((s) => s.id === initialSession) ? initialSession : "hall-main",
+    sessions.some((s) => s.id === initialSession) ? initialSession : (sessions[0]?.id ?? ""),
   );
   const [data, setData] = useState<DiagnosticsData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -129,7 +126,7 @@ export function WhatsappDiagnosticsPanel() {
     }
   }
 
-  const sessionLabel = SESSIONS.find((s) => s.id === session)?.label ?? session;
+  const sessionLabel = sessions.find((s) => s.id === session)?.label ?? session;
 
   return (
     <div className="space-y-6">
@@ -141,7 +138,7 @@ export function WhatsappDiagnosticsPanel() {
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-2">
-            {SESSIONS.map((s) => (
+            {sessions.map((s) => (
               <button
                 key={s.id}
                 onClick={() => { setSession(s.id); setData(null); setActionResult(null); setError(null); }}
