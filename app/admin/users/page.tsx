@@ -4,10 +4,12 @@ import { PageHeader } from "@/components/page-header";
 import { AdminClientsPanel } from "@/components/admin-clients-panel";
 import { getRequiredAppContext } from "@/lib/auth/app-context";
 
+const PLATFORM_TENANT_ID = "0c633898-a297-4f5e-945b-a05171218566";
+
 export default async function AdminUsersPage() {
   const context = await getRequiredAppContext();
 
-  if (context.role !== "owner" && context.role !== "admin") {
+  if (context.tenantId !== PLATFORM_TENANT_ID) {
     redirect("/dashboard");
   }
 

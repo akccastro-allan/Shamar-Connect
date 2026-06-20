@@ -6,7 +6,13 @@ import { getCurrentSession } from "@/lib/auth/session";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 import type { ShamarSession } from "@/lib/auth/session";
 
-const navigationGroups = [
+// Tenant da plataforma Moriah Systems — único com visão global
+const PLATFORM_TENANT_ID = "0c633898-a297-4f5e-945b-a05171218566";
+
+type NavItem = { href: string; label: string; marker: string; platformOnly?: true };
+type NavGroup = { label: string; platformOnly?: true; items: NavItem[] };
+
+const navigationGroups: NavGroup[] = [
   {
     label: "Operação",
     items: [
@@ -37,11 +43,12 @@ const navigationGroups = [
     label: "Suporte",
     items: [
       { href: "/support", label: "Meus chamados", marker: "?" },
-      { href: "/admin/support", label: "Admin suporte", marker: "!" },
+      { href: "/admin/support", label: "Admin suporte", marker: "!", platformOnly: true },
     ],
   },
   {
     label: "Gestão interna",
+    platformOnly: true,
     items: [
       { href: "/admin", label: "Administração", marker: "A" },
       { href: "/admin/users", label: "Clientes", marker: "C" },
@@ -58,7 +65,7 @@ const navigationGroups = [
       { href: "/knowledge", label: "Conhecimento", marker: "K" },
       { href: "/whatsapp-diagnostics", label: "Diagnóstico WhatsApp", marker: "G" },
       { href: "/settings/whatsapp-automation", label: "Config. Automação", marker: "A" },
-      { href: "/settings/whatsapp-cloud", label: "Shamar Kids (Cloud API)", marker: "K" },
+      { href: "/settings/whatsapp-cloud", label: "Shamar Kids (Cloud API)", marker: "K", platformOnly: true },
       { href: "/whatsapp-import", label: "Importação WhatsApp", marker: "I" },
       { href: "/contact-import", label: "Importar contatos", marker: "U" },
       { href: "/group-import-lists", label: "Listas importadas", marker: "L" },
@@ -74,15 +81,33 @@ const navigationGroups = [
     label: "Sistema",
     items: [
       { href: "/settings/profile", label: "Meu perfil", marker: "👤" },
-      { href: "/system-test", label: "Teste do sistema", marker: "T" },
-      { href: "/ui-lab", label: "UI Lab", marker: "U" },
-      { href: "/feature-lab", label: "Feature Lab", marker: "F" },
-      { href: "/audit", label: "Auditoria", marker: "S" },
+      { href: "/system-test", label: "Teste do sistema", marker: "T", platformOnly: true },
+      { href: "/ui-lab", label: "UI Lab", marker: "U", platformOnly: true },
+      { href: "/feature-lab", label: "Feature Lab", marker: "F", platformOnly: true },
+      { href: "/audit", label: "Auditoria", marker: "S", platformOnly: true },
     ],
   },
 ];
 
-function SidebarContent({ active, session, avatarUrl }: { active?: string; session: ShamarSession; avatarUrl?: string | null }) {
+function SidebarContent({
+  active,
+  session,
+  avatarUrl,
+  isPlatformAdmin,
+}: {
+  active?: string;
+  session: ShamarSession;
+  avatarUrl?: string | null;
+  isPlatformAdmin: boolean;
+}) {
+  const visibleGroups = navigationGroups
+    .filter((g) => isPlatformAdmin || !g.platformOnly)
+    .map((g) => ({
+      ...g,
+      items: g.items.filter((item) => isPlatformAdmin || !item.platformOnly),
+    }))
+    .filter((g) => g.items.length > 0);
+
   return (
     <div className="flex h-full flex-col">
       <Link href="/dashboard" className="mb-7 flex items-center gap-3 rounded-3xl bg-white/10 p-3 ring-1 ring-white/10">
@@ -96,7 +121,7 @@ function SidebarContent({ active, session, avatarUrl }: { active?: string; sessi
       </Link>
 
       <nav className="min-h-0 flex-1 space-y-6 overflow-y-auto pr-1">
-        {navigationGroups.map((group) => (
+        {visibleGroups.map((group) => (
           <div key={group.label}>
             <p className="mb-2 px-3 text-[11px] font-black uppercase tracking-[0.18em] text-white/35">
               {group.label}
@@ -104,7 +129,9 @@ function SidebarContent({ active, session, avatarUrl }: { active?: string; sessi
 
             <div className="space-y-1">
               {group.items.map((item) => {
-                const isActive = active ? item.href.includes(active) || active.includes(item.href.replace("/", "")) : false;
+                const isActive = active
+                  ? item.href.includes(active) || active.includes(item.href.replace("/", ""))
+                  : false;
 
                 return (
                   <Link
@@ -184,7 +211,7 @@ async function assertAuthorizedSession() {
 
   const { data: tenantUser } = await db
     .from("tenant_users")
-    .select("id")
+    .select("id, tenant_id")
     .eq("app_user_id", session.userId)
     .eq("status", "active")
     .or(`organization_id.eq.${session.companyId},tenant_id.eq.${session.companyId}`)
@@ -194,21 +221,23 @@ async function assertAuthorizedSession() {
     redirect("/planos?reason=not-authorized");
   }
 
-  return { session, avatarUrl: appUser.avatar_url ?? null };
+  const isPlatformAdmin = tenantUser.tenant_id === PLATFORM_TENANT_ID;
+
+  return { session, avatarUrl: appUser.avatar_url ?? null, isPlatformAdmin };
 }
 
 export async function AppShell({ children, active }: { children: React.ReactNode; active?: string }) {
-  const { session, avatarUrl } = await assertAuthorizedSession();
+  const { session, avatarUrl, isPlatformAdmin } = await assertAuthorizedSession();
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-950 lg:grid lg:grid-cols-[280px_1fr]">
       <aside className="hidden h-screen bg-[#1B2F5B] p-5 lg:sticky lg:top-0 lg:block">
-        <SidebarContent active={active} session={session} avatarUrl={avatarUrl} />
+        <SidebarContent active={active} session={session} avatarUrl={avatarUrl} isPlatformAdmin={isPlatformAdmin} />
       </aside>
 
       <div className="min-w-0">
         <div className="border-b border-slate-200 bg-white px-5 py-4 lg:hidden">
-          <SidebarContent active={active} session={session} avatarUrl={avatarUrl} />
+          <SidebarContent active={active} session={session} avatarUrl={avatarUrl} isPlatformAdmin={isPlatformAdmin} />
         </div>
         {children}
       </div>

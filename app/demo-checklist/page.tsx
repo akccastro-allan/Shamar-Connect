@@ -105,7 +105,8 @@ export default async function DemoChecklistPage() {
     throw err;
   }
 
-  if (context.role !== "owner" && context.role !== "admin") {
+  const PLATFORM_TENANT_ID = "0c633898-a297-4f5e-945b-a05171218566";
+  if (context.tenantId !== PLATFORM_TENANT_ID) {
     redirect("/dashboard");
   }
 
