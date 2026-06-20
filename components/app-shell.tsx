@@ -44,6 +44,7 @@ const navigationGroups = [
     label: "Gestão interna",
     items: [
       { href: "/admin", label: "Administração", marker: "A" },
+      { href: "/admin/users", label: "Clientes", marker: "C" },
       { href: "/financeiro", label: "Financeiro", marker: "$" },
     ],
   },
