@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { whatsappWebGatewayClient } from "@/lib/providers/whatsapp-web-gateway-client";
+import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
+import { resolveSessionClient } from "@/lib/providers/resolve-session";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
+import type { ProviderGroupParticipant } from "@/types/messaging-provider";
 
 function normalizePhone(value?: string) {
   return String(value || "").replace(/\D/g, "");
@@ -8,30 +10,39 @@ function normalizePhone(value?: string) {
 
 export async function POST(request: NextRequest) {
   try {
+    const context = await getRequiredAppContext();
     const body = await request.json();
     const groupId = String(body?.groupId || "");
+    const sessionId = String(body?.sessionId || "");
 
     if (!groupId) {
       return NextResponse.json({ ok: false, error: "groupId is required" }, { status: 400 });
     }
 
+    const resolved = resolveSessionClient(sessionId);
+    if (!resolved) {
+      return NextResponse.json({ ok: false, error: "Sessão WhatsApp inválida." }, { status: 400 });
+    }
+
     const client = createSupabaseWriteClient();
-    const participants = await whatsappWebGatewayClient.listGroupParticipants(groupId);
+    const participants = await resolved.client.listGroupParticipants(groupId);
     const firstParticipant = participants[0];
     const groupName = firstParticipant?.sourceGroupName || body?.groupName || groupId;
 
-    const uniqueParticipants = Array.from(
+    const uniqueParticipants: ProviderGroupParticipant[] = Array.from(
       new Map(
         participants
           .map((participant) => ({ ...participant, phone: normalizePhone(participant.phone) }))
           .filter((participant) => participant.phone)
-          .map((participant) => [participant.phone, participant])
+          .map((participant) => [participant.phone, participant] as [string, ProviderGroupParticipant])
       ).values()
     );
 
     const { data: group, error: groupError } = await client
       .from("whatsapp_groups")
       .upsert({
+        tenant_id: context.tenantId,
+        organization_id: context.organizationId,
         external_group_id: groupId,
         provider: "whatsapp_web",
         name: groupName,
@@ -47,6 +58,8 @@ export async function POST(request: NextRequest) {
     const { data: list, error: listError } = await client
       .from("group_contact_lists")
       .insert({
+        tenant_id: context.tenantId,
+        organization_id: context.organizationId,
         name: `Exportação - ${groupName}`,
         source_group_id: group?.id,
         status: "draft",
@@ -60,6 +73,8 @@ export async function POST(request: NextRequest) {
     if (listError) throw listError;
 
     const contactRows = uniqueParticipants.map((participant) => ({
+      tenant_id: context.tenantId,
+      organization_id: context.organizationId,
       phone: participant.phone,
       name: participant.name || participant.phone,
       source: "whatsapp_group_export",
@@ -79,13 +94,17 @@ export async function POST(request: NextRequest) {
     const { data: savedContacts, error: savedContactsError } = await client
       .from("crm_contacts")
       .select("id, phone")
-      .in("phone", uniqueParticipants.map((participant) => participant.phone));
+      .eq("tenant_id", context.tenantId)
+      .eq("organization_id", context.organizationId)
+      .in("phone", uniqueParticipants.map((p) => p.phone));
 
     if (savedContactsError) throw savedContactsError;
 
-    const contactIdByPhone = new Map((savedContacts || []).map((contact) => [contact.phone, contact.id]));
+    const contactIdByPhone = new Map((savedContacts || []).map((c) => [c.phone, c.id]));
 
     const listItems = uniqueParticipants.map((participant) => ({
+      tenant_id: context.tenantId,
+      organization_id: context.organizationId,
       list_id: list.id,
       contact_id: contactIdByPhone.get(participant.phone) || null,
       name: participant.name || participant.phone,
@@ -114,6 +133,7 @@ export async function POST(request: NextRequest) {
       duplicatesRemoved: participants.length - uniqueParticipants.length,
     });
   } catch (error) {
+    if (isUnauthorizedError(error)) return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Failed to export group contacts" }, { status: 500 });
   }
 }

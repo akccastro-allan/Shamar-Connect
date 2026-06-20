@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 
 type Params = { params: Promise<{ flowId: string }> };
 
 export async function POST(request: NextRequest, context: Params) {
   try {
+    const appContext = await getRequiredAppContext();
     const { flowId } = await context.params;
     const body = await request.json();
     const title = String(body?.title || "").trim();
@@ -18,9 +20,25 @@ export async function POST(request: NextRequest, context: Params) {
     }
 
     const db = createSupabaseWriteClient();
+
+    // Verify flow belongs to this org
+    const { data: flow } = await db
+      .from("conversation_flows")
+      .select("id")
+      .eq("id", flowId)
+      .eq("tenant_id", appContext.tenantId)
+      .eq("organization_id", appContext.organizationId)
+      .maybeSingle();
+
+    if (!flow) {
+      return NextResponse.json({ ok: false, error: "Fluxo não encontrado." }, { status: 404 });
+    }
+
     const { data, error } = await db
       .from("conversation_flow_steps")
       .insert({
+        tenant_id: appContext.tenantId,
+        organization_id: appContext.organizationId,
         flow_id: flowId,
         step_order: stepOrder,
         title,
@@ -35,12 +53,14 @@ export async function POST(request: NextRequest, context: Params) {
     if (error) throw error;
     return NextResponse.json({ ok: true, step: data });
   } catch (error) {
+    if (isUnauthorizedError(error)) return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Failed to create flow step" }, { status: 500 });
   }
 }
 
 export async function PATCH(request: NextRequest) {
   try {
+    const appContext = await getRequiredAppContext();
     const body = await request.json();
     const id = String(body?.id || "");
     const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
@@ -58,12 +78,15 @@ export async function PATCH(request: NextRequest) {
       .from("conversation_flow_steps")
       .update(update)
       .eq("id", id)
+      .eq("tenant_id", appContext.tenantId)
+      .eq("organization_id", appContext.organizationId)
       .select("id, step_order, title, message_body, wait_minutes, step_type, quick_reply_id")
       .single();
 
     if (error) throw error;
     return NextResponse.json({ ok: true, step: data });
   } catch (error) {
+    if (isUnauthorizedError(error)) return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Failed to update flow step" }, { status: 500 });
   }
 }

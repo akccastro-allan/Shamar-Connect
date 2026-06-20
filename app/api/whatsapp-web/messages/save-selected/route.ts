@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 import type { ProviderSyncedMessage } from "@/types/messaging-provider";
 
@@ -6,7 +7,12 @@ function onlyDigits(value?: string) {
   return String(value || "").replace(/\D/g, "");
 }
 
-async function saveOneMessage(db: ReturnType<typeof createSupabaseWriteClient>, message: ProviderSyncedMessage) {
+async function saveOneMessage(
+  db: ReturnType<typeof createSupabaseWriteClient>,
+  message: ProviderSyncedMessage,
+  tenantId: string,
+  organizationId: string,
+) {
   const phone = onlyDigits(message.phone || message.from);
   let contactId = null;
 
@@ -14,6 +20,8 @@ async function saveOneMessage(db: ReturnType<typeof createSupabaseWriteClient>, 
     const { data: contact, error: contactError } = await db
       .from("crm_contacts")
       .upsert({
+        tenant_id: tenantId,
+        organization_id: organizationId,
         phone,
         name: message.contactName || phone,
         source: "whatsapp_web_selected_message",
@@ -29,6 +37,8 @@ async function saveOneMessage(db: ReturnType<typeof createSupabaseWriteClient>, 
   const { data: conversation, error: conversationError } = await db
     .from("whatsapp_conversations")
     .upsert({
+      tenant_id: tenantId,
+      organization_id: organizationId,
       external_chat_id: message.chatId,
       provider: "whatsapp_web",
       contact_id: contactId,
@@ -47,6 +57,8 @@ async function saveOneMessage(db: ReturnType<typeof createSupabaseWriteClient>, 
   const { error: messageError } = await db
     .from("whatsapp_messages")
     .upsert({
+      tenant_id: tenantId,
+      organization_id: organizationId,
       external_message_id: message.id,
       provider: "whatsapp_web",
       conversation_id: conversation?.id || null,
@@ -66,6 +78,7 @@ async function saveOneMessage(db: ReturnType<typeof createSupabaseWriteClient>, 
 
 export async function POST(request: NextRequest) {
   try {
+    const context = await getRequiredAppContext();
     const body = await request.json();
     const messages = Array.isArray(body?.messages) ? body.messages as ProviderSyncedMessage[] : [];
 
@@ -77,12 +90,13 @@ export async function POST(request: NextRequest) {
     let saved = 0;
 
     for (const message of messages) {
-      const didSave = await saveOneMessage(db, message);
+      const didSave = await saveOneMessage(db, message, context.tenantId, context.organizationId);
       if (didSave) saved += 1;
     }
 
     return NextResponse.json({ ok: true, received: messages.length, saved });
   } catch (error) {
+    if (isUnauthorizedError(error)) return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Failed to save selected messages" }, { status: 500 });
   }
 }

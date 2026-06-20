@@ -11,7 +11,7 @@ import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 
 export async function POST(request: NextRequest) {
   try {
-    await getRequiredAppContext();
+    const context = await getRequiredAppContext();
 
     const body = await request.json();
     const conversationId = String(body?.conversationId || "").trim();
@@ -33,6 +33,8 @@ export async function POST(request: NextRequest) {
       .from("whatsapp_conversations")
       .select("id, external_chat_id, provider, is_group, contact_id, tenant_id, organization_id")
       .eq("id", conversationId)
+      .eq("tenant_id", context.tenantId)
+      .eq("organization_id", context.organizationId)
       .single();
 
     if (convError) throw convError;
