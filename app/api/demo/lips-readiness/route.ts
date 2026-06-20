@@ -9,8 +9,10 @@ export type LipsReadiness = {
   contacts: { count: number };
   conversations: { count: number };
   agents: { count: number };
+  admins: { count: number };
   pipeline: { stagesCount: number };
   support: { ticketsCount: number };
+  channelCount: number;
   checkedAt: string;
 };
 
@@ -44,23 +46,30 @@ export async function GET() {
           contacts: { count: 0 },
           conversations: { count: 0 },
           agents: { count: 0 },
+          admins: { count: 0 },
           pipeline: { stagesCount: 0 },
           support: { ticketsCount: 0 },
+          channelCount: 0,
           checkedAt: new Date().toISOString(),
         } satisfies LipsReadiness,
       });
     }
 
-    const [contactsRes, conversationsRes, agentsRes, pipelineRes, supportRes] = await Promise.all([
+    const [contactsRes, conversationsRes, agentsRes, adminsRes, pipelineRes, supportRes, channelCountRes] = await Promise.all([
       db.from("crm_contacts").select("id", { count: "exact", head: true })
         .eq("tenant_id", lipsTenantId).eq("organization_id", lipsOrgId),
       db.from("whatsapp_conversations").select("id", { count: "exact", head: true })
         .eq("tenant_id", lipsTenantId).eq("organization_id", lipsOrgId),
       db.from("tenant_users").select("id", { count: "exact", head: true })
         .eq("tenant_id", lipsTenantId).eq("organization_id", lipsOrgId).eq("status", "active"),
+      db.from("tenant_users").select("id", { count: "exact", head: true })
+        .eq("tenant_id", lipsTenantId).eq("organization_id", lipsOrgId).eq("status", "active")
+        .in("role", ["owner", "admin"]),
       db.from("pipeline_stages").select("id", { count: "exact", head: true })
         .eq("tenant_id", lipsTenantId).eq("organization_id", lipsOrgId),
       db.from("support_tickets").select("id", { count: "exact", head: true })
+        .eq("tenant_id", lipsTenantId).eq("organization_id", lipsOrgId),
+      db.from("channels").select("id", { count: "exact", head: true })
         .eq("tenant_id", lipsTenantId).eq("organization_id", lipsOrgId),
     ]);
 
@@ -71,8 +80,10 @@ export async function GET() {
       contacts: { count: contactsRes.count ?? 0 },
       conversations: { count: conversationsRes.count ?? 0 },
       agents: { count: agentsRes.count ?? 0 },
+      admins: { count: adminsRes.count ?? 0 },
       pipeline: { stagesCount: pipelineRes.count ?? 0 },
       support: { ticketsCount: supportRes.count ?? 0 },
+      channelCount: channelCountRes.count ?? 0,
       checkedAt: new Date().toISOString(),
     };
 

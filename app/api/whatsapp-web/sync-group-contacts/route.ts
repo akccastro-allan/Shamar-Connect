@@ -86,6 +86,18 @@ async function syncGroupContacts(groupIds?: string[], groupLimit = 20, sessionId
   const resolved = resolveSessionClient(sessionId);
   if (!resolved) throw new Error(`sessionId inválido: ${sessionId}`);
   const client = createSupabaseWriteClient();
+
+  // Verify the requested session belongs to this tenant/org
+  const { data: ownedChannel } = await client
+    .from("channels")
+    .select("id")
+    .eq("tenant_id", context.tenantId)
+    .eq("organization_id", context.organizationId)
+    .eq("session_id", resolved.sessionId)
+    .maybeSingle();
+
+  if (!ownedChannel) throw new Error("CHANNEL_FORBIDDEN");
+
   const groups = await resolved.client.listGroups();
   const selectedGroups = Array.isArray(groupIds) && groupIds.length > 0
     ? groups.filter((group) => groupIds.includes(group.id))
@@ -147,6 +159,19 @@ async function syncGroupContacts(groupIds?: string[], groupLimit = 20, sessionId
   };
 }
 
+function handleRouteError(error: unknown) {
+  if (isUnauthorizedError(error)) {
+    return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
+  }
+  if (error instanceof Error && error.message === "CHANNEL_FORBIDDEN") {
+    return NextResponse.json({ ok: false, error: "Canal não encontrado." }, { status: 403 });
+  }
+  return NextResponse.json(
+    { ok: false, error: error instanceof Error ? error.message : "Failed to sync group contacts" },
+    { status: 500 },
+  );
+}
+
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -157,14 +182,7 @@ export async function GET(request: NextRequest) {
     const result = await syncGroupContacts(groupId ? [groupId] : undefined, groupLimit, sessionId);
     return NextResponse.json(result);
   } catch (error) {
-    if (isUnauthorizedError(error)) {
-      return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
-    }
-
-    return NextResponse.json(
-      { ok: false, error: error instanceof Error ? error.message : "Failed to sync group contacts" },
-      { status: 500 },
-    );
+    return handleRouteError(error);
   }
 }
 
@@ -182,13 +200,6 @@ export async function POST(request: NextRequest) {
     const result = await syncGroupContacts(groupIds, groupLimit, sessionId);
     return NextResponse.json(result);
   } catch (error) {
-    if (isUnauthorizedError(error)) {
-      return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
-    }
-
-    return NextResponse.json(
-      { ok: false, error: error instanceof Error ? error.message : "Failed to sync group contacts" },
-      { status: 500 },
-    );
+    return handleRouteError(error);
   }
 }

@@ -11,6 +11,20 @@ export async function GET(request: NextRequest) {
     if (!resolved) return sessionIdErrorResponse();
 
     const client = createSupabaseWriteClient();
+
+    // Verify the requested session belongs to this tenant/org
+    const { data: ownedChannel } = await client
+      .from("channels")
+      .select("id")
+      .eq("tenant_id", context.tenantId)
+      .eq("organization_id", context.organizationId)
+      .eq("session_id", resolved.sessionId)
+      .maybeSingle();
+
+    if (!ownedChannel) {
+      return NextResponse.json({ ok: false, error: "Canal não encontrado." }, { status: 403 });
+    }
+
     const status = await resolved.client.getStatus();
 
     await client

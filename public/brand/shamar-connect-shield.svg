@@ -1,0 +1,30 @@
+<svg viewBox="0 0 200 255" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- WiFi arcs (gold, above shield) -->
+  <path d="M74 37 Q100 21 126 37" fill="none" stroke="#C9952A" stroke-width="8" stroke-linecap="round"/>
+  <path d="M58 29 Q100 7 142 29"  fill="none" stroke="#C9952A" stroke-width="8" stroke-linecap="round"/>
+
+  <!-- Shield body -->
+  <path d="M100 43 L32 43 L20 55 L20 57 L14 57 L14 155 Q14 210 100 243 Q186 210 186 155 L186 57 L180 57 L180 55 Z" fill="white" stroke="#1B2F5B" stroke-width="10" stroke-linejoin="round"/>
+
+  <!-- Network spokes from center (100,145) — gold -->
+  <line x1="100" y1="145" x2="100" y2="91"  stroke="#C9952A" stroke-width="5"/>
+  <line x1="100" y1="145" x2="54"  y2="111" stroke="#C9952A" stroke-width="5"/>
+  <line x1="100" y1="145" x2="146" y2="111" stroke="#C9952A" stroke-width="5"/>
+  <line x1="100" y1="145" x2="54"  y2="179" stroke="#C9952A" stroke-width="5"/>
+  <line x1="100" y1="145" x2="146" y2="179" stroke="#C9952A" stroke-width="5"/>
+  <line x1="100" y1="145" x2="100" y2="199" stroke="#C9952A" stroke-width="5"/>
+
+  <!-- Teal ring nodes at spoke ends -->
+  <circle cx="100" cy="91"  r="11" fill="#2ABFAB"/><circle cx="100" cy="91"  r="5" fill="white"/>
+  <circle cx="54"  cy="111" r="11" fill="#2ABFAB"/><circle cx="54"  cy="111" r="5" fill="white"/>
+  <circle cx="146" cy="111" r="11" fill="#2ABFAB"/><circle cx="146" cy="111" r="5" fill="white"/>
+  <circle cx="54"  cy="179" r="11" fill="#2ABFAB"/><circle cx="54"  cy="179" r="5" fill="white"/>
+  <circle cx="146" cy="179" r="11" fill="#2ABFAB"/><circle cx="146" cy="179" r="5" fill="white"/>
+  <circle cx="100" cy="199" r="11" fill="#2ABFAB"/><circle cx="100" cy="199" r="5" fill="white"/>
+
+  <!-- Chain link — two interlocked ovals (teal) -->
+  <ellipse cx="108" cy="152" rx="22" ry="13" fill="none" stroke="#2ABFAB" stroke-width="10" transform="rotate(-38 108 152)"/>
+  <ellipse cx="92"  cy="138" rx="22" ry="13" fill="none" stroke="#2ABFAB" stroke-width="10" transform="rotate(-38 92 138)"/>
+  <!-- Interlock mask: white stripe over bottom-right link where top-left passes in front -->
+  <ellipse cx="108" cy="152" rx="22" ry="13" fill="none" stroke="white" stroke-width="6" stroke-dasharray="0 20 18 100" transform="rotate(-38 108 152)"/>
+</svg>

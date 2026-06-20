@@ -28,22 +28,29 @@ async function fetchLipsReadiness(): Promise<LipsReadiness> {
       contacts: { count: 0 },
       conversations: { count: 0 },
       agents: { count: 0 },
+      admins: { count: 0 },
       pipeline: { stagesCount: 0 },
       support: { ticketsCount: 0 },
+      channelCount: 0,
       checkedAt: new Date().toISOString(),
     };
   }
 
-  const [contactsRes, conversationsRes, agentsRes, pipelineRes, supportRes] = await Promise.all([
+  const [contactsRes, conversationsRes, agentsRes, adminsRes, pipelineRes, supportRes, channelCountRes] = await Promise.all([
     db.from("crm_contacts").select("id", { count: "exact", head: true })
       .eq("tenant_id", lipsTenantId).eq("organization_id", lipsOrgId),
     db.from("whatsapp_conversations").select("id", { count: "exact", head: true })
       .eq("tenant_id", lipsTenantId).eq("organization_id", lipsOrgId),
     db.from("tenant_users").select("id", { count: "exact", head: true })
       .eq("tenant_id", lipsTenantId).eq("organization_id", lipsOrgId).eq("status", "active"),
+    db.from("tenant_users").select("id", { count: "exact", head: true })
+      .eq("tenant_id", lipsTenantId).eq("organization_id", lipsOrgId).eq("status", "active")
+      .in("role", ["owner", "admin"]),
     db.from("pipeline_stages").select("id", { count: "exact", head: true })
       .eq("tenant_id", lipsTenantId).eq("organization_id", lipsOrgId),
     db.from("support_tickets").select("id", { count: "exact", head: true })
+      .eq("tenant_id", lipsTenantId).eq("organization_id", lipsOrgId),
+    db.from("channels").select("id", { count: "exact", head: true })
       .eq("tenant_id", lipsTenantId).eq("organization_id", lipsOrgId),
   ]);
 
@@ -54,8 +61,10 @@ async function fetchLipsReadiness(): Promise<LipsReadiness> {
     contacts: { count: contactsRes.count ?? 0 },
     conversations: { count: conversationsRes.count ?? 0 },
     agents: { count: agentsRes.count ?? 0 },
+    admins: { count: adminsRes.count ?? 0 },
     pipeline: { stagesCount: pipelineRes.count ?? 0 },
     support: { ticketsCount: supportRes.count ?? 0 },
+    channelCount: channelCountRes.count ?? 0,
     checkedAt: new Date().toISOString(),
   };
 }
@@ -112,18 +121,19 @@ export default async function DemoChecklistPage() {
   const r = await fetchLipsReadiness();
 
   const orgFound = !!r.lipsOrgId;
+  const loginOk = r.agents.count > 0;
+  const isolationOk = orgFound && r.channelCount === 1; // só 1 canal no tenant = isolado
   const whatsappOk = r.whatsappChannel.exists;
-  // Sync = conversations exist (WhatsApp history was pulled)
   const syncOk = r.conversations.count > 0;
+  const conversationsOk = r.conversations.count > 0;
   const contactsOk = r.contacts.count > 0;
-  const pipelineOk = r.pipeline.stagesCount > 0;
-  // Support = tickets table accessible (structural check)
   const supportOk = orgFound;
-  // Operations = org found and channel configured
-  const operationsOk = orgFound && whatsappOk;
+  const attendantsOk = r.agents.count >= 4;
+  const adminOk = r.admins.count >= 1;
 
-  const allOk = orgFound && whatsappOk && syncOk && contactsOk && pipelineOk && supportOk && operationsOk;
-  const readyCount = [orgFound, whatsappOk, syncOk, contactsOk, pipelineOk, supportOk, operationsOk].filter(Boolean).length;
+  const items = [loginOk, isolationOk, whatsappOk, syncOk, conversationsOk, true, contactsOk, supportOk, attendantsOk, adminOk];
+  const readyCount = items.filter(Boolean).length;
+  const allOk = items.every(Boolean);
 
   const checkedAt = new Intl.DateTimeFormat("pt-BR", {
     day: "2-digit", month: "2-digit", year: "numeric",
@@ -132,127 +142,164 @@ export default async function DemoChecklistPage() {
 
   return (
     <AppShell active="demo-checklist">
-      <div className="max-w-2xl space-y-6">
-        <div>
-          <div className="flex items-center gap-3 mb-1">
-            <h1 className="text-2xl font-black text-foreground">Lips — Demo Checklist</h1>
-            <Badge className={allOk ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}>
-              {readyCount}/7 OK
-            </Badge>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Prontidão para demonstração · 1 administrador + 4 atendentes · Verificado em {checkedAt}
-          </p>
-        </div>
-
-        {!orgFound && (
-          <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
-            <p className="text-sm font-semibold text-red-800">Organização Lips não encontrada</p>
-            <p className="text-xs text-red-700 mt-1">
-              Nenhum canal com session_id &quot;lips-main&quot; foi encontrado no banco. Verifique o provisionamento.
+      <div className="p-6 lg:p-10">
+        <div className="max-w-2xl space-y-6">
+          <div>
+            <div className="flex items-center gap-3 mb-1">
+              <h1 className="text-2xl font-black text-foreground">Lips — Go Live Checklist</h1>
+              <Badge className={allOk ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}>
+                {readyCount}/{items.length} OK
+              </Badge>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Prontidão para ir ao ar · verificado em {checkedAt}
             </p>
           </div>
-        )}
 
-        <div className="space-y-3">
-          <CheckItem
-            label="1. Login funcionando"
-            ok={r.agents.count > 0}
-            detail={
-              r.agents.count > 0
-                ? `${r.agents.count} usuário(s) ativo(s) cadastrado(s) na organização Lips`
-                : "Nenhum usuário ativo encontrado — provisione atendentes antes da demo"
-            }
-            link={{ href: "/admin/users", label: "Gerenciar usuários" }}
-          />
+          {!orgFound && (
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
+              <p className="text-sm font-semibold text-red-800">Organização Lips não encontrada</p>
+              <p className="text-xs text-red-700 mt-1">
+                Nenhum canal com session_id &quot;lips-main&quot; encontrado. Verifique o provisionamento.
+              </p>
+            </div>
+          )}
 
-          <CheckItem
-            label="2. WhatsApp conectado"
-            ok={whatsappOk}
-            detail={
-              whatsappOk
-                ? `Canal lips-main configurado · verifique status online em Operações`
-                : "Canal lips-main não encontrado — configure o canal em Configurações"
-            }
-            link={{ href: "/settings/whatsapp", label: "Conectar WhatsApp" }}
-          />
+          <div className="space-y-3">
+            <CheckItem
+              label="1. Login Lips OK"
+              ok={loginOk}
+              detail={
+                loginOk
+                  ? `${r.agents.count} usuário(s) ativo(s) na organização Lips`
+                  : "Nenhum usuário ativo — provisione ao menos 1 usuário"
+              }
+              link={{ href: "/admin/users", label: "Gerenciar usuários" }}
+            />
 
-          <CheckItem
-            label="3. Sync realizado"
-            ok={syncOk}
-            detail={
-              syncOk
-                ? `${r.conversations.count} conversa(s) sincronizada(s) com o banco`
-                : "Nenhuma conversa importada ainda — importe o histórico do WhatsApp"
-            }
-            link={{ href: "/whatsapp-import", label: "Importar histórico" }}
-          />
+            <CheckItem
+              label="2. Isolamento OK"
+              ok={isolationOk}
+              detail={
+                isolationOk
+                  ? "Lips tem somente 1 canal configurado — isolamento garantido"
+                  : orgFound
+                    ? `${r.channelCount} canal(is) encontrado(s) — verifique se canais de outras empresas estão vazando`
+                    : "Organização não encontrada — impossível verificar isolamento"
+              }
+              link={{ href: "/settings/whatsapp", label: "Ver canais" }}
+            />
 
-          <CheckItem
-            label="4. Contatos criados"
-            ok={contactsOk}
-            detail={
-              contactsOk
-                ? `${r.contacts.count} contato(s) no CRM da Lips`
-                : "Nenhum contato no CRM — importe contatos ou sincronize o WhatsApp"
-            }
-            link={{ href: "/contacts", label: "Ver contatos" }}
-          />
+            <CheckItem
+              label="3. WhatsApp Lips conectado"
+              ok={whatsappOk}
+              detail={
+                whatsappOk
+                  ? `Canal lips-main configurado · verifique status online em Operações`
+                  : "Canal lips-main não encontrado — configure o canal"
+              }
+              link={{ href: "/settings/whatsapp", label: "Conectar WhatsApp" }}
+            />
 
-          <CheckItem
-            label="5. Pipeline criado"
-            ok={pipelineOk}
-            detail={
-              pipelineOk
-                ? `${r.pipeline.stagesCount} etapa(s) de pipeline configurada(s)`
-                : "Nenhuma etapa de pipeline — acesse o CRM e configure o funil"
-            }
-            link={{ href: "/crm", label: "Ver pipeline" }}
-          />
+            <CheckItem
+              label="4. Sync realizado"
+              ok={syncOk}
+              detail={
+                syncOk
+                  ? `${r.conversations.count} conversa(s) sincronizada(s)`
+                  : "Nenhuma conversa importada — execute o sync após conectar o WhatsApp"
+              }
+              link={{ href: "/whatsapp-diagnostics", label: "Sincronizar" }}
+            />
 
-          <CheckItem
-            label="6. Suporte funcionando"
-            ok={supportOk}
-            detail={
-              supportOk
-                ? `Módulo de suporte disponível · ${r.support.ticketsCount} chamado(s) registrado(s)`
-                : "Organização não encontrada — suporte não está disponível"
-            }
-            link={{ href: "/support", label: "Abrir suporte" }}
-          />
+            <CheckItem
+              label="5. Conversas carregadas"
+              ok={conversationsOk}
+              detail={
+                conversationsOk
+                  ? `${r.conversations.count} conversa(s) disponíveis na central`
+                  : "Sem conversas — faça sync primeiro"
+              }
+              link={{ href: "/whatsapp-messages", label: "Ver central" }}
+            />
 
-          <CheckItem
-            label="7. Operations funcionando"
-            ok={operationsOk}
-            detail={
-              operationsOk
-                ? "Organização e canal WhatsApp configurados — Operations pronto"
-                : "Configure a organização e o canal WhatsApp antes da demo"
-            }
-            link={{ href: "/operations", label: "Ver Operations" }}
-          />
-        </div>
+            <CheckItem
+              label="6. Envio manual testado"
+              ok={false}
+              detail="Verificar manualmente — abra uma conversa e envie uma mensagem de teste"
+              link={{ href: "/whatsapp-messages", label: "Central de atendimento" }}
+            />
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Resumo para a demo</CardTitle>
-          </CardHeader>
-          <CardContent className="text-sm space-y-1 text-muted-foreground">
-            <p>· <strong>{r.agents.count}</strong> atendente(s) cadastrado(s) — meta: 5 (1 admin + 4)</p>
-            <p>· <strong>{r.contacts.count}</strong> contato(s) no CRM</p>
-            <p>· <strong>{r.conversations.count}</strong> conversa(s) disponíveis</p>
-            <p>· <strong>{r.pipeline.stagesCount}</strong> etapa(s) de pipeline</p>
-            <p>· <strong>{r.support.ticketsCount}</strong> chamado(s) de suporte</p>
-          </CardContent>
-        </Card>
+            <CheckItem
+              label="7. Contatos funcionando"
+              ok={contactsOk}
+              detail={
+                contactsOk
+                  ? `${r.contacts.count} contato(s) no CRM`
+                  : "Nenhum contato — importe ou sincronize grupos"
+              }
+              link={{ href: "/contacts", label: "Ver contatos" }}
+            />
 
-        <div className="flex gap-2">
-          <Button asChild variant="outline">
-            <Link href="/operations">Ver Operações</Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link href="/whatsapp-messages">Central de atendimento</Link>
-          </Button>
+            <CheckItem
+              label="8. Suporte funcionando"
+              ok={supportOk}
+              detail={
+                supportOk
+                  ? `Suporte disponível · ${r.support.ticketsCount} chamado(s)`
+                  : "Organização não encontrada — suporte indisponível"
+              }
+              link={{ href: "/support", label: "Abrir suporte" }}
+            />
+
+            <CheckItem
+              label="9. 4 atendentes cadastrados"
+              ok={attendantsOk}
+              detail={
+                attendantsOk
+                  ? `${r.agents.count} usuário(s) ativo(s) — meta atingida`
+                  : `${r.agents.count} de 4 atendentes — cadastre mais usuários`
+              }
+              link={{ href: "/admin/users", label: "Gerenciar usuários" }}
+            />
+
+            <CheckItem
+              label="10. 1 administrador cadastrado"
+              ok={adminOk}
+              detail={
+                adminOk
+                  ? `${r.admins.count} administrador(es) configurado(s)`
+                  : "Nenhum admin/owner — atribua permissão de administrador a um usuário"
+              }
+              link={{ href: "/admin/users", label: "Gerenciar usuários" }}
+            />
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Resumo</CardTitle>
+            </CardHeader>
+            <CardContent className="text-sm space-y-1 text-muted-foreground">
+              <p>· <strong>{r.agents.count}</strong> usuário(s) ativo(s) — <strong>{r.admins.count}</strong> admin(s)</p>
+              <p>· <strong>{r.contacts.count}</strong> contato(s) no CRM</p>
+              <p>· <strong>{r.conversations.count}</strong> conversa(s)</p>
+              <p>· <strong>{r.pipeline.stagesCount}</strong> etapa(s) de pipeline</p>
+              <p>· <strong>{r.support.ticketsCount}</strong> chamado(s) de suporte</p>
+              <p>· <strong>{r.channelCount}</strong> canal(is) configurado(s)</p>
+            </CardContent>
+          </Card>
+
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="outline">
+              <Link href="/operations">Ver Operações</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/whatsapp-messages">Central de atendimento</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/admin/users">Gerenciar usuários</Link>
+            </Button>
+          </div>
         </div>
       </div>
     </AppShell>

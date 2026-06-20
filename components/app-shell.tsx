@@ -12,6 +12,12 @@ type NavGroup = { label: string; platformOnly?: true; items: NavItem[] };
 
 const navigationGroups: NavGroup[] = [
   {
+    label: "Início",
+    items: [
+      { href: "/getting-started", label: "Primeiros passos", marker: "▶" },
+    ],
+  },
+  {
     label: "Operação",
     items: [
       { href: "/dashboard", label: "Dashboard", marker: "D" },
