@@ -14,7 +14,7 @@ const logos = {
 };
 
 export function BrandIcon({ className = "h-11 w-11" }: { className?: string }) {
-  return <img src={SHAMAR_CONNECT_ICON_PATH} alt="Ícone ShamarConnect" className={className} />;
+  return <img src="https://assets.shamarconnect.com.br/Escudo%20-%20Shamar-connect%20-%20Fundo%20branco.png" alt="Ícone ShamarConnect" className={className} />;
 }
 
 export function BrandLogo({ className = "h-auto w-full max-w-md", variant = "complete" }: BrandLogoProps) {
