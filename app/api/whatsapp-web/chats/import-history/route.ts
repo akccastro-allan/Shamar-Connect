@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { whatsappWebGatewayClient } from "@/lib/providers/whatsapp-web-gateway-client";
+import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
+import { resolveSessionClient, sessionIdErrorResponse } from "@/lib/providers/resolve-session";
 
 function onlyDigits(value?: string) {
   return String(value || "").replace(/\D/g, "");
@@ -8,16 +9,32 @@ function onlyDigits(value?: string) {
 
 export async function POST(request: NextRequest) {
   try {
+    const context = await getRequiredAppContext();
     const body = await request.json();
     const chatId = String(body?.chatId || "");
     const limit = Math.min(Number(body?.limit || 50), 200);
+    const sessionId = body?.sessionId ? String(body.sessionId) : null;
 
     if (!chatId) {
       return NextResponse.json({ ok: false, error: "chatId is required" }, { status: 400 });
     }
 
+    const resolved = resolveSessionClient(sessionId);
+    if (!resolved) return sessionIdErrorResponse();
+
     const db = createSupabaseWriteClient();
-    const messages = await whatsappWebGatewayClient.listChatMessages(chatId, limit);
+
+    // Resolve channel for this session so conversations are tagged correctly
+    const { data: channelRow } = await db
+      .from("channels")
+      .select("id")
+      .eq("tenant_id", context.tenantId)
+      .eq("organization_id", context.organizationId)
+      .eq("session_id", resolved.sessionId)
+      .maybeSingle();
+    const channelId: string | null = channelRow?.id ?? null;
+
+    const messages = await resolved.client.listChatMessages(chatId, limit);
 
     let saved = 0;
 
@@ -28,7 +45,17 @@ export async function POST(request: NextRequest) {
       if (phone) {
         const { data: person, error: personError } = await db
           .from("crm_contacts")
-          .upsert({ phone, name: message.contactName || phone, source: "whatsapp_web_manual_sync", updated_at: new Date().toISOString() }, { onConflict: "phone" })
+          .upsert(
+            {
+              tenant_id: context.tenantId,
+              organization_id: context.organizationId,
+              phone,
+              name: message.contactName || phone,
+              source: "whatsapp_web_manual_sync",
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "phone" },
+          )
           .select("id")
           .single();
 
@@ -36,17 +63,24 @@ export async function POST(request: NextRequest) {
         personId = person?.id || null;
       }
 
+      const conversationPayload: Record<string, unknown> = {
+        tenant_id: context.tenantId,
+        organization_id: context.organizationId,
+        external_chat_id: message.chatId,
+        provider: "whatsapp_web",
+        contact_id: personId,
+        name: message.chatName || message.contactName || message.chatId,
+        is_group: Boolean(message.isGroup),
+        last_message_at: message.timestamp
+          ? new Date(Number(message.timestamp) * 1000).toISOString()
+          : new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      if (channelId) conversationPayload.channel_id = channelId;
+
       const { data: conversation, error: conversationError } = await db
         .from("whatsapp_conversations")
-        .upsert({
-          external_chat_id: message.chatId,
-          provider: "whatsapp_web",
-          contact_id: personId,
-          name: message.chatName || message.contactName || message.chatId,
-          is_group: Boolean(message.isGroup),
-          last_message_at: message.timestamp ? new Date(Number(message.timestamp) * 1000).toISOString() : new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        }, { onConflict: "external_chat_id" })
+        .upsert(conversationPayload, { onConflict: "external_chat_id" })
         .select("id")
         .single();
 
@@ -55,27 +89,37 @@ export async function POST(request: NextRequest) {
       if (message.id) {
         const { error: messageError } = await db
           .from("whatsapp_messages")
-          .upsert({
-            external_message_id: message.id,
-            provider: "whatsapp_web",
-            conversation_id: conversation?.id || null,
-            contact_id: personId,
-            direction: message.direction,
-            from_id: message.from || null,
-            to_id: message.to || null,
-            body: message.body || null,
-            message_type: message.type || "text",
-            raw_payload: message || {},
-            created_at: message.timestamp ? new Date(Number(message.timestamp) * 1000).toISOString() : new Date().toISOString(),
-          }, { onConflict: "external_message_id" });
+          .upsert(
+            {
+              tenant_id: context.tenantId,
+              organization_id: context.organizationId,
+              external_message_id: message.id,
+              provider: "whatsapp_web",
+              conversation_id: conversation?.id || null,
+              contact_id: personId,
+              direction: message.direction,
+              from_id: message.from || null,
+              to_id: message.to || null,
+              body: message.body || null,
+              message_type: message.type || "text",
+              raw_payload: message || {},
+              created_at: message.timestamp
+                ? new Date(Number(message.timestamp) * 1000).toISOString()
+                : new Date().toISOString(),
+            },
+            { onConflict: "external_message_id" },
+          );
 
         if (messageError) throw messageError;
         saved += 1;
       }
     }
 
-    return NextResponse.json({ ok: true, chatId, requested: limit, saved });
+    return NextResponse.json({ ok: true, chatId, sessionId: resolved.sessionId, requested: limit, saved });
   } catch (error) {
+    if (isUnauthorizedError(error)) {
+      return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
+    }
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Failed to import chat history" }, { status: 500 });
   }
 }
