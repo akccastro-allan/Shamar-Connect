@@ -9,6 +9,7 @@ export type AppContext = {
   role: "owner" | "admin" | "attendant" | "viewer";
   email: string;
   name: string;
+  isPlatformTenant: boolean;
 };
 
 const allowedRoles = new Set(["owner", "admin", "attendant", "viewer"]);
@@ -67,6 +68,12 @@ export async function getRequiredAppContext(): Promise<AppContext> {
   if (organizationError) throw organizationError;
   if (!organization) throw new Error("UNAUTHORIZED");
 
+  const { data: tenant } = await db
+    .from("tenants")
+    .select("is_platform")
+    .eq("id", tenantUser.tenant_id)
+    .maybeSingle();
+
   return {
     tenantId: tenantUser.tenant_id,
     organizationId: tenantUser.organization_id,
@@ -75,10 +82,10 @@ export async function getRequiredAppContext(): Promise<AppContext> {
     role: normalizeRole(tenantUser.role || appUser.role),
     email: appUser.email,
     name: appUser.name || appUser.email,
+    isPlatformTenant: tenant?.is_platform === true,
   };
 }
 
 export function isUnauthorizedError(error: unknown) {
   return error instanceof Error && error.message === "UNAUTHORIZED";
 }
-

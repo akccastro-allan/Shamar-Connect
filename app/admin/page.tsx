@@ -4,8 +4,6 @@ import { PageHeader } from "@/components/page-header";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
 
-const PLATFORM_TENANT_ID = "0c633898-a297-4f5e-945b-a05171218566";
-
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
 }
@@ -13,7 +11,7 @@ function formatCurrency(value: number) {
 export default async function AdminPage() {
   try {
     const context = await getRequiredAppContext();
-    if (context.tenantId !== PLATFORM_TENANT_ID) redirect("/dashboard");
+    if (!context.isPlatformTenant) redirect("/dashboard");
   } catch (err) {
     if (isUnauthorizedError(err)) redirect("/login");
     throw err;

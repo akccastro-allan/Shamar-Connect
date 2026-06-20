@@ -4,10 +4,8 @@ import { BrandIcon } from "@/components/brand/brand-logo";
 import { cn } from "@/lib/utils";
 import { getCurrentSession } from "@/lib/auth/session";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
+import { getRequiredAppContext } from "@/lib/auth/app-context";
 import type { ShamarSession } from "@/lib/auth/session";
-
-// Tenant da plataforma Moriah Systems — único com visão global
-const PLATFORM_TENANT_ID = "0c633898-a297-4f5e-945b-a05171218566";
 
 type NavItem = { href: string; label: string; marker: string; platformOnly?: true };
 type NavGroup = { label: string; platformOnly?: true; items: NavItem[] };
@@ -209,35 +207,29 @@ async function assertAuthorizedSession() {
     redirect("/planos?reason=not-authorized");
   }
 
-  const { data: tenantUser } = await db
-    .from("tenant_users")
-    .select("id, tenant_id")
-    .eq("app_user_id", session.userId)
-    .eq("status", "active")
-    .or(`organization_id.eq.${session.companyId},tenant_id.eq.${session.companyId}`)
-    .maybeSingle();
-
-  if (!tenantUser) {
+  let isPlatformTenant = false;
+  try {
+    const context = await getRequiredAppContext();
+    isPlatformTenant = context.isPlatformTenant;
+  } catch {
     redirect("/planos?reason=not-authorized");
   }
 
-  const isPlatformAdmin = tenantUser.tenant_id === PLATFORM_TENANT_ID;
-
-  return { session, avatarUrl: appUser.avatar_url ?? null, isPlatformAdmin };
+  return { session, avatarUrl: appUser.avatar_url ?? null, isPlatformTenant };
 }
 
 export async function AppShell({ children, active }: { children: React.ReactNode; active?: string }) {
-  const { session, avatarUrl, isPlatformAdmin } = await assertAuthorizedSession();
+  const { session, avatarUrl, isPlatformTenant } = await assertAuthorizedSession();
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-950 lg:grid lg:grid-cols-[280px_1fr]">
       <aside className="hidden h-screen bg-[#1B2F5B] p-5 lg:sticky lg:top-0 lg:block">
-        <SidebarContent active={active} session={session} avatarUrl={avatarUrl} isPlatformAdmin={isPlatformAdmin} />
+        <SidebarContent active={active} session={session} avatarUrl={avatarUrl} isPlatformAdmin={isPlatformTenant} />
       </aside>
 
       <div className="min-w-0">
         <div className="border-b border-slate-200 bg-white px-5 py-4 lg:hidden">
-          <SidebarContent active={active} session={session} avatarUrl={avatarUrl} isPlatformAdmin={isPlatformAdmin} />
+          <SidebarContent active={active} session={session} avatarUrl={avatarUrl} isPlatformAdmin={isPlatformTenant} />
         </div>
         {children}
       </div>

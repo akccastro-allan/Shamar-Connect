@@ -6,12 +6,9 @@ import { getRequiredAppContext } from "@/lib/auth/app-context";
 
 export const metadata = { title: "Operações — ShamarConnect" };
 
-// Tenant da plataforma (Allan/admin) — único que vê visão global
-const PLATFORM_TENANT_ID = "0c633898-a297-4f5e-945b-a05171218566";
-
 export default async function OperationsPage() {
   const context = await getRequiredAppContext();
-  const isPlatformAdmin = context.tenantId === PLATFORM_TENANT_ID;
+  const isPlatformAdmin = context.isPlatformTenant;
 
   return (
     <AppShell active="operations">
