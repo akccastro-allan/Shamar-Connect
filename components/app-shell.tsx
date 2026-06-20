@@ -1,97 +1,11 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { BrandIcon } from "@/components/brand/brand-logo";
-import { cn } from "@/lib/utils";
+import { SidebarNav } from "@/components/sidebar-nav";
 import { getCurrentSession } from "@/lib/auth/session";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 import { getRequiredAppContext } from "@/lib/auth/app-context";
 import type { ShamarSession } from "@/lib/auth/session";
-
-type NavItem = { href: string; label: string; marker: string; platformOnly?: true };
-type NavGroup = { label: string; platformOnly?: true; items: NavItem[] };
-
-const navigationGroups: NavGroup[] = [
-  {
-    label: "Início",
-    items: [
-      { href: "/getting-started", label: "Primeiros passos", marker: "▶" },
-    ],
-  },
-  {
-    label: "Operação",
-    items: [
-      { href: "/dashboard", label: "Dashboard", marker: "D" },
-      { href: "/inbox", label: "Inbox", marker: "I" },
-      { href: "/whatsapp-messages", label: "WhatsApp", marker: "W" },
-      { href: "/social-inbox", label: "Social Inbox", marker: "S" },
-      { href: "/operations", label: "Operações", marker: "O" },
-    ],
-  },
-  {
-    label: "Conteúdo e canais",
-    items: [
-      { href: "/distribution", label: "Central de Distribuição", marker: "B" },
-    ],
-  },
-  {
-    label: "CRM e vendas",
-    items: [
-      { href: "/contacts", label: "Contatos", marker: "C" },
-      { href: "/crm", label: "CRM", marker: "R" },
-      { href: "/pipeline", label: "Pipeline", marker: "P" },
-      { href: "/sales-dashboard", label: "Dashboard Vendas", marker: "V" },
-      { href: "/campaigns", label: "Campanhas", marker: "M" },
-    ],
-  },
-  {
-    label: "Suporte",
-    items: [
-      { href: "/support", label: "Meus chamados", marker: "?" },
-      { href: "/admin/support", label: "Admin suporte", marker: "!", platformOnly: true },
-    ],
-  },
-  {
-    label: "Gestão interna",
-    platformOnly: true,
-    items: [
-      { href: "/admin", label: "Administração", marker: "A" },
-      { href: "/admin/users", label: "Clientes", marker: "C" },
-      { href: "/demo-checklist", label: "Demo Checklist", marker: "D" },
-      { href: "/financeiro", label: "Financeiro", marker: "$" },
-    ],
-  },
-  {
-    label: "Automação e dados",
-    items: [
-      { href: "/quick-replies", label: "Respostas", marker: "R" },
-      { href: "/conversation-flows", label: "Fluxos", marker: "F" },
-      { href: "/automations", label: "Automações", marker: "Z" },
-      { href: "/knowledge", label: "Conhecimento", marker: "K" },
-      { href: "/whatsapp-diagnostics", label: "Diagnóstico WhatsApp", marker: "G" },
-      { href: "/settings/whatsapp-automation", label: "Config. Automação", marker: "A" },
-      { href: "/settings/whatsapp-cloud", label: "Shamar Kids (Cloud API)", marker: "K", platformOnly: true },
-      { href: "/whatsapp-import", label: "Importação WhatsApp", marker: "I" },
-      { href: "/contact-import", label: "Importar contatos", marker: "U" },
-      { href: "/group-import-lists", label: "Listas importadas", marker: "L" },
-    ],
-  },
-  {
-    label: "Inteligência artificial",
-    items: [
-      { href: "/ai-lab", label: "AI Lab", marker: "I" },
-    ],
-  },
-  {
-    label: "Sistema",
-    items: [
-      { href: "/settings/profile", label: "Meu perfil", marker: "👤" },
-      { href: "/system-test", label: "Teste do sistema", marker: "T", platformOnly: true },
-      { href: "/ui-lab", label: "UI Lab", marker: "U", platformOnly: true },
-      { href: "/feature-lab", label: "Feature Lab", marker: "F", platformOnly: true },
-      { href: "/audit", label: "Auditoria", marker: "S", platformOnly: true },
-    ],
-  },
-];
 
 function SidebarContent({
   active,
@@ -104,17 +18,9 @@ function SidebarContent({
   avatarUrl?: string | null;
   isPlatformAdmin: boolean;
 }) {
-  const visibleGroups = navigationGroups
-    .filter((g) => isPlatformAdmin || !g.platformOnly)
-    .map((g) => ({
-      ...g,
-      items: g.items.filter((item) => isPlatformAdmin || !item.platformOnly),
-    }))
-    .filter((g) => g.items.length > 0);
-
   return (
     <div className="flex h-full flex-col">
-      <Link href="/dashboard" className="mb-7 flex items-center gap-3 rounded-3xl bg-white/10 p-3 ring-1 ring-white/10">
+      <Link href="/dashboard" className="mb-6 flex items-center gap-3 rounded-3xl bg-white/10 p-3 ring-1 ring-white/10">
         <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white shadow-sm">
           <BrandIcon className="h-10 w-10 object-contain" />
         </div>
@@ -124,39 +30,7 @@ function SidebarContent({
         </div>
       </Link>
 
-      <nav className="min-h-0 flex-1 space-y-6 overflow-y-auto pr-1">
-        {visibleGroups.map((group) => (
-          <div key={group.label}>
-            <p className="mb-2 px-3 text-[11px] font-black uppercase tracking-[0.18em] text-white/35">
-              {group.label}
-            </p>
-
-            <div className="space-y-1">
-              {group.items.map((item) => {
-                const isActive = active
-                  ? item.href.includes(active) || active.includes(item.href.replace("/", ""))
-                  : false;
-
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={cn(
-                      "flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-bold text-white/70 transition hover:bg-white/10 hover:text-white",
-                      isActive && "bg-[#2ABFAB] text-white shadow-lg shadow-black/10"
-                    )}
-                  >
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-lg bg-white/10 text-[10px] font-black text-white/75">
-                      {item.marker}
-                    </span>
-                    <span className="truncate">{item.label}</span>
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-        ))}
-      </nav>
+      <SidebarNav active={active} isPlatformAdmin={isPlatformAdmin} />
 
       {/* User info + logout */}
       <div className="mt-4 border-t border-white/10 pt-4">

@@ -17,7 +17,12 @@ type ProcessorSummary = {
   errorEvents: number | null;
 };
 
-function getBearerToken(request: NextRequest) {
+function getWebhookToken(request: NextRequest) {
+  // The Railway gateway sends the shared secret via x-whatsapp-gateway-key.
+  // Keep Authorization: Bearer as a fallback for older/manual callers.
+  const gatewayKey = request.headers.get("x-whatsapp-gateway-key");
+  if (gatewayKey && gatewayKey.trim()) return gatewayKey.trim();
+
   const header = request.headers.get("authorization") || "";
   return header.startsWith("Bearer ") ? header.slice(7) : "";
 }
@@ -83,7 +88,7 @@ function normalizeProcessorSummary(data: unknown): ProcessorSummary {
 
 export async function POST(request: NextRequest) {
   const expectedToken = process.env.SHAMARCONNECT_WEBHOOK_TOKEN || "";
-  const token = getBearerToken(request);
+  const token = getWebhookToken(request);
 
   if (!expectedToken || token !== expectedToken) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
@@ -99,10 +104,32 @@ export async function POST(request: NextRequest) {
     const payload = isJsonObject(body.payload) ? body.payload : {};
     const event = readString(body, ["event", "type"]) || "unknown";
     const provider = readString(body, ["provider"]) || readString(payload, ["provider"]) || "whatsapp_web";
-    const organizationId = readUuid(body, ["organization_id", "organizationId"]) || readUuid(payload, ["organization_id", "organizationId"]);
-    const tenantId = readUuid(body, ["tenant_id", "tenantId"]) || readUuid(payload, ["tenant_id", "tenantId"]);
+    let organizationId = readUuid(body, ["organization_id", "organizationId"]) || readUuid(payload, ["organization_id", "organizationId"]);
+    let tenantId = readUuid(body, ["tenant_id", "tenantId"]) || readUuid(payload, ["tenant_id", "tenantId"]);
     const shouldProcess = PROCESSABLE_EVENTS.has(event);
     const client = createSupabaseWriteClient();
+
+    // The gateway identifies the tenant only by endpoint_key (= channel session_id).
+    // Resolve tenant_id/organization_id from the channel so events land in the
+    // correct tenant — without this they are stored with null IDs and stay invisible.
+    if (!organizationId || !tenantId) {
+      const endpointKey =
+        readString(body, ["endpoint_key", "endpointKey", "sessionId", "session_id"]) ||
+        readString(payload, ["endpoint_key", "endpointKey", "sessionId", "session_id"]);
+
+      if (endpointKey) {
+        const { data: channel } = await client
+          .from("channels")
+          .select("tenant_id, organization_id")
+          .eq("session_id", endpointKey)
+          .maybeSingle();
+
+        if (channel) {
+          organizationId = organizationId || channel.organization_id;
+          tenantId = tenantId || channel.tenant_id;
+        }
+      }
+    }
 
     const { data: savedEvent, error: eventError } = await client
       .from("provider_events")
