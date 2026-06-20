@@ -11,6 +11,7 @@ type CheckoutInput = {
   customerEmail?: string;
   customerPhone?: string;
   customerDocument?: string;
+  companyName?: string;
   extraWhatsappConnections?: number;
   extraUsers?: number;
   aiAddonEnabled?: boolean;
@@ -77,6 +78,7 @@ export async function POST(request: NextRequest) {
   const customerEmail = String(input.customerEmail || "").trim().toLowerCase();
   const customerPhone = onlyDigits(input.customerPhone);
   const customerDocument = onlyDigits(input.customerDocument);
+  const companyName = String(input.companyName || input.customerName || "").trim();
   const extraWhatsappConnections = normalizePositiveInteger(input.extraWhatsappConnections);
   const extraUsers = normalizePositiveInteger(input.extraUsers);
   const aiAddonEnabled = Boolean(input.aiAddonEnabled);
@@ -130,6 +132,7 @@ export async function POST(request: NextRequest) {
       billing_provider: "asaas",
       status: "pending",
       metadata: {
+        companyName,
         extraWhatsappAmount,
         extraUsersAmount,
         aiAddonAmount,
