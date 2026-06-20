@@ -71,6 +71,7 @@ const navigationGroups = [
   {
     label: "Sistema",
     items: [
+      { href: "/settings/profile", label: "Meu perfil", marker: "👤" },
       { href: "/system-test", label: "Teste do sistema", marker: "T" },
       { href: "/ui-lab", label: "UI Lab", marker: "U" },
       { href: "/feature-lab", label: "Feature Lab", marker: "F" },
@@ -79,7 +80,7 @@ const navigationGroups = [
   },
 ];
 
-function SidebarContent({ active, session }: { active?: string; session: ShamarSession }) {
+function SidebarContent({ active, session, avatarUrl }: { active?: string; session: ShamarSession; avatarUrl?: string | null }) {
   return (
     <div className="flex h-full flex-col">
       <Link href="/dashboard" className="mb-7 flex items-center gap-3 rounded-3xl bg-white/10 p-3 ring-1 ring-white/10">
@@ -127,12 +128,16 @@ function SidebarContent({ active, session }: { active?: string; session: ShamarS
       {/* User info + logout */}
       <div className="mt-4 border-t border-white/10 pt-4">
         <Link
-          href="/settings/whatsapp"
+          href="/settings/profile"
           className="mb-2 flex items-center gap-3 rounded-2xl px-3 py-2.5 transition hover:bg-white/10"
         >
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#2ABFAB]/20 text-sm font-black text-[#2ABFAB]">
-            {(session.userName || session.companyName || "?").charAt(0).toUpperCase()}
-          </span>
+          {avatarUrl ? (
+            <img src={avatarUrl} alt={session.userName} className="h-8 w-8 shrink-0 rounded-xl object-cover ring-1 ring-white/20" />
+          ) : (
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#2ABFAB]/20 text-sm font-black text-[#2ABFAB]">
+              {(session.userName || session.companyName || "?").charAt(0).toUpperCase()}
+            </span>
+          )}
           <div className="min-w-0">
             <p className="truncate text-sm font-bold text-white">{session.userName || session.companyName}</p>
             <p className="truncate text-xs text-white/45">{session.companyName}</p>
@@ -166,7 +171,7 @@ async function assertAuthorizedSession() {
 
   const { data: appUser } = await db
     .from("app_users")
-    .select("id, status")
+    .select("id, status, avatar_url")
     .eq("id", session.userId)
     .eq("status", "active")
     .maybeSingle();
@@ -187,21 +192,21 @@ async function assertAuthorizedSession() {
     redirect("/planos?reason=not-authorized");
   }
 
-  return session;
+  return { session, avatarUrl: appUser.avatar_url ?? null };
 }
 
 export async function AppShell({ children, active }: { children: React.ReactNode; active?: string }) {
-  const session = await assertAuthorizedSession();
+  const { session, avatarUrl } = await assertAuthorizedSession();
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-950 lg:grid lg:grid-cols-[280px_1fr]">
       <aside className="hidden h-screen bg-[#1B2F5B] p-5 lg:sticky lg:top-0 lg:block">
-        <SidebarContent active={active} session={session} />
+        <SidebarContent active={active} session={session} avatarUrl={avatarUrl} />
       </aside>
 
       <div className="min-w-0">
         <div className="border-b border-slate-200 bg-white px-5 py-4 lg:hidden">
-          <SidebarContent active={active} session={session} />
+          <SidebarContent active={active} session={session} avatarUrl={avatarUrl} />
         </div>
         {children}
       </div>
