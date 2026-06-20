@@ -45,6 +45,7 @@ const navigationGroups = [
     items: [
       { href: "/admin", label: "Administração", marker: "A" },
       { href: "/admin/users", label: "Clientes", marker: "C" },
+      { href: "/demo-checklist", label: "Demo Checklist", marker: "D" },
       { href: "/financeiro", label: "Financeiro", marker: "$" },
     ],
   },

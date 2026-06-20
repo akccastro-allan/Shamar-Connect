@@ -1,6 +1,7 @@
 import { AppShell } from "@/components/app-shell";
 import { OperationsDashboard } from "@/components/operations-dashboard";
 import { AllanCommandCenter } from "@/components/allan-command-center";
+import { LipsReadinessCard } from "@/components/lips-readiness-card";
 
 export const metadata = { title: "Operações — ShamarConnect" };
 
@@ -16,6 +17,9 @@ export default function OperationsPage() {
         </div>
         <div className="space-y-10">
           <OperationsDashboard />
+          <div className="grid gap-6 lg:grid-cols-3">
+            <LipsReadinessCard />
+          </div>
           <AllanCommandCenter />
         </div>
       </div>
