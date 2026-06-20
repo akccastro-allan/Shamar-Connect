@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
     await client
       .from("whatsapp_connections")
       .update({
-        status: (result as any)?.status || "connecting",
+        status: result.status ?? "connecting",
         last_connected_at: new Date().toISOString(),
         last_seen_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),

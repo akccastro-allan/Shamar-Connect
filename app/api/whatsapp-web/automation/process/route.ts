@@ -278,6 +278,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ ok: false, error: `sessionId inválido: ${sessionId}` }, { status: 400 });
     }
 
+    // Verify gateway is ready before processing any conversations
+    const gatewayStatus = await resolved.client.getStatus().catch(() => null);
+    const gatewayReady = gatewayStatus?.status === "ready" || gatewayStatus?.status === "authenticated";
+    if (!gatewayReady && !dryRun) {
+      return NextResponse.json({
+        ok: false,
+        error: `Gateway ${resolved.sessionId} não está pronto (status: ${gatewayStatus?.status ?? "unreachable"}). Conecte o WhatsApp antes de rodar a automação.`,
+        gatewayStatus: gatewayStatus?.status ?? "unreachable",
+      }, { status: 503 });
+    }
+
     // Resolve channel_id so automation only processes conversations from this session
     const { data: channelRow } = await db
       .from("channels")
@@ -339,13 +350,15 @@ export async function GET(request: NextRequest) {
 
     let alreadyProcessedInboundIds = new Set<string>();
     if (latestInboundIds.length > 0) {
+      const deduplicationCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
       const { data: eventRows, error: eventsError } = await db
         .from("whatsapp_conversation_events")
         .select("metadata")
         .eq("tenant_id", context.tenantId)
         .eq("organization_id", context.organizationId)
         .eq("event_source", "safe_automation")
-        .limit(limit * 50);
+        .gte("created_at", deduplicationCutoff)
+        .limit(5000);
 
       if (eventsError) throw eventsError;
 
@@ -394,7 +407,7 @@ export async function GET(request: NextRequest) {
         if (!dryRun) {
           try {
             const now = new Date().toISOString();
-            const slaDueAt = new Date(new Date(latestInbound.created_at).getTime() + 30 * 60 * 1000).toISOString();
+            const slaDueAt = new Date(new Date(latestInbound.created_at).getTime() + 15 * 60 * 1000).toISOString();
             const slaStatus = new Date(slaDueAt).getTime() < Date.now() ? "breached" : "pending";
 
             await db

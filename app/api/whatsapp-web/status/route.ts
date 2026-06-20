@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
     await client
       .from("whatsapp_connections")
       .update({
-        status: (status as any)?.status || "unknown",
+        status: status.status ?? "unknown",
         last_seen_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         metadata: {
