@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { whatsappWebGatewayClient } from "@/lib/providers/whatsapp-web-gateway-client";
+import { createWhatsappGatewayClient, isAllowedSessionId, whatsappWebGatewayClient } from "@/lib/providers/whatsapp-web-gateway-client";
 import { sendTextMessage as cloudSendText } from "@/lib/providers/whatsapp-cloud-client";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
+import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
 
 type Params = { params: Promise<{ conversationId: string }> };
 
 export async function POST(request: NextRequest, context: Params) {
   try {
+    const appContext = await getRequiredAppContext();
     const { conversationId } = await context.params;
     const body = await request.json();
     const messageBody = String(body?.body || "").trim();
@@ -21,14 +23,20 @@ export async function POST(request: NextRequest, context: Params) {
 
     const db = createSupabaseWriteClient();
 
+    // Scope the conversation to the logged-in tenant/org (isolation).
     const { data: conversation, error: conversationError } = await db
       .from("whatsapp_conversations")
-      .select("id, tenant_id, organization_id, external_chat_id, contact_id, provider, is_group")
+      .select("id, tenant_id, organization_id, external_chat_id, contact_id, provider, is_group, channel_id")
       .eq("id", conversationId)
-      .single();
+      .eq("tenant_id", appContext.tenantId)
+      .eq("organization_id", appContext.organizationId)
+      .maybeSingle();
 
     if (conversationError) throw conversationError;
-    if (!conversation?.external_chat_id) {
+    if (!conversation) {
+      return NextResponse.json({ ok: false, error: "Conversa não encontrada." }, { status: 404 });
+    }
+    if (!conversation.external_chat_id) {
       return NextResponse.json({ ok: false, error: "Conversa sem chat ID externo." }, { status: 400 });
     }
     if (conversation.is_group) {
@@ -44,7 +52,39 @@ export async function POST(request: NextRequest, context: Params) {
       sentId = result.messageId;
       sentProvider = "whatsapp_cloud";
     } else {
-      const result = await whatsappWebGatewayClient.sendMessage({
+      // Resolve the gateway session that OWNS this conversation's channel.
+      // Without this the default session (hall-main) is used and replies from
+      // other tenants fail with "client is not ready".
+      let sessionId: string | null = null;
+
+      if (conversation.channel_id) {
+        const { data: ch } = await db
+          .from("channels")
+          .select("session_id")
+          .eq("id", conversation.channel_id)
+          .maybeSingle();
+        sessionId = ch?.session_id ?? null;
+      }
+
+      if (!sessionId) {
+        const { data: ch } = await db
+          .from("channels")
+          .select("session_id")
+          .eq("tenant_id", conversation.tenant_id)
+          .eq("organization_id", conversation.organization_id)
+          .not("session_id", "is", null)
+          .order("created_at", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        sessionId = ch?.session_id ?? null;
+      }
+
+      const gatewayClient =
+        sessionId && isAllowedSessionId(sessionId)
+          ? createWhatsappGatewayClient(sessionId)
+          : whatsappWebGatewayClient;
+
+      const result = await gatewayClient.sendMessage({
         to: conversation.external_chat_id,
         body: messageBody,
       });
@@ -110,6 +150,9 @@ export async function POST(request: NextRequest, context: Params) {
 
     return NextResponse.json({ ok: true, message: savedMessage });
   } catch (error) {
+    if (isUnauthorizedError(error)) {
+      return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
+    }
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Falha ao enviar mensagem" }, { status: 500 });
   }
 }

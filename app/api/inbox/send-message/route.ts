@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
-import { whatsappWebGatewayClient } from "@/lib/providers/whatsapp-web-gateway-client";
+import { createWhatsappGatewayClient, isAllowedSessionId, whatsappWebGatewayClient } from "@/lib/providers/whatsapp-web-gateway-client";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 
 export async function POST(request: NextRequest) {
@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
 
     const { data: conversation, error: conversationError } = await client
       .from("whatsapp_conversations")
-      .select("id, external_chat_id, contact_id, tenant_id, organization_id")
+      .select("id, external_chat_id, contact_id, tenant_id, organization_id, channel_id")
       .eq("id", conversationId)
       .eq("tenant_id", context.tenantId)
       .eq("organization_id", context.organizationId)
@@ -31,7 +31,36 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "Conversa não encontrada ou sem external_chat_id." }, { status: 404 });
     }
 
-    const sent = await whatsappWebGatewayClient.sendMessage({
+    // Resolve the gateway session that owns this conversation's channel,
+    // otherwise the default session (hall-main) is used and the send fails.
+    let sessionId: string | null = null;
+    if (conversation.channel_id) {
+      const { data: ch } = await client
+        .from("channels")
+        .select("session_id")
+        .eq("id", conversation.channel_id)
+        .maybeSingle();
+      sessionId = ch?.session_id ?? null;
+    }
+    if (!sessionId) {
+      const { data: ch } = await client
+        .from("channels")
+        .select("session_id")
+        .eq("tenant_id", context.tenantId)
+        .eq("organization_id", context.organizationId)
+        .not("session_id", "is", null)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      sessionId = ch?.session_id ?? null;
+    }
+
+    const gatewayClient =
+      sessionId && isAllowedSessionId(sessionId)
+        ? createWhatsappGatewayClient(sessionId)
+        : whatsappWebGatewayClient;
+
+    const sent = await gatewayClient.sendMessage({
       to: conversation.external_chat_id,
       body: text,
     });
