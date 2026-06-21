@@ -138,19 +138,19 @@ export default function PipelinePanel() {
     v != null ? `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : null;
 
   return (
-    <div className="h-full flex flex-col gap-4 p-6">
+    <div className="flex flex-col gap-4">
       {/* Header */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-white">Pipeline de Vendas</h1>
-          <p className="text-sm text-zinc-400 mt-0.5">{items.length} oportunidades no total</p>
+          <h1 className="text-2xl font-black text-[#1B2F5B]">Pipeline de Vendas</h1>
+          <p className="text-sm text-slate-500 mt-0.5">{items.length} {items.length === 1 ? "oportunidade" : "oportunidades"} no total</p>
         </div>
         <div className="flex items-center gap-2">
           {/* Channel filter */}
           <select
             value={selectedChannel}
             onChange={(e) => setSelectedChannel(e.target.value)}
-            className="bg-zinc-800 border border-zinc-700 text-white text-sm px-3 py-1.5 rounded-lg"
+            className="bg-white border border-slate-200 text-slate-900 text-sm px-3 py-1.5 rounded-lg"
           >
             <option value="">Todos os canais</option>
             {channels.map((c) => (
@@ -159,14 +159,14 @@ export default function PipelinePanel() {
           </select>
           <button
             onClick={loadAll}
-            className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
+            className="p-2 text-slate-500 hover:text-[#1B2F5B] hover:bg-slate-100 rounded-lg transition-colors"
             title="Atualizar"
           >
             <RefreshCcw size={16} />
           </button>
           <button
             onClick={() => { setForm({ ...EMPTY_FORM, stageId: stages[0]?.id || "" }); setShowForm(true); }}
-            className="flex items-center gap-2 bg-teal-600 hover:bg-teal-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+            className="flex items-center gap-2 bg-[#2ABFAB] hover:bg-[#24aa98] text-white text-sm font-black px-4 py-2 rounded-full transition-colors"
           >
             <Plus size={16} />
             Nova oportunidade
@@ -176,24 +176,24 @@ export default function PipelinePanel() {
 
       {/* New item form */}
       {showForm && (
-        <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-4 flex flex-col gap-3">
-          <h2 className="font-semibold text-white text-sm">Nova oportunidade</h2>
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col gap-3 shadow-sm">
+          <h2 className="font-black text-[#1B2F5B] text-sm">Nova oportunidade</h2>
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
-              <label className="block text-xs text-zinc-400 mb-1">Título *</label>
+              <label className="block text-xs text-slate-500 mb-1">Título *</label>
               <input
                 value={form.title}
                 onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
                 placeholder="Ex: Trilha Serra Gaúcha – 3 pax"
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white"
+                className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-[#2ABFAB]/30"
               />
             </div>
             <div>
-              <label className="block text-xs text-zinc-400 mb-1">Etapa *</label>
+              <label className="block text-xs text-slate-500 mb-1">Etapa *</label>
               <select
                 value={form.stageId}
                 onChange={(e) => setForm((f) => ({ ...f, stageId: e.target.value }))}
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white"
+                className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-[#2ABFAB]/30"
               >
                 {stages.map((s) => (
                   <option key={s.id} value={s.id}>{s.name}</option>
@@ -201,36 +201,36 @@ export default function PipelinePanel() {
               </select>
             </div>
             <div>
-              <label className="block text-xs text-zinc-400 mb-1">Valor estimado (R$)</label>
+              <label className="block text-xs text-slate-500 mb-1">Valor estimado (R$)</label>
               <input
                 type="number"
                 value={form.value}
                 onChange={(e) => setForm((f) => ({ ...f, value: e.target.value }))}
                 placeholder="0.00"
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white"
+                className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-[#2ABFAB]/30"
               />
             </div>
             <div className="col-span-2">
-              <label className="block text-xs text-zinc-400 mb-1">Notas</label>
+              <label className="block text-xs text-slate-500 mb-1">Notas</label>
               <textarea
                 value={form.notes}
                 onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
                 rows={2}
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white resize-none"
+                className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 resize-none outline-none focus:ring-2 focus:ring-[#2ABFAB]/30"
               />
             </div>
           </div>
           <div className="flex gap-2 justify-end">
             <button
               onClick={() => setShowForm(false)}
-              className="px-4 py-1.5 text-sm text-zinc-400 hover:text-white transition-colors"
+              className="px-4 py-1.5 text-sm text-slate-500 hover:text-slate-900 transition-colors"
             >
               Cancelar
             </button>
             <button
               onClick={createItem}
               disabled={saving || !form.title.trim() || !form.stageId}
-              className="px-4 py-1.5 text-sm bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white rounded-lg transition-colors"
+              className="px-4 py-1.5 text-sm bg-[#2ABFAB] hover:bg-[#24aa98] disabled:opacity-50 text-white font-black rounded-full transition-colors"
             >
               {saving ? "Salvando…" : "Criar"}
             </button>
@@ -240,12 +240,20 @@ export default function PipelinePanel() {
 
       {/* Error */}
       {error && (
-        <div className="bg-red-900/30 border border-red-700 text-red-300 text-sm px-4 py-3 rounded-xl">{error}</div>
+        <div className="bg-red-50 border border-red-200 text-red-800 text-sm px-4 py-3 rounded-xl">{error}</div>
       )}
 
       {/* Kanban board */}
       {loading ? (
-        <div className="flex items-center justify-center flex-1 text-zinc-500 text-sm">Carregando…</div>
+        <div className="flex gap-4 overflow-x-auto pb-4">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="flex-shrink-0 w-72 space-y-2">
+              <div className="h-5 w-32 animate-pulse rounded bg-slate-200" />
+              <div className="h-20 animate-pulse rounded-xl bg-slate-100" />
+              <div className="h-20 animate-pulse rounded-xl bg-slate-100" />
+            </div>
+          ))}
+        </div>
       ) : (
         <div className="flex gap-4 overflow-x-auto pb-4 flex-1">
           {stages.map((stage) => {
@@ -256,9 +264,9 @@ export default function PipelinePanel() {
                 <div className="flex items-center justify-between px-1">
                   <div className="flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: stage.color }} />
-                    <span className="text-sm font-semibold text-zinc-200">{stage.name}</span>
+                    <span className="text-sm font-black text-[#1B2F5B]">{stage.name}</span>
                   </div>
-                  <span className="text-xs text-zinc-500 bg-zinc-800 px-2 py-0.5 rounded-full">{stageItems.length}</span>
+                  <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">{stageItems.length}</span>
                 </div>
 
                 {/* Items */}
@@ -266,12 +274,12 @@ export default function PipelinePanel() {
                   {stageItems.map((item) => (
                     <div
                       key={item.id}
-                      className={`bg-zinc-900 border border-zinc-800 rounded-xl p-3 flex flex-col gap-2 transition-opacity ${movingId === item.id ? "opacity-50" : ""}`}
+                      className={`bg-white border border-slate-200 shadow-sm rounded-xl p-3 flex flex-col gap-2 transition-opacity ${movingId === item.id ? "opacity-50" : ""}`}
                     >
-                      <div className="text-sm font-medium text-white leading-snug">{item.title}</div>
+                      <div className="text-sm font-bold text-slate-900 leading-snug">{item.title}</div>
 
                       {item.crm_contacts && (
-                        <div className="flex items-center gap-1.5 text-xs text-zinc-400">
+                        <div className="flex items-center gap-1.5 text-xs text-slate-500">
                           <Users size={11} />
                           <span>{item.crm_contacts.name || item.crm_contacts.phone}</span>
                         </div>
@@ -287,7 +295,7 @@ export default function PipelinePanel() {
                       )}
 
                       {item.value != null && (
-                        <div className="text-xs font-semibold text-emerald-400">{fmtCurrency(item.value)}</div>
+                        <div className="text-xs font-bold text-emerald-600">{fmtCurrency(item.value)}</div>
                       )}
 
                       {/* Move controls */}
@@ -299,14 +307,14 @@ export default function PipelinePanel() {
                               key={s.id}
                               onClick={() => moveItem(item.id, s.id, s.name)}
                               disabled={movingId === item.id}
-                              className="text-[10px] px-2 py-0.5 rounded-full border border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-white transition-colors disabled:opacity-40"
+                              className="text-[10px] px-2 py-0.5 rounded-full border border-slate-200 text-slate-500 hover:border-[#2ABFAB] hover:text-[#2ABFAB] transition-colors disabled:opacity-40"
                             >
                               → {s.name}
                             </button>
                           ))}
                         <button
                           onClick={() => deleteItem(item.id)}
-                          className="text-[10px] px-2 py-0.5 rounded-full border border-zinc-800 text-zinc-600 hover:text-red-400 hover:border-red-800 transition-colors ml-auto"
+                          className="text-[10px] px-2 py-0.5 rounded-full border border-slate-200 text-slate-400 hover:text-red-600 hover:border-red-300 transition-colors ml-auto"
                         >
                           Remover
                         </button>
@@ -315,7 +323,7 @@ export default function PipelinePanel() {
                   ))}
 
                   {stageItems.length === 0 && (
-                    <div className="border border-dashed border-zinc-800 rounded-xl h-16 flex items-center justify-center text-xs text-zinc-600">
+                    <div className="border border-dashed border-slate-200 rounded-xl h-16 flex items-center justify-center text-xs text-slate-400">
                       Sem oportunidades
                     </div>
                   )}

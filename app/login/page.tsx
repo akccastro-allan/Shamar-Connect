@@ -143,6 +143,9 @@ export default function LoginPage() {
               </button>
             </form>
 
+            {/* Login com Google — oculto até a liberação do OAuth.
+                Restaurar este bloco quando o provedor for aprovado. */}
+            {/*
             <div className="mt-4 flex items-center gap-3">
               <div className="h-px flex-1 bg-slate-200" />
               <span className="text-xs text-slate-400">ou</span>
@@ -161,6 +164,7 @@ export default function LoginPage() {
               </svg>
               Entrar com Google
             </a>
+            */}
 
             <p className="mt-6 text-center text-xs text-slate-400">
               O acesso é liberado apenas para usuários vinculados a uma empresa ativa.

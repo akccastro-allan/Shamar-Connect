@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ContactCreateDialog } from "@/components/contact-create-dialog";
+import { formatPhoneDisplay } from "@/lib/phone";
 
 type Contact = {
   id: string;
@@ -33,6 +34,12 @@ function formatDate(value?: string | null) {
   } catch {
     return value;
   }
+}
+
+function getConsentLabel(status?: string | null) {
+  if (status === "opted_in" || status === "granted") return "Autorizado";
+  if (status === "opted_out" || status === "denied") return "Não autorizado";
+  return "Não informado";
 }
 
 export function ContactsPanel() {
@@ -76,8 +83,8 @@ export function ContactsPanel() {
         <CardHeader>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <CardTitle className="flex items-center gap-2"><Users className="h-5 w-5" />Contatos do CRM</CardTitle>
-              <CardDescription>Contatos salvos manualmente a partir de conversas ou grupos selecionados.</CardDescription>
+              <CardTitle className="flex items-center gap-2"><Users className="h-5 w-5" />Seus contatos{contacts.length > 0 ? <span className="text-sm font-normal text-muted-foreground">({contacts.length})</span> : null}</CardTitle>
+              <CardDescription>Leads e clientes salvos a partir de conversas, grupos e importações.</CardDescription>
             </div>
             <div className="flex gap-2">
               <Button onClick={() => setDialogOpen(true)} size="sm" className="bg-emerald-700 hover:bg-emerald-800">
@@ -92,43 +99,50 @@ export function ContactsPanel() {
         <CardContent>
           {error ? <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</div> : null}
           {notice ? <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">{notice}</div> : null}
-          {contacts.length === 0 ? (
-            <div className="rounded-2xl border border-dashed p-8 text-center text-sm text-muted-foreground">
-              Nenhum contato salvo ainda.{" "}
-              <button onClick={() => setDialogOpen(true)} className="font-medium text-emerald-700 hover:underline">
-                Adicionar o primeiro contato.
-              </button>
+          {loading && contacts.length === 0 ? (
+            <div className="space-y-2">
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="h-14 animate-pulse rounded-2xl bg-slate-100" />
+              ))}
+            </div>
+          ) : contacts.length === 0 ? (
+            <div className="rounded-2xl border border-dashed p-8 text-center">
+              <p className="text-sm font-bold text-slate-700">Nenhum contato salvo ainda</p>
+              <p className="mt-1 text-sm text-muted-foreground">Cadastre o primeiro lead ou cliente para começar a organizar sua base.</p>
+              <Button onClick={() => setDialogOpen(true)} size="sm" className="mt-4 bg-emerald-700 hover:bg-emerald-800">
+                <Plus className="mr-2 h-4 w-4" />Adicionar contato
+              </Button>
             </div>
           ) : (
-            <div className="overflow-hidden rounded-2xl border">
-              <table className="w-full text-left text-sm">
+            <div className="overflow-x-auto rounded-2xl border">
+              <table className="w-full min-w-[640px] text-left text-sm">
                 <thead className="bg-slate-50 text-xs uppercase text-muted-foreground">
                   <tr>
                     <th className="px-4 py-3">Nome</th>
                     <th className="px-4 py-3">Telefone</th>
-                    <th className="px-4 py-3">Origem</th>
-                    <th className="px-4 py-3">Consentimento</th>
-                    <th className="px-4 py-3">Tags</th>
-                    <th className="px-4 py-3">Atualizado</th>
+                    <th className="hidden px-4 py-3 lg:table-cell">Origem</th>
+                    <th className="px-4 py-3">Permissão</th>
+                    <th className="hidden px-4 py-3 sm:table-cell">Tags</th>
+                    <th className="hidden px-4 py-3 lg:table-cell">Atualizado</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y bg-white">
                   {contacts.map((contact) => (
                     <tr key={contact.id}>
                       <td className="px-4 py-3 font-medium text-slate-950">{contact.name || "—"}</td>
-                      <td className="px-4 py-3">{contact.phone}</td>
-                      <td className="px-4 py-3">{contact.source || "—"}</td>
+                      <td className="px-4 py-3 font-medium text-emerald-700">{contact.phone ? formatPhoneDisplay(contact.phone) : "—"}</td>
+                      <td className="hidden px-4 py-3 lg:table-cell">{contact.source || "—"}</td>
                       <td className="px-4 py-3">
                         <Badge variant={contact.consent_status === "opted_in" ? "success" : contact.consent_status === "opted_out" ? "destructive" : "outline"}>
-                          {contact.consent_status || "unknown"}
+                          {getConsentLabel(contact.consent_status)}
                         </Badge>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="hidden px-4 py-3 sm:table-cell">
                         <div className="flex flex-wrap gap-1">
                           {(contact.tags || []).slice(0, 3).map((tag) => <Badge key={tag} variant="secondary">{tag}</Badge>)}
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-muted-foreground">{formatDate(contact.updated_at)}</td>
+                      <td className="hidden px-4 py-3 text-muted-foreground lg:table-cell">{formatDate(contact.updated_at)}</td>
                     </tr>
                   ))}
                 </tbody>

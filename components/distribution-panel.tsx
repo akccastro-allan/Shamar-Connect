@@ -53,7 +53,7 @@ const PROVIDER_COLORS: Record<string, string> = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  draft: "bg-zinc-100 text-zinc-600",
+  draft: "bg-slate-100 text-slate-600",
   ready: "bg-blue-100 text-blue-700",
   published: "bg-emerald-100 text-emerald-700",
   failed: "bg-red-100 text-red-700",
@@ -182,20 +182,20 @@ export default function DistributionPanel() {
   const whatsappChannels = channels.filter((c) => c.provider.startsWith("whatsapp"));
 
   return (
-    <div className="h-full flex flex-col gap-6 p-6 overflow-y-auto">
+    <div className="flex flex-col gap-6">
       {/* Header */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-white">Central de Distribuição</h1>
-          <p className="text-sm text-zinc-400 mt-0.5">Publique artigos e eventos nos canais informativos</p>
+          <h1 className="text-2xl font-black text-[#1B2F5B]">Central de Distribuição</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Publique artigos e eventos nos canais informativos</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={load} className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors">
+          <button onClick={load} className="p-2 text-slate-500 hover:text-[#1B2F5B] hover:bg-slate-100 rounded-lg transition-colors">
             <RefreshCcw size={16} />
           </button>
           <button
             onClick={() => { setForm(EMPTY_FORM); setShowForm(true); }}
-            className="flex items-center gap-2 bg-teal-600 hover:bg-teal-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+            className="flex items-center gap-2 bg-[#2ABFAB] hover:bg-[#24aa98] text-white text-sm font-black px-4 py-2 rounded-full transition-colors"
           >
             <Plus size={16} />
             Nova divulgação
@@ -205,49 +205,49 @@ export default function DistributionPanel() {
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4">
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-          <p className="text-xs text-zinc-400">Rascunhos</p>
-          <p className="text-2xl font-bold text-zinc-200 mt-1">{stats.draft}</p>
+        <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-4">
+          <p className="text-xs text-slate-500">Rascunhos</p>
+          <p className="text-2xl font-black text-[#1B2F5B] mt-1">{stats.draft}</p>
         </div>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-          <p className="text-xs text-zinc-400">Prontos</p>
-          <p className="text-2xl font-bold text-blue-400 mt-1">{stats.ready}</p>
+        <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-4">
+          <p className="text-xs text-slate-500">Prontos</p>
+          <p className="text-2xl font-black text-blue-700 mt-1">{stats.ready}</p>
         </div>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-          <p className="text-xs text-zinc-400">Publicados</p>
-          <p className="text-2xl font-bold text-emerald-400 mt-1">{stats.published}</p>
+        <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-4">
+          <p className="text-xs text-slate-500">Publicados</p>
+          <p className="text-2xl font-black text-emerald-700 mt-1">{stats.published}</p>
         </div>
       </div>
 
       {/* Channels overview */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-          <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wide mb-3">Canais Telegram</h2>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-4">
+          <h2 className="text-xs font-black text-slate-500 uppercase tracking-wide mb-3">Canais Telegram</h2>
           {telegramChannels.length === 0 ? (
-            <p className="text-sm text-zinc-500">Nenhum canal Telegram cadastrado</p>
+            <p className="text-sm text-slate-400">Nenhum canal Telegram cadastrado</p>
           ) : (
             <div className="space-y-2">
               {telegramChannels.map((c) => (
                 <div key={c.id} className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full" style={{ backgroundColor: PROVIDER_COLORS[c.provider] }} />
-                  <span className="text-sm text-zinc-200">{c.name}</span>
-                  <span className="text-xs text-zinc-500 ml-auto">{c.external_id ? "configurado" : "sem ID"}</span>
+                  <span className="text-sm text-slate-700">{c.name}</span>
+                  <span className="text-xs text-slate-400 ml-auto">{c.external_id ? "configurado" : "sem ID"}</span>
                 </div>
               ))}
             </div>
           )}
         </div>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-          <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wide mb-3">Canais WhatsApp</h2>
+        <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-4">
+          <h2 className="text-xs font-black text-slate-500 uppercase tracking-wide mb-3">Canais WhatsApp</h2>
           {whatsappChannels.length === 0 ? (
-            <p className="text-sm text-zinc-500">Nenhum grupo/canal WhatsApp cadastrado</p>
+            <p className="text-sm text-slate-400">Nenhum grupo/canal WhatsApp cadastrado</p>
           ) : (
             <div className="space-y-2">
               {whatsappChannels.map((c) => (
                 <div key={c.id} className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full" style={{ backgroundColor: PROVIDER_COLORS[c.provider] }} />
-                  <span className="text-sm text-zinc-200">{c.name}</span>
-                  <span className="text-xs text-amber-500 ml-auto">cópia manual</span>
+                  <span className="text-sm text-slate-700">{c.name}</span>
+                  <span className="text-xs text-[#C9952A] ml-auto">cópia manual</span>
                 </div>
               ))}
             </div>
@@ -256,30 +256,30 @@ export default function DistributionPanel() {
       </div>
 
       {error && (
-        <div className="bg-red-900/30 border border-red-700 text-red-300 text-sm px-4 py-3 rounded-xl">{error}</div>
+        <div className="bg-red-50 border border-red-200 text-red-800 text-sm px-4 py-3 rounded-xl">{error}</div>
       )}
 
       {/* New broadcast form */}
       {showForm && (
-        <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-5 flex flex-col gap-4">
-          <h2 className="font-semibold text-white">Nova divulgação</h2>
+        <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-5 flex flex-col gap-4">
+          <h2 className="font-black text-[#1B2F5B]">Nova divulgação</h2>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
-              <label className="block text-xs text-zinc-400 mb-1">Título interno *</label>
+              <label className="block text-xs font-bold text-slate-600 mb-1">Título interno *</label>
               <input
                 value={form.title}
                 onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
                 placeholder="Ex: Artigo — Melhores trilhas do RS"
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white"
+                className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-[#2ABFAB]/30"
               />
             </div>
             <div>
-              <label className="block text-xs text-zinc-400 mb-1">Tipo</label>
+              <label className="block text-xs font-bold text-slate-600 mb-1">Tipo</label>
               <select
                 value={form.sourceType}
                 onChange={(e) => setForm((f) => ({ ...f, sourceType: e.target.value as FormState["sourceType"], messageText: "" }))}
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white"
+                className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-[#2ABFAB]/30"
               >
                 <option value="article">Artigo</option>
                 <option value="event">Evento</option>
@@ -287,28 +287,28 @@ export default function DistributionPanel() {
               </select>
             </div>
             <div>
-              <label className="block text-xs text-zinc-400 mb-1">Título do conteúdo</label>
+              <label className="block text-xs font-bold text-slate-600 mb-1">Título do conteúdo</label>
               <input
                 value={form.sourceTitle}
                 onChange={(e) => setForm((f) => ({ ...f, sourceTitle: e.target.value, messageText: "" }))}
                 placeholder="Título do artigo/evento"
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white"
+                className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-[#2ABFAB]/30"
               />
             </div>
             {form.sourceType !== "manual" && (
               <div className="col-span-2">
-                <label className="block text-xs text-zinc-400 mb-1">URL do conteúdo</label>
+                <label className="block text-xs font-bold text-slate-600 mb-1">URL do conteúdo</label>
                 <input
                   value={form.sourceUrl}
                   onChange={(e) => setForm((f) => ({ ...f, sourceUrl: e.target.value, messageText: "" }))}
                   placeholder="https://viciadosemtrilhas.com.br/..."
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white"
+                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-[#2ABFAB]/30"
                 />
               </div>
             )}
             <div className="col-span-2">
               <div className="flex items-center justify-between mb-1">
-                <label className="text-xs text-zinc-400">Mensagem *</label>
+                <label className="text-xs font-bold text-slate-600">Mensagem *</label>
                 {form.sourceType !== "manual" && (form.sourceTitle || form.title) && (
                   <button
                     onClick={() => {
@@ -318,7 +318,7 @@ export default function DistributionPanel() {
                       });
                       setForm((f) => ({ ...f, messageText: text }));
                     }}
-                    className="text-xs text-teal-400 hover:text-teal-300"
+                    className="text-xs font-bold text-[#2ABFAB] hover:underline"
                   >
                     Gerar automaticamente
                   </button>
@@ -328,7 +328,7 @@ export default function DistributionPanel() {
                 value={form.messageText}
                 onChange={(e) => setForm((f) => ({ ...f, messageText: e.target.value }))}
                 rows={8}
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white font-mono resize-y"
+                className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 font-mono resize-y outline-none focus:ring-2 focus:ring-[#2ABFAB]/30"
                 placeholder="Texto da divulgação..."
               />
             </div>
@@ -336,7 +336,7 @@ export default function DistributionPanel() {
 
           {/* Channel selection */}
           <div>
-            <label className="block text-xs text-zinc-400 mb-2">Canais destino</label>
+            <label className="block text-xs font-bold text-slate-600 mb-2">Canais destino</label>
             <div className="flex flex-wrap gap-2">
               {channels.map((c) => {
                 const selected = form.channelIds.includes(c.id);
@@ -344,8 +344,8 @@ export default function DistributionPanel() {
                   <button
                     key={c.id}
                     onClick={() => toggleChannel(c.id)}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                      selected ? "border-transparent text-white" : "border-zinc-700 text-zinc-400 hover:border-zinc-500"
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
+                      selected ? "border-transparent text-white" : "border-slate-300 text-slate-600 hover:border-slate-400"
                     }`}
                     style={selected ? { backgroundColor: PROVIDER_COLORS[c.provider] + "cc", borderColor: PROVIDER_COLORS[c.provider] } : {}}
                   >
@@ -358,19 +358,19 @@ export default function DistributionPanel() {
                 );
               })}
               {channels.length === 0 && (
-                <span className="text-sm text-zinc-500">Nenhum canal cadastrado</span>
+                <span className="text-sm text-slate-400">Nenhum canal cadastrado</span>
               )}
             </div>
           </div>
 
           <div className="flex justify-end gap-2">
-            <button onClick={() => setShowForm(false)} className="px-4 py-1.5 text-sm text-zinc-400 hover:text-white transition-colors">
+            <button onClick={() => setShowForm(false)} className="px-4 py-1.5 text-sm text-slate-500 hover:text-slate-900 transition-colors">
               Cancelar
             </button>
             <button
               onClick={createBroadcast}
               disabled={saving || !form.title.trim() || !form.messageText.trim()}
-              className="px-4 py-1.5 text-sm bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white rounded-lg transition-colors"
+              className="px-4 py-1.5 text-sm bg-[#2ABFAB] hover:bg-[#24aa98] disabled:opacity-50 text-white font-black rounded-full transition-colors"
             >
               {saving ? "Salvando…" : "Salvar rascunho"}
             </button>
@@ -380,37 +380,39 @@ export default function DistributionPanel() {
 
       {/* Broadcasts list */}
       {loading ? (
-        <div className="flex items-center justify-center py-16 text-zinc-500 text-sm">Carregando…</div>
+        <div className="flex flex-col gap-3">
+          {[0, 1].map((i) => <div key={i} className="h-28 animate-pulse rounded-xl bg-slate-100" />)}
+        </div>
       ) : (
         <div className="flex flex-col gap-3">
           {broadcasts.length === 0 && (
-            <div className="text-center py-16 text-zinc-500 text-sm">
-              Nenhuma divulgação criada ainda.<br />
-              <button onClick={() => { setForm(EMPTY_FORM); setShowForm(true); }} className="text-teal-400 hover:text-teal-300 mt-2">
+            <div className="rounded-2xl border border-dashed p-8 text-center">
+              <p className="text-sm font-bold text-slate-700">Nenhuma divulgação criada ainda</p>
+              <button onClick={() => { setForm(EMPTY_FORM); setShowForm(true); }} className="mt-2 text-sm font-bold text-[#2ABFAB] hover:underline">
                 Criar primeira divulgação
               </button>
             </div>
           )}
           {broadcasts.map((b) => (
-            <div key={b.id} className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex flex-col gap-3">
+            <div key={b.id} className="bg-white border border-slate-200 shadow-sm rounded-xl p-4 flex flex-col gap-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="font-medium text-white">{b.title}</p>
+                  <p className="font-bold text-slate-900">{b.title}</p>
                   {b.source_url && (
-                    <a href={b.source_url} target="_blank" rel="noopener noreferrer" className="text-xs text-teal-400 hover:underline truncate block max-w-sm">
+                    <a href={b.source_url} target="_blank" rel="noopener noreferrer" className="text-xs text-[#2ABFAB] hover:underline truncate block max-w-sm">
                       {b.source_url}
                     </a>
                   )}
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STATUS_COLORS[b.status] || "bg-zinc-800 text-zinc-400"}`}>
+                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STATUS_COLORS[b.status] || "bg-slate-100 text-slate-500"}`}>
                     {b.status}
                   </span>
                 </div>
               </div>
 
               {/* Message preview */}
-              <pre className="bg-zinc-800 rounded-lg p-3 text-xs text-zinc-300 whitespace-pre-wrap font-mono leading-relaxed max-h-32 overflow-y-auto">
+              <pre className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-700 whitespace-pre-wrap font-mono leading-relaxed max-h-32 overflow-y-auto">
                 {b.message_text}
               </pre>
 
@@ -421,10 +423,9 @@ export default function DistributionPanel() {
                     <span
                       key={t.id}
                       className={`text-xs px-2 py-0.5 rounded-full border font-medium ${
-                        t.status === "published" ? "bg-emerald-900/30 border-emerald-700 text-emerald-400" :
-                        t.status === "failed" ? "bg-red-900/30 border-red-700 text-red-400" :
-                        t.status === "skipped" ? "bg-zinc-800 border-zinc-700 text-zinc-400" :
-                        "bg-zinc-800 border-zinc-700 text-zinc-400"
+                        t.status === "published" ? "bg-emerald-50 border-emerald-200 text-emerald-700" :
+                        t.status === "failed" ? "bg-red-50 border-red-200 text-red-700" :
+                        "bg-slate-100 border-slate-200 text-slate-500"
                       }`}
                       title={t.error || undefined}
                     >
@@ -438,7 +439,7 @@ export default function DistributionPanel() {
               {b.content_broadcast_targets.some((t) =>
                 t.distribution_channels?.provider?.startsWith("whatsapp")
               ) && (
-                <div className="bg-amber-900/20 border border-amber-800 rounded-lg p-3 text-xs text-amber-300">
+                <div className="bg-[#C9952A]/10 border border-[#C9952A]/30 rounded-lg p-3 text-xs text-[#8a6516]">
                   Publicação automática em grupos WhatsApp será ativada depois de validação. Por enquanto, copie a mensagem.
                 </div>
               )}
@@ -447,7 +448,7 @@ export default function DistributionPanel() {
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => copyMessage(b.message_text, b.id)}
-                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors"
+                  className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
                 >
                   <FileText size={12} />
                   {copied === b.id ? "Copiado!" : "Copiar mensagem"}
@@ -456,7 +457,7 @@ export default function DistributionPanel() {
                   <button
                     onClick={() => publishBroadcast(b.id)}
                     disabled={publishing === b.id}
-                    className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-teal-700 hover:bg-teal-600 disabled:opacity-50 text-white transition-colors"
+                    className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg bg-[#1B2F5B] hover:bg-[#16264a] disabled:opacity-50 text-white transition-colors"
                   >
                     <Send size={12} />
                     {publishing === b.id ? "Publicando…" : "Publicar no Telegram"}

@@ -16,7 +16,7 @@ export default async function AdminSupportPage() {
 
   return (
     <AppShell active="admin">
-      <div className="p-6 lg:p-10">
+      <div>
         <div className="mb-8">
           <h1 className="text-3xl font-black text-slate-950">Tickets de Suporte</h1>
           <p className="mt-2 text-muted-foreground">Todos os chamados abertos por clientes.</p>

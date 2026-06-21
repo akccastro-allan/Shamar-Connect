@@ -107,11 +107,11 @@ export default async function GettingStartedPage() {
 
   return (
     <AppShell active="getting-started">
-      <div className="p-6 lg:p-10">
+      <div>
         <div className="mb-2">
           <Badge className="bg-[#2ABFAB] text-white">{doneCount}/{total} concluídos</Badge>
         </div>
-        <h1 className="text-3xl font-black text-slate-950">Primeiros Passos</h1>
+        <h1 className="text-3xl font-black text-[#1B2F5B]">Primeiros Passos</h1>
         <p className="mt-2 text-muted-foreground">
           Siga os passos abaixo para configurar sua central de atendimento e começar a atender clientes.
         </p>
@@ -146,8 +146,8 @@ export default async function GettingStartedPage() {
                 : "Após conectar o WhatsApp, sincronize para importar conversas existentes."
             }
             done={data.hasSynced}
-            actionLabel="Ir para Diagnóstico"
-            actionHref="/whatsapp-diagnostics"
+            actionLabel="Sincronizar conversas"
+            actionHref="/settings/whatsapp"
           />
 
           <Step
