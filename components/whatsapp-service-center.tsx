@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Bot, Clock, Download, FileText, GitBranch, MessageCircle, RefreshCcw, Search, Send, UserPlus, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ContactCreateDialog } from "@/components/contact-create-dialog";
-import { phoneFromChatId } from "@/lib/phone";
+import { phoneFromChatId, formatPhoneDisplay } from "@/lib/phone";
 
 type Conversation = {
   id: string;
@@ -110,7 +110,7 @@ function formatDate(value?: string | null) {
 
 function getConversationName(conversation?: Conversation | null) {
   if (!conversation) return "Selecione uma conversa";
-  return conversation.crm_contacts?.name || conversation.name || conversation.external_chat_id;
+  return conversation.crm_contacts?.name || conversation.name || phoneFromChatId(conversation.external_chat_id) || conversation.external_chat_id;
 }
 
 function personalize(text: string, conversation?: Conversation | null) {
@@ -167,6 +167,31 @@ function getPendingReasonLabel(reason?: string | null) {
   if (reason === "sticker_requires_human") return "Figurinha recebida sem resposta";
   if (reason === "non_text_requires_human") return "Conteúdo exige atendimento humano";
   return reason || "Precisa de atendimento humano";
+}
+
+function getSlaLabel(status?: string | null) {
+  if (status === "breached") return "Atrasada";
+  if (status === "pending") return "Aguardando";
+  if (status === "ok") return "Em dia";
+  return "—";
+}
+
+// Telefone legível da conversa. Grupos não têm número individual.
+// O WhatsApp pode mascarar o número com @lid; nesse caso só exibimos o telefone
+// já resolvido (salvo no contato) e nunca os dígitos do @lid, que não são reais.
+function getConversationPhone(conversation?: Conversation | null) {
+  if (!conversation || conversation.is_group) return "";
+  if (conversation.crm_contacts?.phone) return formatPhoneDisplay(conversation.crm_contacts.phone);
+  if (conversation.external_chat_id?.endsWith("@c.us")) {
+    return formatPhoneDisplay(phoneFromChatId(conversation.external_chat_id));
+  }
+  return "";
+}
+
+function getConsentLabel(status?: string | null) {
+  if (status === "granted" || status === "opt_in") return "Autorizado";
+  if (status === "denied" || status === "opt_out") return "Não autorizado";
+  return "Não informado";
 }
 
 function isUnanswered(conversation: Conversation) {
@@ -229,6 +254,7 @@ export function WhatsappServiceCenter() {
   const [conversationFlows, setConversationFlows] = useState<ConversationFlow[]>([]);
   const [availableChannels, setAvailableChannels] = useState<ChannelFilter[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState("");
+  const selectedIdRef = useRef("");
   const [query, setQuery] = useState("");
   const [queueFilter, setQueueFilter] = useState<"all" | "breached" | "human" | "unanswered" | "groups" | "individuals">("all");
   const [channelFilter, setChannelFilter] = useState<string>("");
@@ -350,14 +376,34 @@ export function WhatsappServiceCenter() {
     }
   }
 
-  async function loadMessages(conversationId: string) {
+  async function loadMessages(conversationId: string, opts?: { silent?: boolean }) {
     if (!conversationId) return;
-    setError(null);
+    if (!opts?.silent) setError(null);
     try {
       const data = await readJson<{ ok: boolean; messages: Message[] }>(`/api/whatsapp-messages/conversations/${conversationId}/messages`);
       setMessages(data.messages || []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao carregar mensagens");
+      if (!opts?.silent) setError(err instanceof Error ? err.message : "Erro ao carregar mensagens");
+    }
+  }
+
+  // Atualização automática em segundo plano: mantém a fila e a conversa aberta
+  // sempre frescas sem o usuário precisar apertar "Atualizar". Não mexe no texto
+  // que está sendo digitado nem na conversa selecionada.
+  async function refreshSilently() {
+    try {
+      const [convData, channelsData] = await Promise.all([
+        readJson<{ ok: boolean; conversations: Conversation[] }>("/api/whatsapp-messages/conversations"),
+        fetch("/api/channels").then((r) => r.json()).catch(() => ({ ok: false, channels: [] })),
+      ]);
+      setConversations(sortConversationsForQueue(convData.conversations || []));
+      if (channelsData.ok && channelsData.channels?.length) {
+        setAvailableChannels(channelsData.channels);
+      }
+      const currentId = selectedIdRef.current;
+      if (currentId) await loadMessages(currentId, { silent: true });
+    } catch {
+      // Silencioso: falhas transitórias não devem incomodar quem está atendendo.
     }
   }
 
@@ -557,9 +603,22 @@ export function WhatsappServiceCenter() {
   }
 
   useEffect(() => {
+    selectedIdRef.current = selectedConversationId;
+  }, [selectedConversationId]);
+
+  useEffect(() => {
     loadConversations();
     loadQuickReplies();
     loadConversationFlows();
+  }, []);
+
+  // Polling automático: atualiza fila e conversa aberta a cada 12s, somente com a
+  // aba visível, para o atendente ver mensagens novas sem apertar nenhum botão.
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") refreshSilently();
+    }, 12000);
+    return () => window.clearInterval(interval);
   }, []);
 
   return (
@@ -582,7 +641,7 @@ export function WhatsappServiceCenter() {
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <CardTitle className="flex items-center gap-2 text-2xl"><MessageCircle className="h-6 w-6 text-emerald-700" />Central de atendimento WhatsApp</CardTitle>
-              <CardDescription className="mt-2 max-w-3xl">Fila operacional por SLA: conversas antigas e atrasadas aparecem primeiro; chamadas novas entram no final da fila.</CardDescription>
+              <CardDescription className="mt-2 max-w-3xl">As conversas que esperam há mais tempo aparecem no topo. Atenda de cima para baixo.</CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button onClick={attendNext} disabled={filteredConversations.length === 0} className="bg-emerald-700 hover:bg-emerald-800"><UserPlus className="mr-2 h-4 w-4" />Atender próximo</Button>
@@ -594,20 +653,21 @@ export function WhatsappServiceCenter() {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-3 sm:grid-cols-6">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             <div className="rounded-2xl border bg-white p-4"><p className="text-xs text-muted-foreground">Conversas</p><p className="text-2xl font-semibold">{conversations.length}</p></div>
             <div className="rounded-2xl border bg-white p-4"><p className="text-xs text-muted-foreground">Grupos</p><p className="text-2xl font-semibold">{conversations.filter((item) => item.is_group).length}</p></div>
-            <div className="rounded-2xl border border-red-200 bg-red-50 p-4"><p className="text-xs text-red-700">SLA estourado</p><p className="text-2xl font-semibold text-red-800">{queueStats.breached}</p></div>
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4"><p className="text-xs text-amber-700">Precisa humano</p><p className="text-2xl font-semibold text-amber-800">{queueStats.requiresHuman}</p></div>
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-4"><p className="text-xs text-red-700">Atrasadas</p><p className="text-2xl font-semibold text-red-800">{queueStats.breached}</p></div>
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4"><p className="text-xs text-amber-700">Precisam de você</p><p className="text-2xl font-semibold text-amber-800">{queueStats.requiresHuman}</p></div>
             <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4"><p className="text-xs text-orange-700">Sem resposta</p><p className="text-2xl font-semibold text-orange-800">{queueStats.unanswered}</p></div>
-            <div className="rounded-2xl border bg-white p-4"><p className="text-xs text-muted-foreground">Mais antigo</p><p className="text-2xl font-semibold">{queueStats.oldestWaitingLabel}</p></div>
+            <div className="rounded-2xl border bg-white p-4"><p className="text-xs text-muted-foreground">Espera mais longa</p><p className="text-2xl font-semibold">{queueStats.oldestWaitingLabel}</p></div>
           </div>
+          <p className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground"><RefreshCcw className="h-3 w-3" />A fila e as conversas se atualizam sozinhas a cada poucos segundos.</p>
           {error ? <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</div> : null}
           {notice ? <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">{notice}</div> : null}
         </CardContent>
       </Card>
 
-      <div className="grid min-h-[760px] gap-6 xl:grid-cols-[360px_1fr_320px]">
+      <div className="grid gap-6 xl:min-h-[760px] xl:grid-cols-[360px_1fr_320px]">
         <Card className="overflow-hidden">
           <CardHeader className="border-b">
             <CardTitle className="text-base">Fila de atendimento</CardTitle>
@@ -640,7 +700,7 @@ export function WhatsappServiceCenter() {
             <div className="mt-3 flex flex-wrap gap-2">
               <Button size="sm" variant={queueFilter === "all" ? "default" : "outline"} onClick={() => setQueueFilter("all")}>Todas</Button>
               <Button size="sm" variant={queueFilter === "breached" ? "default" : "outline"} onClick={() => setQueueFilter("breached")}>Atrasadas</Button>
-              <Button size="sm" variant={queueFilter === "human" ? "default" : "outline"} onClick={() => setQueueFilter("human")}>Precisa humano</Button>
+              <Button size="sm" variant={queueFilter === "human" ? "default" : "outline"} onClick={() => setQueueFilter("human")}>Precisam de você</Button>
               <Button size="sm" variant={queueFilter === "unanswered" ? "default" : "outline"} onClick={() => setQueueFilter("unanswered")}>Sem resposta</Button>
               <Button size="sm" variant={queueFilter === "groups" ? "default" : "outline"} onClick={() => setQueueFilter("groups")}>Grupos</Button>
               <Button size="sm" variant={queueFilter === "individuals" ? "default" : "outline"} onClick={() => setQueueFilter("individuals")}>Individuais</Button>
@@ -664,6 +724,9 @@ export function WhatsappServiceCenter() {
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="truncate font-medium text-slate-950">{getConversationName(conversation)}</p>
+                        {getConversationPhone(conversation) ? (
+                          <p className="truncate text-xs font-medium text-emerald-700">{getConversationPhone(conversation)}</p>
+                        ) : null}
                         <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{conversation.latest_message?.body || "Sem mensagem salva ainda"}</p>
                       </div>
                       <div className="flex shrink-0 flex-col items-end gap-1">
@@ -686,8 +749,18 @@ export function WhatsappServiceCenter() {
                           Cloud API
                         </span>
                       )}
-                      {isBreached ? <Badge className="bg-red-600 text-white">SLA estourado</Badge> : null}
-                      {needsHuman && !isBreached ? <Badge className="bg-amber-500 text-white">Precisa humano</Badge> : null}
+                      {conversation.provider === "instagram" && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border" style={{ backgroundColor: "#E1306C1A", color: "#E1306C", borderColor: "#E1306C40" }}>
+                          Instagram
+                        </span>
+                      )}
+                      {conversation.provider === "messenger" && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border" style={{ backgroundColor: "#1877F21A", color: "#1877F2", borderColor: "#1877F240" }}>
+                          Messenger
+                        </span>
+                      )}
+                      {isBreached ? <Badge className="bg-red-600 text-white">Atrasada</Badge> : null}
+                      {needsHuman && !isBreached ? <Badge className="bg-amber-500 text-white">Precisa de você</Badge> : null}
                       {lastInboundIsLatest && !needsHuman && !isBreached ? <Badge variant="outline" className="border-orange-300 text-orange-700">Aguardando resposta</Badge> : null}
                       {conversation.unread_count ? <Badge variant="destructive">{conversation.unread_count}</Badge> : null}
                     </div>
@@ -704,7 +777,11 @@ export function WhatsappServiceCenter() {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <CardTitle>{getConversationName(selectedConversation)}</CardTitle>
-                <CardDescription>{selectedConversation?.external_chat_id || "Selecione uma conversa"}</CardDescription>
+                <CardDescription>
+                  {selectedConversation
+                    ? getConversationPhone(selectedConversation) || (selectedConversation.is_group ? "Grupo do WhatsApp" : "Número indisponível pelo WhatsApp")
+                    : "Selecione uma conversa"}
+                </CardDescription>
               </div>
               <Button onClick={syncSelectedHistory} disabled={syncing || !selectedConversation} variant="outline"><Download className="mr-2 h-4 w-4" />Sincronizar histórico</Button>
             </div>
@@ -755,14 +832,14 @@ export function WhatsappServiceCenter() {
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base"><Clock className="h-5 w-5" />Controle anti-vácuo</CardTitle>
-              <CardDescription>Esta conversa só sai da fila quando houver resposta ou resolução registrada.</CardDescription>
+              <CardTitle className="flex items-center gap-2 text-base"><Clock className="h-5 w-5" />Status da conversa</CardTitle>
+              <CardDescription>Esta conversa fica na fila até você responder ou marcar como resolvida.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
-              <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">SLA</p><p className="font-medium">{selectedConversation?.sla_status || "—"}</p></div>
+              <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Situação</p><p className="font-medium">{getSlaLabel(selectedConversation?.sla_status)}</p></div>
               <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Motivo</p><p className="font-medium">{getPendingReasonLabel(selectedConversation?.pending_reason)}</p></div>
-              <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Última entrada</p><p className="font-medium">{formatDate(selectedConversation?.last_inbound_at)}</p></div>
-              <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Última saída</p><p className="font-medium">{formatDate(selectedConversation?.last_outbound_at)}</p></div>
+              <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Última mensagem do cliente</p><p className="font-medium">{formatDate(selectedConversation?.last_inbound_at)}</p></div>
+              <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Sua última resposta</p><p className="font-medium">{formatDate(selectedConversation?.last_outbound_at)}</p></div>
               <Button onClick={runWatchdog} disabled={watchdogRunning} variant="outline" className="w-full"><Clock className="mr-2 h-4 w-4" />Verificar pendências</Button>
             </CardContent>
           </Card>
@@ -773,9 +850,9 @@ export function WhatsappServiceCenter() {
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
               <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Nome</p><p className="font-medium">{getConversationName(selectedConversation)}</p></div>
-              <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Telefone/Chat ID</p><p className="break-all font-medium">{selectedConversation?.crm_contacts?.phone || selectedConversation?.external_chat_id || "—"}</p></div>
+              <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Telefone</p><p className="break-all font-medium">{getConversationPhone(selectedConversation) || "—"}</p></div>
               <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Empresa</p><p className="font-medium">{selectedConversation?.crm_contacts?.company || "—"}</p></div>
-              <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Consentimento</p><p className="font-medium">{selectedConversation?.crm_contacts?.consent_status || "unknown"}</p></div>
+              <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Permissão de contato</p><p className="font-medium">{getConsentLabel(selectedConversation?.crm_contacts?.consent_status)}</p></div>
               {!selectedConversation?.crm_contacts && selectedConversation?.external_chat_id && (
                 <Button onClick={() => setSaveContactOpen(true)} className="w-full bg-emerald-700 hover:bg-emerald-800">
                   <UserPlus className="mr-2 h-4 w-4" />Salvar contato

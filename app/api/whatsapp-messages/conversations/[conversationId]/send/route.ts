@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createWhatsappGatewayClient, isAllowedSessionId, whatsappWebGatewayClient } from "@/lib/providers/whatsapp-web-gateway-client";
 import { sendTextMessage as cloudSendText } from "@/lib/providers/whatsapp-cloud-client";
+import { sendText as socialSendText } from "@/lib/providers/meta-social-client";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
 
@@ -51,6 +52,27 @@ export async function POST(request: NextRequest, context: Params) {
       const result = await cloudSendText(conversation.external_chat_id, messageBody);
       sentId = result.messageId;
       sentProvider = "whatsapp_cloud";
+    } else if (conversation.provider === "instagram" || conversation.provider === "messenger") {
+      // DM social: usa o token da conta conectada da empresa (social_accounts).
+      const { data: account } = await db
+        .from("social_accounts")
+        .select("access_token")
+        .eq("provider", conversation.provider)
+        .eq("tenant_id", conversation.tenant_id)
+        .eq("organization_id", conversation.organization_id)
+        .eq("status", "active")
+        .maybeSingle();
+
+      if (!account?.access_token) {
+        return NextResponse.json(
+          { ok: false, error: "Conta social não conectada para esta empresa." },
+          { status: 400 },
+        );
+      }
+
+      const result = await socialSendText(account.access_token, conversation.external_chat_id, messageBody);
+      sentId = result.messageId;
+      sentProvider = conversation.provider;
     } else {
       // Resolve the gateway session that OWNS this conversation's channel.
       // Without this the default session (hall-main) is used and replies from

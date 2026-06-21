@@ -142,7 +142,7 @@ export default async function DemoChecklistPage() {
 
   return (
     <AppShell active="demo-checklist">
-      <div className="p-6 lg:p-10">
+      <div>
         <div className="max-w-2xl space-y-6">
           <div>
             <div className="flex items-center gap-3 mb-1">

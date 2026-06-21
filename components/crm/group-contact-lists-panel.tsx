@@ -66,8 +66,15 @@ export function GroupContactListsPanel() {
       </CardHeader>
       <CardContent>
         {error ? <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</div> : null}
-        {lists.length === 0 ? (
-          <div className="rounded-2xl border border-dashed p-8 text-center text-sm text-muted-foreground">Nenhuma lista extraída ainda.</div>
+        {loading && lists.length === 0 ? (
+          <div className="grid gap-4 lg:grid-cols-2">
+            {[0, 1].map((i) => <div key={i} className="h-40 animate-pulse rounded-2xl bg-slate-100" />)}
+          </div>
+        ) : lists.length === 0 ? (
+          <div className="rounded-2xl border border-dashed p-8 text-center">
+            <p className="text-sm font-bold text-slate-700">Nenhuma lista extraída ainda</p>
+            <p className="mt-1 text-sm text-muted-foreground">Exporte um grupo do WhatsApp para gerar sua primeira lista de contatos aqui.</p>
+          </div>
         ) : (
           <div className="grid gap-4 lg:grid-cols-2">
             {lists.map((list) => (

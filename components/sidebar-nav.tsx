@@ -72,6 +72,7 @@ const navigationGroups: NavGroup[] = [
     items: [
       { href: "/settings/profile", label: "Meu perfil", icon: UserRound },
       { href: "/settings/whatsapp", label: "Conexão WhatsApp", icon: MessageCircle },
+      { href: "/settings/social", label: "Instagram e Facebook", icon: AtSign },
       { href: "/settings/whatsapp-automation", label: "Config. de automação", icon: SlidersHorizontal },
       { href: "/whatsapp-diagnostics", label: "Diagnóstico WhatsApp", icon: Stethoscope },
       { href: "/settings/whatsapp-cloud", label: "Shamar Kids (Cloud API)", icon: Cloud, platformOnly: true },
@@ -115,12 +116,13 @@ function isItemActive(active: string | undefined, href: string) {
   return a === h || a.startsWith(`${h}/`);
 }
 
-function NavLink({ item, active }: { item: NavItem; active?: string }) {
+function NavLink({ item, active, onNavigate }: { item: NavItem; active?: string; onNavigate?: () => void }) {
   const Icon = item.icon;
   const isActive = isItemActive(active, item.href);
   return (
     <Link
       href={item.href}
+      onClick={onNavigate}
       className={cn(
         "flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-bold text-white/70 transition hover:bg-white/10 hover:text-white",
         isActive && "bg-[#2ABFAB] text-white shadow-lg shadow-black/10",
@@ -132,7 +134,7 @@ function NavLink({ item, active }: { item: NavItem; active?: string }) {
   );
 }
 
-export function SidebarNav({ active, isPlatformAdmin }: { active?: string; isPlatformAdmin: boolean }) {
+export function SidebarNav({ active, isPlatformAdmin, onNavigate }: { active?: string; isPlatformAdmin: boolean; onNavigate?: () => void }) {
   const visibleGroups = navigationGroups
     .filter((g) => isPlatformAdmin || !g.platformOnly)
     .map((g) => ({ ...g, items: g.items.filter((i) => isPlatformAdmin || !i.platformOnly) }))
@@ -161,7 +163,7 @@ export function SidebarNav({ active, isPlatformAdmin }: { active?: string; isPla
     <nav className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
       {visibleGroups.map((group) => {
         if (group.flat) {
-          return <NavLink key={group.label} item={group.items[0]} active={active} />;
+          return <NavLink key={group.label} item={group.items[0]} active={active} onNavigate={onNavigate} />;
         }
 
         const isOpen = openGroups.has(group.label);
@@ -191,7 +193,7 @@ export function SidebarNav({ active, isPlatformAdmin }: { active?: string; isPla
             {isOpen && (
               <div className="mt-1 space-y-1 pl-3">
                 {group.items.map((item) => (
-                  <NavLink key={item.href} item={item} active={active} />
+                  <NavLink key={item.href} item={item} active={active} onNavigate={onNavigate} />
                 ))}
               </div>
             )}

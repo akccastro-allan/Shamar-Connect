@@ -54,25 +54,24 @@ function requireToken(req, res, next) {
   next();
 }
 
-function normalizePhoneFromWid(id = "") {
-  return String(id).replace(/@(c\.us|g\.us|lid)$/, "");
-}
-
 function digitsOnly(value = "") {
   return String(value).replace(/\D/g, "");
 }
 
-// Resolve the real phone number of the other party. The WhatsApp WID can be a
-// @lid (LinkedID) alias that hides the real number, so prefer the resolved
-// Contact.number; fall back to the WID only when it is a real @c.us number.
-function resolveContactPhone(message, contact, from, to) {
-  if (!message.fromMe) {
-    if (contact?.number) return digitsOnly(contact.number);
-    if (contact?.id?.server === "c.us" && contact?.id?.user) return digitsOnly(contact.id.user);
-  }
-  const wid = message.fromMe ? to : from;
+// Resolve the real phone number of a party. The WhatsApp WID can be a @lid
+// (LinkedID) alias that hides the real number — whatsapp-web.js does not offer a
+// reliable offline @lid → phone resolver, so the community-recommended approach is
+// to trust the library-resolved Contact.number and never parse a @lid WID.
+// When nothing resolves we return "" instead of fabricating a number from the @lid.
+function resolvePhone(contact, wid) {
+  if (contact?.number) return digitsOnly(contact.number);
+  if (contact?.id?.server === "c.us" && contact?.id?.user) return digitsOnly(contact.id.user);
   if (typeof wid === "string" && wid.endsWith("@c.us")) return digitsOnly(wid);
-  return normalizePhoneFromWid(wid);
+  return "";
+}
+
+function resolveContactPhone(message, contact, from, to) {
+  return resolvePhone(contact, message.fromMe ? to : from);
 }
 
 function getMessageDirection(message) {
@@ -341,9 +340,37 @@ app.post("/sessions/:sessionId/send-message", requireToken, async (req, res) => 
     return res.status(400).json({ error: "Fields to and body are required." });
   }
 
-  const chatId = String(to).includes("@") ? String(to) : `${String(to).replace(/\D/g, "")}@c.us`;
-  const message = await session.client.sendMessage(chatId, String(body));
-  res.json({ id: message.id?._serialized, status: "sent" });
+  try {
+    const raw = String(to);
+    let message;
+
+    if (raw.endsWith("@lid")) {
+      // O WhatsApp não entrega mensagens endereçadas a um @lid (LinkedID): é
+      // preciso enviar para o número real (@c.us). Tentamos resolver o número
+      // pelo contato; se não der, enviamos pelo próprio objeto de chat, que o
+      // WhatsApp Web mantém mapeado internamente.
+      const contact = await session.client.getContactById(raw).catch(() => null);
+      const num = contact?.number ? digitsOnly(contact.number) : "";
+
+      if (num) {
+        message = await session.client.sendMessage(`${num}@c.us`, String(body));
+      } else {
+        const chat = await session.client.getChatById(raw).catch(() => null);
+        if (!chat) {
+          return res.status(422).json({ error: "Não foi possível resolver o destinatário (@lid)." });
+        }
+        message = await chat.sendMessage(String(body));
+      }
+    } else {
+      const chatId = raw.includes("@") ? raw : `${raw.replace(/\D/g, "")}@c.us`;
+      message = await session.client.sendMessage(chatId, String(body));
+    }
+
+    res.json({ id: message.id?._serialized, status: "sent" });
+  } catch (error) {
+    console.error("send-message failed", error);
+    res.status(500).json({ error: "Falha ao enviar mensagem pelo WhatsApp." });
+  }
 });
 
 app.get("/sessions/:sessionId/chats", requireToken, async (req, res) => {
@@ -412,7 +439,7 @@ app.get("/sessions/:sessionId/groups/:groupId/participants", requireToken, async
     return {
       id: participant.id?._serialized,
       name: contact?.pushname || contact?.name,
-      phone: normalizePhoneFromWid(participant.id?._serialized),
+      phone: resolvePhone(contact, participant.id?._serialized),
       isAdmin: Boolean(participant.isAdmin || participant.isSuperAdmin),
       sourceGroupId: groupId,
       sourceGroupName: chat.name,

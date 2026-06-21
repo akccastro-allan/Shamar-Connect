@@ -23,8 +23,19 @@ function statusMessage(status?: string) {
   if (status === "qr") return "QR Code disponível. Escaneie no celular.";
   if (status === "connecting") return "Conexão em andamento.";
   if (status === "disconnected") return "WhatsApp desconectado.";
-  if (status === "error") return "Erro no gateway. Verifique os logs do Railway.";
-  return "Gateway aguardando conexão.";
+  if (status === "error") return "Não foi possível conectar. Tente novamente em instantes ou fale com o suporte.";
+  return "Aguardando conexão.";
+}
+
+function statusLabel(status?: string) {
+  if (status === "ready") return "Conectado";
+  if (status === "authenticated") return "Autenticando";
+  if (status === "qr") return "Aguardando QR Code";
+  if (status === "connecting") return "Conectando";
+  if (status === "disconnected") return "Desconectado";
+  if (status === "error") return "Falha na conexão";
+  if (!status) return "Carregando";
+  return "Aguardando";
 }
 
 async function readJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -183,7 +194,7 @@ export function WhatsappSettingsPanel({ allowedSessions }: { allowedSessions: Se
                 <CardTitle>Conexão — {sessionInfo.label}</CardTitle>
                 <CardDescription>Sessão: <code className="font-mono text-xs">{session}</code></CardDescription>
               </div>
-              <Badge variant={statusVariant(status?.status)}>{status?.status || "carregando"}</Badge>
+              <Badge variant={statusVariant(status?.status)}>{statusLabel(status?.status)}</Badge>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -200,7 +211,7 @@ export function WhatsappSettingsPanel({ allowedSessions }: { allowedSessions: Se
               </div>
               <p className="mt-2 text-sm text-slate-700">{statusMessage(status?.status)}</p>
               <p className="mt-2 text-sm text-muted-foreground">Telefone: {status?.phone || "—"}</p>
-              <p className="text-sm text-muted-foreground">Última sync: {status?.lastSyncAt || "—"}</p>
+              <p className="text-sm text-muted-foreground">Última sincronização: {status?.lastSyncAt || "—"}</p>
             </div>
 
             {error ? <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</div> : null}
