@@ -2,6 +2,32 @@
 
 Este documento registra o Bloco 2 da evolução do ShamarConnect: criação da camada abstrata de providers.
 
+---
+
+## Modelo de canais (Bloco 1 — multi-canal) — atualizado 2026-06-21
+
+Persistência dos canais. Cada conversa/mensagem carrega `channel_id` → `public.channels`.
+O `provider` do canal decide o caminho de envio/recebimento.
+
+- `public.channels` — um registro por canal. Campos **não-secretos**: `provider`,
+  `channel_type`, `display_name`, `phone_number`, `phone_number_id`, `waba_id`,
+  `business_account_id`, `status`, `is_default`, `metadata`, `session_id`, `name`.
+  **RLS public_read → nunca guardar segredo aqui.**
+- `public.channel_credentials` — segredos (`access_token`, `verify_token`), PK
+  `channel_id`, **RLS service_role only**.
+- `public.social_accounts` — contas Instagram/Messenger (token por conta).
+- `whatsapp_conversations.channel_id` (já existia) e `whatsapp_messages.channel_id`
+  (adicionado no Bloco 1).
+
+Decisão: estendemos `channels` em vez de criar `messaging_channels` — ver
+`docs/decisions/0002-canais-oficiais-e-whatsapp-web.md`. Migração:
+`supabase/migrations/0018_multichannel_channels_fields.sql` (aplicada em produção).
+
+Próximo: conectar a camada de providers abaixo ao `channel_id` (escolher provider e
+credenciais pelo canal da conversa, não por env global).
+
+---
+
 ## Objetivo
 
 Permitir que a Central de Atendimento e as APIs do ShamarConnect trabalhem com múltiplos canais de mensagens sem depender diretamente de uma implementação específica.
