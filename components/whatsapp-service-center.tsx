@@ -442,7 +442,7 @@ export function WhatsappServiceCenter() {
   }
 
   // Atribui (pega/solta) ou transfere de setor a conversa selecionada.
-  async function assignConversation(payload: { assignTo?: string | null; departmentId?: string | null }) {
+  async function assignConversation(payload: { assignTo?: string | null; departmentId?: string | null; requiresHuman?: boolean }) {
     if (!selectedConversation) return;
     setAssigning(true);
     setError(null);
@@ -1090,6 +1090,29 @@ export function WhatsappServiceCenter() {
                     </div>
                   )}
                 </div>
+              )}
+
+              {/* Chamar humano — sempre visível: o paciente nunca fica preso na IA. */}
+              {selectedConversation && (
+                selectedConversation.requires_human ? (
+                  <Button
+                    variant="outline"
+                    onClick={() => assignConversation({ requiresHuman: false })}
+                    disabled={assigning}
+                    className="w-full justify-start border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                  >
+                    <UserPlus className="mr-2 h-4 w-4" />Resolvido — tirar da fila humana
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    onClick={() => assignConversation({ requiresHuman: true })}
+                    disabled={assigning}
+                    className="w-full justify-start border-amber-300 text-amber-700 hover:bg-amber-50"
+                  >
+                    <UserPlus className="mr-2 h-4 w-4" />Chamar humano
+                  </Button>
+                )
               )}
               <Button variant="outline" className="w-full justify-start" disabled>Criar tarefa de follow-up</Button>
             </CardContent>

@@ -18,6 +18,17 @@ async function resolveRealNumberFromHistory(
   db: ReturnType<typeof createSupabaseWriteClient>,
   conversationId: string,
 ): Promise<string | null> {
+  // 0) Telefone real já salvo no contato da conversa (caminho mais confiável).
+  const { data: conv } = await db
+    .from("whatsapp_conversations")
+    .select("contact_id, crm_contacts:contact_id(phone)")
+    .eq("id", conversationId)
+    .maybeSingle();
+  const contactPhone = String(
+    (conv as { crm_contacts?: { phone?: string | null } } | null)?.crm_contacts?.phone ?? "",
+  ).replace(/\D/g, "");
+  if (BR_PHONE.test(contactPhone)) return contactPhone;
+
   const { data } = await db
     .from("whatsapp_messages")
     .select("raw_payload, from_id, to_id, direction")

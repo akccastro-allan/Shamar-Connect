@@ -44,6 +44,18 @@ export async function POST(request: NextRequest, ctxParams: Params) {
       });
     }
 
+    // Chamar humano / liberar da IA
+    if (body?.requiresHuman !== undefined) {
+      const flag = Boolean(body.requiresHuman);
+      patch.requires_human = flag;
+      patch.pending_reason = flag ? "human_requested" : null;
+      events.push({
+        type: flag ? "human_requested" : "human_resolved",
+        description: flag ? "Atendente sinalizou que precisa de humano." : "Sinalização de humano removida.",
+        metadata: { by: ctx.appUserId },
+      });
+    }
+
     // Transferência de setor
     if (body?.departmentId !== undefined) {
       patch.department_id = body.departmentId || null;
