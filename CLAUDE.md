@@ -127,3 +127,66 @@ RLS em todas as tabelas: `service_role` para escrita, `public_read_*` para leitu
 
 Bordas arredondadas premium: `rounded-[2rem]` para cards, `rounded-full` para botões/badges.
 Fonte: `font-black` para títulos e CTAs.
+
+
+---
+
+## Banco central — shamar-suite
+
+Projeto Supabase: `lquozwwszboxkmymzjcs`
+Auth central para toda a Shamar Suite.
+Tabelas: tenants, app_users, tenant_users, tenant_products, subscription_plans, tenant_subscriptions, invoices
+
+---
+
+## Planos comerciais
+
+| Plano | Preço | Usuários | Empresas |
+|-------|-------|----------|----------|
+| Starter | R$ 97/mês | 2 | 1 |
+| Professional | R$ 197/mês | 5 | 1 |
+| Business | R$ 397/mês | 15 | 3 |
+| Módulo IA | + R$ 79/mês | — | — |
+
+---
+
+## Próximo cliente — Clínica Médica
+
+Cliente em negociação. Contexto:
+- ~100 mensagens/dia
+- 6 atendentes com funções diferentes
+- Letícia: só agenda consultas
+- Querem Meta API oficial (não WhatsApp Web)
+- Tiveram problema com IA confusa em loop
+
+O que precisam:
+- Departamentos por função (Agendamento, Financeiro, Triagem, Geral)
+- Cada atendente vê só conversas do seu departamento
+- Supervisor/Admin vê tudo
+- Fila de atendimento com atribuição
+- IA que sugere — humano que decide — nunca bloqueia paciente
+- Webhook Meta API
+
+---
+
+## Próximas implementações prioritárias
+
+1. Departamentos — tabela departments + department_id em tenant_users e whatsapp_conversations
+2. Tela /settings/team — convidar e gerenciar atendentes
+3. Tela /settings/departments — criar departamentos
+4. Inbox melhorado — fila, atribuição, transferência
+5. Relatório da equipe para supervisor
+6. Webhook Meta API — provider meta_whatsapp
+7. Checkout e pagamento — integração Asaas
+
+---
+
+## Regras adicionais
+
+- Mensagens NUNCA são deletadas do banco — marcar deleted_by_sender = true
+- Toda mídia salva no Supabase Storage durante sessão ativa
+- Permissões sempre vêm do banco — nunca hardcoded
+- organization_id obrigatório em tudo — sistema multiempresa
+- Meta API: tabela messaging_channels com provider meta_whatsapp
+
+Commit: docs: update CLAUDE.md with suite context and clinic roadmap

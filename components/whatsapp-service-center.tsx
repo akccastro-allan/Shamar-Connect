@@ -30,7 +30,14 @@ type Conversation = {
   crm_contacts?: { id: string; name: string | null; phone: string | null; email: string | null; company: string | null; consent_status: string | null } | null;
   channels?: { id: string; name: string; slug: string; color: string } | null;
   latest_message?: { body: string | null; direction: "inbound" | "outbound"; created_at: string } | null;
+  assigned_to?: string | null;
+  assigned_name?: string | null;
+  department_id?: string | null;
+  departments?: { id: string; name: string; color: string } | null;
 };
+
+type MeInfo = { appUserId: string; role: string; departmentId: string | null; isSupervisor: boolean };
+type Department = { id: string; name: string; color: string };
 
 type ChannelFilter = { id: string; name: string; color: string };
 
@@ -176,14 +183,22 @@ function getSlaLabel(status?: string | null) {
   return "—";
 }
 
+// Um telefone real tem 10–13 dígitos. IDs de @lid (14+) e de grupo (18) são
+// descartados para nunca aparecerem como se fossem telefone.
+function isRealPhone(raw?: string | null) {
+  const d = String(raw || "").replace(/\D/g, "");
+  return d.length >= 10 && d.length <= 13;
+}
+
 // Telefone legível da conversa. Grupos não têm número individual.
-// O WhatsApp pode mascarar o número com @lid; nesse caso só exibimos o telefone
-// já resolvido (salvo no contato) e nunca os dígitos do @lid, que não são reais.
+// O WhatsApp pode mascarar o número com @lid; nesse caso só exibimos um número
+// que seja de fato válido — nunca os dígitos do @lid/ID de grupo.
 function getConversationPhone(conversation?: Conversation | null) {
   if (!conversation || conversation.is_group) return "";
-  if (conversation.crm_contacts?.phone) return formatPhoneDisplay(conversation.crm_contacts.phone);
+  if (isRealPhone(conversation.crm_contacts?.phone)) return formatPhoneDisplay(conversation.crm_contacts!.phone!);
   if (conversation.external_chat_id?.endsWith("@c.us")) {
-    return formatPhoneDisplay(phoneFromChatId(conversation.external_chat_id));
+    const fromChat = phoneFromChatId(conversation.external_chat_id);
+    if (isRealPhone(fromChat)) return formatPhoneDisplay(fromChat);
   }
   return "";
 }
@@ -258,6 +273,11 @@ export function WhatsappServiceCenter() {
   const [query, setQuery] = useState("");
   const [queueFilter, setQueueFilter] = useState<"all" | "breached" | "human" | "unanswered" | "groups" | "individuals">("all");
   const [channelFilter, setChannelFilter] = useState<string>("");
+  const [me, setMe] = useState<MeInfo | null>(null);
+  const [assignTab, setAssignTab] = useState<"mine" | "waiting" | "all">("waiting");
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [deptFilter, setDeptFilter] = useState<string>("");
+  const [assigning, setAssigning] = useState(false);
   const [quickReplyQuery, setQuickReplyQuery] = useState("");
   const [flowQuery, setFlowQuery] = useState("");
   const [replyBody, setReplyBody] = useState("");
@@ -305,6 +325,9 @@ export function WhatsappServiceCenter() {
     let items = conversations;
 
     if (channelFilter) items = items.filter((conversation) => conversation.channel_id === channelFilter);
+    if (deptFilter) items = items.filter((conversation) => conversation.department_id === deptFilter);
+    if (assignTab === "mine") items = items.filter((conversation) => conversation.assigned_to && conversation.assigned_to === me?.appUserId);
+    else if (assignTab === "waiting") items = items.filter((conversation) => !conversation.assigned_to);
     if (queueFilter === "breached") items = items.filter((conversation) => conversation.sla_status === "breached");
     if (queueFilter === "human") items = items.filter((conversation) => conversation.requires_human);
     if (queueFilter === "unanswered") items = items.filter(isUnanswered);
@@ -320,7 +343,7 @@ export function WhatsappServiceCenter() {
     }
 
     return sortConversationsForQueue(items);
-  }, [conversations, query, queueFilter]);
+  }, [conversations, query, queueFilter, channelFilter, deptFilter, assignTab, me]);
 
   const filteredQuickReplies = useMemo(() => {
     const term = quickReplyQuery.trim().toLowerCase();
@@ -340,9 +363,10 @@ export function WhatsappServiceCenter() {
     setError(null);
     try {
       const [convData, channelsData] = await Promise.all([
-        readJson<{ ok: boolean; conversations: Conversation[] }>("/api/whatsapp-messages/conversations"),
+        readJson<{ ok: boolean; conversations: Conversation[]; me?: MeInfo }>("/api/whatsapp-messages/conversations"),
         fetch("/api/channels").then((r) => r.json()).catch(() => ({ ok: false, channels: [] })),
       ]);
+      if (convData.me) setMe(convData.me);
       const sorted = sortConversationsForQueue(convData.conversations || []);
       setConversations(sorted);
       if (channelsData.ok && channelsData.channels?.length) {
@@ -393,9 +417,10 @@ export function WhatsappServiceCenter() {
   async function refreshSilently() {
     try {
       const [convData, channelsData] = await Promise.all([
-        readJson<{ ok: boolean; conversations: Conversation[] }>("/api/whatsapp-messages/conversations"),
+        readJson<{ ok: boolean; conversations: Conversation[]; me?: MeInfo }>("/api/whatsapp-messages/conversations"),
         fetch("/api/channels").then((r) => r.json()).catch(() => ({ ok: false, channels: [] })),
       ]);
+      if (convData.me) setMe(convData.me);
       setConversations(sortConversationsForQueue(convData.conversations || []));
       if (channelsData.ok && channelsData.channels?.length) {
         setAvailableChannels(channelsData.channels);
@@ -404,6 +429,33 @@ export function WhatsappServiceCenter() {
       if (currentId) await loadMessages(currentId, { silent: true });
     } catch {
       // Silencioso: falhas transitórias não devem incomodar quem está atendendo.
+    }
+  }
+
+  async function loadDepartments() {
+    try {
+      const data = await readJson<{ ok: boolean; departments: Department[] }>("/api/departments");
+      setDepartments((data.departments || []).filter((d) => (d as { is_active?: boolean }).is_active !== false));
+    } catch {
+      // setor é opcional; não bloqueia o atendimento.
+    }
+  }
+
+  // Atribui (pega/solta) ou transfere de setor a conversa selecionada.
+  async function assignConversation(payload: { assignTo?: string | null; departmentId?: string | null; requiresHuman?: boolean }) {
+    if (!selectedConversation) return;
+    setAssigning(true);
+    setError(null);
+    try {
+      await readJson(`/api/whatsapp-messages/conversations/${selectedConversation.id}/assign`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      await loadConversations();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao atribuir conversa");
+    } finally {
+      setAssigning(false);
     }
   }
 
@@ -610,6 +662,7 @@ export function WhatsappServiceCenter() {
     loadConversations();
     loadQuickReplies();
     loadConversationFlows();
+    loadDepartments();
   }, []);
 
   // Polling automático: atualiza fila e conversa aberta a cada 12s, somente com a
@@ -675,6 +728,42 @@ export function WhatsappServiceCenter() {
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
               <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar conversa" className="w-full rounded-xl border bg-white py-2 pl-9 pr-3 text-sm" />
             </div>
+
+            {/* Abas por atribuição */}
+            <div className="mt-3 inline-flex rounded-xl bg-slate-100 p-0.5 text-xs font-bold">
+              {([["mine", "Minha fila"], ["waiting", "Aguardando"], ...(me?.isSupervisor ? [["all", "Todas"]] : [])] as [typeof assignTab, string][]).map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setAssignTab(key)}
+                  className={`rounded-lg px-3 py-1.5 transition-colors ${assignTab === key ? "bg-white text-[#1B2F5B] shadow-sm" : "text-slate-500 hover:text-[#1B2F5B]"}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* Chips de setor */}
+            {departments.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                <button
+                  onClick={() => setDeptFilter("")}
+                  className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${!deptFilter ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300 text-slate-600 hover:border-slate-500"}`}
+                >
+                  Todos os setores
+                </button>
+                {departments.map((d) => (
+                  <button
+                    key={d.id}
+                    onClick={() => setDeptFilter(deptFilter === d.id ? "" : d.id)}
+                    className="rounded-full border px-2.5 py-1 text-xs font-medium transition-colors"
+                    style={deptFilter === d.id ? { backgroundColor: d.color, borderColor: d.color, color: "#fff" } : { borderColor: d.color + "66", color: d.color }}
+                  >
+                    {d.name}
+                  </button>
+                ))}
+              </div>
+            )}
+
             {availableChannels.length > 0 && (
               <div className="mt-3 flex flex-wrap gap-1.5">
                 <button
@@ -736,6 +825,16 @@ export function WhatsappServiceCenter() {
                     </div>
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {conversation.is_group ? <Badge variant="outline" className="border-blue-300 text-blue-700">Grupo</Badge> : <Badge variant="secondary">Contato</Badge>}
+                      {conversation.departments && (
+                        <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ backgroundColor: conversation.departments.color + "22", color: conversation.departments.color }}>
+                          {conversation.departments.name}
+                        </span>
+                      )}
+                      {conversation.assigned_to ? (
+                        <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                          {conversation.assigned_to === me?.appUserId ? "Você" : conversation.assigned_name || "Em atendimento"}
+                        </span>
+                      ) : null}
                       {conversation.channels && (
                         <span
                           className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold"
@@ -785,6 +884,36 @@ export function WhatsappServiceCenter() {
               </div>
               <Button onClick={syncSelectedHistory} disabled={syncing || !selectedConversation} variant="outline"><Download className="mr-2 h-4 w-4" />Sincronizar histórico</Button>
             </div>
+
+            {selectedConversation && !selectedConversation.is_group && (
+              <div className="mt-3 flex flex-wrap items-center gap-2 border-t pt-3">
+                {selectedConversation.assigned_to ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
+                    <UserPlus className="h-3.5 w-3.5" />
+                    Em atendimento por {selectedConversation.assigned_to === me?.appUserId ? "você" : (selectedConversation.assigned_name || "outro atendente")}
+                  </span>
+                ) : (
+                  <Button size="sm" onClick={() => assignConversation({ assignTo: "me" })} disabled={assigning} className="bg-emerald-700 hover:bg-emerald-800">
+                    <UserPlus className="mr-2 h-4 w-4" />Pegar conversa
+                  </Button>
+                )}
+                {selectedConversation.assigned_to && (selectedConversation.assigned_to === me?.appUserId || me?.isSupervisor) ? (
+                  <Button size="sm" variant="outline" onClick={() => assignConversation({ assignTo: null })} disabled={assigning}>Liberar</Button>
+                ) : null}
+                {departments.length > 0 && (
+                  <select
+                    value={selectedConversation.department_id || ""}
+                    onChange={(event) => assignConversation({ departmentId: event.target.value || null })}
+                    disabled={assigning}
+                    title="Transferir de setor"
+                    className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs"
+                  >
+                    <option value="">Transferir p/ setor…</option>
+                    {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  </select>
+                )}
+              </div>
+            )}
           </CardHeader>
           <CardContent className="bg-slate-50 p-4">
             <div className="max-h-[460px] space-y-3 overflow-auto pr-2">
@@ -961,6 +1090,29 @@ export function WhatsappServiceCenter() {
                     </div>
                   )}
                 </div>
+              )}
+
+              {/* Chamar humano — sempre visível: o paciente nunca fica preso na IA. */}
+              {selectedConversation && (
+                selectedConversation.requires_human ? (
+                  <Button
+                    variant="outline"
+                    onClick={() => assignConversation({ requiresHuman: false })}
+                    disabled={assigning}
+                    className="w-full justify-start border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                  >
+                    <UserPlus className="mr-2 h-4 w-4" />Resolvido — tirar da fila humana
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    onClick={() => assignConversation({ requiresHuman: true })}
+                    disabled={assigning}
+                    className="w-full justify-start border-amber-300 text-amber-700 hover:bg-amber-50"
+                  >
+                    <UserPlus className="mr-2 h-4 w-4" />Chamar humano
+                  </Button>
+                )
               )}
               <Button variant="outline" className="w-full justify-start" disabled>Criar tarefa de follow-up</Button>
             </CardContent>

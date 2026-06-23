@@ -71,6 +71,8 @@ const navigationGroups: NavGroup[] = [
     icon: Settings,
     items: [
       { href: "/settings/profile", label: "Meu perfil", icon: UserRound },
+      { href: "/settings/team", label: "Equipe", icon: Users },
+      { href: "/settings/departments", label: "Setores", icon: Building2 },
       { href: "/settings/whatsapp", label: "Conexão WhatsApp", icon: MessageCircle },
       { href: "/settings/social", label: "Instagram e Facebook", icon: AtSign },
       { href: "/settings/whatsapp-automation", label: "Config. de automação", icon: SlidersHorizontal },
