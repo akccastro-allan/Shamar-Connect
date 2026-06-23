@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createWhatsappGatewayClient, isAllowedSessionId, whatsappWebGatewayClient } from "@/lib/providers/whatsapp-web-gateway-client";
 import { sendTextMessage as cloudSendText } from "@/lib/providers/whatsapp-cloud-client";
 import { sendText as socialSendText } from "@/lib/providers/meta-social-client";
+import { sendText as evolutionSendText } from "@/lib/providers/evolution-client";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
 
@@ -116,6 +117,11 @@ export async function POST(request: NextRequest, context: Params) {
       const result = await socialSendText(account.access_token, conversation.external_chat_id, messageBody);
       sentId = result.messageId;
       sentProvider = conversation.provider;
+    } else if (conversation.provider === "evolution") {
+      // Evolution (Baileys): envia para o número real (sem @lid).
+      const result = await evolutionSendText(conversation.external_chat_id, messageBody);
+      sentId = result.messageId;
+      sentProvider = "evolution";
     } else {
       // Resolve the gateway session that OWNS this conversation's channel.
       // Without this the default session (hall-main) is used and replies from
@@ -227,6 +233,14 @@ export async function POST(request: NextRequest, context: Params) {
     if (isUnauthorizedError(error)) {
       return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
     }
-    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Falha ao enviar mensagem" }, { status: 500 });
+    const raw = error instanceof Error ? error.message : "";
+    // Erro técnico de sessão desconectada → mensagem clara e acionável.
+    if (/not ready|client is not ready|409|disconnected|idle|session/i.test(raw)) {
+      return NextResponse.json(
+        { ok: false, error: "Seu WhatsApp está desconectado. Vá em Configurações → Conexão WhatsApp e reconecte para enviar mensagens.", code: "whatsapp_disconnected" },
+        { status: 409 },
+      );
+    }
+    return NextResponse.json({ ok: false, error: raw || "Falha ao enviar mensagem" }, { status: 500 });
   }
 }

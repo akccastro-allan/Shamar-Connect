@@ -858,6 +858,11 @@ export function WhatsappServiceCenter() {
                           Messenger
                         </span>
                       )}
+                      {conversation.provider === "evolution" && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700 border border-emerald-200">
+                          WhatsApp
+                        </span>
+                      )}
                       {isBreached ? <Badge className="bg-red-600 text-white">Atrasada</Badge> : null}
                       {needsHuman && !isBreached ? <Badge className="bg-amber-500 text-white">Precisa de você</Badge> : null}
                       {lastInboundIsLatest && !needsHuman && !isBreached ? <Badge variant="outline" className="border-orange-300 text-orange-700">Aguardando resposta</Badge> : null}
