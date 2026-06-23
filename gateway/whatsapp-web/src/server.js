@@ -4,6 +4,8 @@ import helmet from "helmet";
 import morgan from "morgan";
 import QRCode from "qrcode";
 import pkg from "whatsapp-web.js";
+import { existsSync, readdirSync, rmSync } from "fs";
+import { join } from "path";
 
 const { Client, LocalAuth } = pkg;
 
@@ -287,11 +289,28 @@ function createSession(clientConfig) {
   return session;
 }
 
+// Remove cadeados do Chromium (SingletonLock/Cookie/Socket) deixados por um
+// processo anterior — senão o Chrome se recusa a abrir ("profile in use").
+function clearChromiumLocks(clientId) {
+  try {
+    const dir = join(SESSION_PATH, `session-${clientId}`);
+    if (!existsSync(dir)) return;
+    for (const name of readdirSync(dir)) {
+      if (name.startsWith("Singleton")) {
+        rmSync(join(dir, name), { force: true, recursive: true });
+      }
+    }
+  } catch (error) {
+    console.error(`clearChromiumLocks(${clientId}):`, error instanceof Error ? error.message : error);
+  }
+}
+
 async function initializeSession(session) {
   if (session.initialized) return session;
   setStatus(session, { status: "connecting", error: undefined });
   session.initialized = true;
   try {
+    clearChromiumLocks(session.config.id);
     await session.client.initialize();
   } catch (error) {
     // Uma sessão que falha NUNCA pode derrubar o gateway inteiro.
