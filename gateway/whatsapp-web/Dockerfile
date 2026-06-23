@@ -32,9 +32,11 @@ RUN npm install --omit=dev
 
 COPY src ./src
 
-RUN mkdir -p /data/.wwebjs_auth && chown -R node:node /data /app
-USER node
+RUN mkdir -p /data/.wwebjs_auth
 
+# IMPORTANTE: o volume do Railway é montado em /data como root. Se o processo
+# rodar como `node`, ele não consegue escrever a sessão (EACCES) e o gateway
+# cai ao conectar. Rodamos como root + garantimos a pasta gravável no start.
 EXPOSE 8787
 
-CMD ["npm", "start"]
+CMD ["sh", "-c", "mkdir -p /data/.wwebjs_auth && chmod -R 777 /data && npm start"]

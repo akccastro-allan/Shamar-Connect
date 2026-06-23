@@ -7,6 +7,15 @@ import pkg from "whatsapp-web.js";
 
 const { Client, LocalAuth } = pkg;
 
+// Resiliência: erros assíncronos do Puppeteer/whatsapp-web.js NUNCA devem
+// derrubar o gateway inteiro (senão uma sessão com problema = 502 para todos).
+process.on("unhandledRejection", (reason) => {
+  console.error("unhandledRejection:", reason instanceof Error ? reason.message : reason);
+});
+process.on("uncaughtException", (error) => {
+  console.error("uncaughtException:", error instanceof Error ? error.message : error);
+});
+
 const PORT = Number(process.env.PORT || 8787);
 const GATEWAY_TOKEN = process.env.GATEWAY_TOKEN || "change-me";
 const SESSION_PATH = process.env.SESSION_PATH || "/data/.wwebjs_auth";
@@ -282,7 +291,16 @@ async function initializeSession(session) {
   if (session.initialized) return session;
   setStatus(session, { status: "connecting", error: undefined });
   session.initialized = true;
-  await session.client.initialize();
+  try {
+    await session.client.initialize();
+  } catch (error) {
+    // Uma sessão que falha NUNCA pode derrubar o gateway inteiro.
+    session.initialized = false;
+    const message = error instanceof Error ? error.message : String(error);
+    setStatus(session, { status: "error", error: message });
+    console.error(`Falha ao inicializar sessão ${session.config.id}:`, message);
+    throw error;
+  }
   return session;
 }
 
@@ -306,14 +324,22 @@ app.get("/sessions", requireToken, (_req, res) => {
 
 app.post("/sessions/:sessionId/connect", requireToken, async (req, res) => {
   const session = getSession(req.params.sessionId);
-  await initializeSession(session);
-  res.json(safeClientSummary(session));
+  try {
+    await initializeSession(session);
+    res.json(safeClientSummary(session));
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : "Falha ao conectar sessão." });
+  }
 });
 
 app.post("/sessions/connect-all", requireToken, async (_req, res) => {
   const results = [];
   for (const session of sessions.values()) {
-    await initializeSession(session);
+    try {
+      await initializeSession(session);
+    } catch {
+      // continua com as demais; o status de erro já foi registrado.
+    }
     results.push(safeClientSummary(session));
   }
   res.json(results);
