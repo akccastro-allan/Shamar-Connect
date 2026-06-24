@@ -100,14 +100,19 @@ async function cloudFetch<T>(
  * Send a plain text message to a phone number (E.164 without +, e.g. 5511999999999).
  * Never call this for automatic broadcasts — only for human-triggered replies.
  */
-export async function sendTextMessage(to: string, body: string): Promise<CloudSendResult> {
+export async function sendTextMessage(
+  to: string,
+  body: string,
+  override?: { accessToken?: string; phoneNumberId?: string },
+): Promise<CloudSendResult> {
   const cfg = getCloudConfig();
-  if (!cfg.phoneNumberId) throw new Error("WHATSAPP_CLOUD_PHONE_NUMBER_ID is not configured.");
+  const phoneNumberId = override?.phoneNumberId || cfg.phoneNumberId;
+  if (!phoneNumberId) throw new Error("WHATSAPP_CLOUD_PHONE_NUMBER_ID is not configured.");
 
   const result = await cloudFetch<{
     messages?: Array<{ id: string }>;
     error?: { message: string };
-  }>(`/${cfg.phoneNumberId}/messages`, {
+  }>(`/${phoneNumberId}/messages`, {
     method: "POST",
     body: JSON.stringify({
       messaging_product: "whatsapp",
@@ -116,7 +121,7 @@ export async function sendTextMessage(to: string, body: string): Promise<CloudSe
       type: "text",
       text: { preview_url: false, body },
     }),
-  });
+  }, override?.accessToken);
 
   if (!result.messages?.[0]?.id) {
     throw new Error(`Cloud API send failed: ${result.error?.message || "no message ID returned"}`);
