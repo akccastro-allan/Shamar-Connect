@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseWriteClient } from "@/lib/supabase/server";
 import { resolveSessionClient, sessionIdErrorResponse, SESSION_LABELS } from "@/lib/providers/resolve-session";
 
 export async function GET(request: NextRequest) {
@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
     const resolved = resolveSessionClient(sessionId);
     if (!resolved) return sessionIdErrorResponse();
 
-    const db = createSupabaseServerClient();
+    const db = createSupabaseWriteClient();
 
     // Resolve channel_id for this session (used to isolate per-session counts)
     const { data: channelRow } = await db

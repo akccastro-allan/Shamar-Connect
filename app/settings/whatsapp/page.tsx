@@ -2,11 +2,11 @@ import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/page-header";
 import { WhatsappSettingsPanel } from "@/components/whatsapp-settings-panel";
 import { getRequiredAppContext } from "@/lib/auth/app-context";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseWriteClient } from "@/lib/supabase/server";
 
 export default async function WhatsappSettingsPage() {
   const context = await getRequiredAppContext();
-  const db = createSupabaseServerClient();
+  const db = createSupabaseWriteClient();
 
   const { data: channels } = await db
     .from("channels")

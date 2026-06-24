@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
 import { isTelegramConfigured, getMe } from "@/lib/providers/telegram-bot-client";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseWriteClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +21,7 @@ export async function GET() {
       }
     }
 
-    const db = createSupabaseServerClient();
+    const db = createSupabaseWriteClient();
     const { data: telegramChannels } = await db
       .from("distribution_channels")
       .select("id, name, provider, external_id, active")

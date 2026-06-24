@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 
 async function validateContactOrConversation(params: {
-  client: ReturnType<typeof createSupabaseServerClient>;
+  client: ReturnType<typeof createSupabaseWriteClient>;
   tenantId: string;
   organizationId: string;
   contactId?: string | null;
@@ -61,7 +60,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "contactId or conversationId is required" }, { status: 400 });
     }
 
-    const client = createSupabaseServerClient();
+    const client = createSupabaseWriteClient();
 
     const validated = await validateContactOrConversation({
       client,

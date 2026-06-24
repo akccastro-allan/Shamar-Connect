@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
 import { supabaseAnonKey, supabaseUrl } from "@/lib/supabase/env";
 
 function isSupportedSupabasePublicKey(value: string) {
@@ -6,6 +7,15 @@ function isSupportedSupabasePublicKey(value: string) {
 }
 
 export async function GET() {
+  try {
+    await getRequiredAppContext();
+  } catch (error) {
+    if (isUnauthorizedError(error)) {
+      return NextResponse.json({ ok: false, service: "supabase", error: "Não autorizado." }, { status: 401 });
+    }
+    return NextResponse.json({ ok: false, service: "supabase", error: "Falha de autorização." }, { status: 500 });
+  }
+
   if (!supabaseUrl) {
     return NextResponse.json({ ok: false, service: "supabase", error: "NEXT_PUBLIC_SUPABASE_URL is not configured" }, { status: 500 });
   }

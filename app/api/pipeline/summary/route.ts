@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseWriteClient } from "@/lib/supabase/server";
 
 export async function GET(request: NextRequest) {
   try {
@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
     const channelId = searchParams.get("channelId");
     const days = Math.min(90, Math.max(1, Number(searchParams.get("days") || 30)));
 
-    const db = createSupabaseServerClient();
+    const db = createSupabaseWriteClient();
     const since = new Date(Date.now() - days * 86_400_000).toISOString();
 
     // Get stages
