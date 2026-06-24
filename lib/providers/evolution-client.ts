@@ -49,13 +49,18 @@ async function evoFetch<T>(path: string, init?: RequestInit): Promise<T> {
 // Envio
 // ---------------------------------------------------------------------------
 
-/** Envia texto. `to` = número (com DDI) ou JID; normalizamos para dígitos. */
-export async function sendText(to: string, text: string): Promise<{ messageId: string }> {
+/**
+ * Envia texto. `to` = número (com DDI) ou JID; normalizamos para dígitos.
+ * `instance` permite escolher a instância do canal (Marco 1). Sem ela, cai no
+ * EVOLUTION_INSTANCE do ENV (compat).
+ */
+export async function sendText(to: string, text: string, instance?: string): Promise<{ messageId: string }> {
   const cfg = getEvolutionConfig();
+  const inst = instance || cfg.instance;
   const number = String(to).replace(/@.*/, "").replace(/\D/g, "");
 
   const data = await evoFetch<{ key?: { id?: string }; messageId?: string; error?: string }>(
-    `/message/sendText/${encodeURIComponent(cfg.instance)}`,
+    `/message/sendText/${encodeURIComponent(inst)}`,
     { method: "POST", body: JSON.stringify({ number, text }) },
   );
 
