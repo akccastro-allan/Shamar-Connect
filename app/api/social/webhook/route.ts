@@ -1,15 +1,12 @@
 /**
- * Webhook Meta Messaging — Instagram Direct + Facebook Messenger
+ * Webhook Meta Messaging — Instagram Direct + Facebook Messenger.
  *
- * GET  — verificação hub (subscribe)
- * POST — DMs recebidas
+ * GET  — verificação (hub challenge).
+ * POST — DMs recebidas.
  *
- * Registrar esta URL no app Meta (produtos Messenger e Instagram):
- *   https://seu-dominio.com/api/social/webhook
- *
- * O tenant da empresa é resolvido pela conta conectada em `social_accounts`
- * (entry.id == external_account_id). DMs aparecem na Central de Atendimento
- * porque a lista filtra só por tenant/org, sem filtro de provider.
+ * Marco 1: o canal (empresa/marca) é resolvido pela conta conectada
+ * (entry.id == social_accounts.external_account_id → channel_id). IDs sociais
+ * (PSID) ficam em contact_identities, nunca em crm_contacts.phone.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -17,17 +14,13 @@ import {
   verifyWebhook,
   validateSignature,
   parseSocialWebhookPayload,
-  getUserProfile,
-  type SocialInboundMessage,
 } from "@/lib/providers/meta-social-client";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
+import { resolveChannelFromWebhook } from "@/lib/inbox/resolve-channel";
+import { ingestInboundMessage, recordUnresolvedEvent } from "@/lib/inbox/persist-inbound";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-
-// ---------------------------------------------------------------------------
-// GET — verificação
-// ---------------------------------------------------------------------------
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -36,14 +29,9 @@ export async function GET(request: NextRequest) {
     searchParams.get("hub.verify_token"),
     searchParams.get("hub.challenge"),
   );
-
   if (challenge) return new Response(challenge, { status: 200 });
   return NextResponse.json({ ok: false, error: "Webhook verification failed." }, { status: 403 });
 }
-
-// ---------------------------------------------------------------------------
-// POST — DMs recebidas
-// ---------------------------------------------------------------------------
 
 export async function POST(request: NextRequest) {
   const rawBody = await request.text();
@@ -61,157 +49,46 @@ export async function POST(request: NextRequest) {
   }
 
   const db = createSupabaseWriteClient();
-  const now = new Date().toISOString();
-
   const messages = parseSocialWebhookPayload(body);
-
-  // Sempre registra o evento bruto para auditoria/diagnóstico.
-  const { data: savedEvent } = await db
-    .from("provider_events")
-    .insert({
-      provider: messages[0]?.provider || "social",
-      event: "webhook.received",
-      payload: body as Record<string, unknown>,
-      processing_status: "pending",
-      created_at: now,
-    })
-    .select("id")
-    .single();
 
   if (!messages.length) {
     return NextResponse.json({ ok: true, note: "acknowledged_non_message_event" });
   }
 
-  const processed: string[] = [];
+  let processed = 0;
+  let duplicates = 0;
+  let unresolved = 0;
   const errors: string[] = [];
 
-  for (const msg of messages) {
+  for (const m of messages) {
     try {
-      await processInboundMessage(db, msg, now);
-      processed.push(msg.messageId);
+      const channel = await resolveChannelFromWebhook(db, m.provider, { accountId: m.accountId });
+      if (!channel) {
+        await recordUnresolvedEvent(db, m.provider === "instagram" ? "meta_instagram" : "meta_messenger", body);
+        unresolved += 1;
+        continue;
+      }
+
+      const result = await ingestInboundMessage(db, channel, {
+        externalEventId: m.messageId,
+        externalChatId: m.senderId,
+        externalMessageId: m.messageId,
+        body: m.body,
+        messageType: m.messageType,
+        timestampMs: m.timestamp,
+        isGroup: false,
+        senderExternalId: m.senderId,
+        identityType: m.provider === "instagram" ? "ig_psid" : "fb_psid",
+        displayName: null,
+        rawPayload: m.rawPayload,
+      });
+      if (result === "processed") processed += 1;
+      else duplicates += 1;
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      errors.push(`${msg.messageId}: ${errMsg}`);
-      console.error("[social-webhook] Falha ao processar DM", msg.messageId, errMsg);
+      errors.push(`${m.messageId}: ${err instanceof Error ? err.message : String(err)}`);
+      console.error("[social-webhook]", err instanceof Error ? err.message : err);
     }
   }
 
-  if (savedEvent?.id) {
-    await db
-      .from("provider_events")
-      .update({
-        processing_status: errors.length ? "error" : "processed",
-        processing_error: errors.length ? errors.join("; ") : null,
-        processed_at: new Date().toISOString(),
-        processed_payload: { processedMessages: processed.length, errors },
-      })
-      .eq("id", savedEvent.id);
-  }
-
-  // Sempre 200 para a Meta não reenviar.
-  return NextResponse.json({ ok: true, processedMessages: processed.length, errors: errors.length });
-}
-
-// ---------------------------------------------------------------------------
-// Processamento
-// ---------------------------------------------------------------------------
-
-async function processInboundMessage(
-  db: ReturnType<typeof createSupabaseWriteClient>,
-  msg: SocialInboundMessage,
-  now: string,
-) {
-  const { provider, accountId, senderId, messageId, body, messageType, timestamp, rawPayload } = msg;
-
-  // Resolve a empresa dona da conta (entry.id == external_account_id).
-  const { data: account } = await db
-    .from("social_accounts")
-    .select("tenant_id, organization_id, access_token")
-    .eq("provider", provider)
-    .eq("external_account_id", accountId)
-    .eq("status", "active")
-    .maybeSingle();
-
-  if (!account) {
-    throw new Error(`Conta ${provider} ${accountId} não conectada (social_accounts).`);
-  }
-
-  const tenantId = account.tenant_id;
-  const organizationId = account.organization_id;
-
-  // Nome do contato via Graph API (DM não traz telefone).
-  const profile = await getUserProfile(account.access_token, senderId);
-  const displayName = profile.name || senderId;
-
-  // 1. Contato
-  const { data: contact, error: contactError } = await db
-    .from("crm_contacts")
-    .upsert(
-      {
-        tenant_id: tenantId,
-        organization_id: organizationId,
-        phone: senderId, // sem telefone real; usamos o id como chave estável
-        name: displayName,
-        source: provider,
-        updated_at: now,
-      },
-      { onConflict: "phone" },
-    )
-    .select("id")
-    .single();
-
-  if (contactError) throw contactError;
-  const contactId = contact?.id || null;
-
-  // 2. Conversa
-  const { data: conversation, error: convError } = await db
-    .from("whatsapp_conversations")
-    .upsert(
-      {
-        tenant_id: tenantId,
-        organization_id: organizationId,
-        external_chat_id: senderId,
-        provider,
-        contact_id: contactId,
-        name: displayName,
-        is_group: false,
-        last_message_at: now,
-        last_inbound_at: now,
-        last_message_direction: "inbound",
-        requires_human: true,
-        pending_reason: "new_inbound_message",
-        sla_status: "pending",
-        updated_at: now,
-      },
-      { onConflict: "external_chat_id" },
-    )
-    .select("id")
-    .single();
-
-  if (convError) throw convError;
-  const conversationId = conversation?.id || null;
-
-  // 3. Mensagem (idempotente por external_message_id)
-  const msgTimestamp = timestamp ? new Date(timestamp).toISOString() : now;
-
-  const { error: msgError } = await db.from("whatsapp_messages").upsert(
-    {
-      tenant_id: tenantId,
-      organization_id: organizationId,
-      external_message_id: messageId,
-      provider,
-      conversation_id: conversationId,
-      contact_id: contactId,
-      direction: "inbound",
-      from_id: senderId,
-      to_id: accountId,
-      body,
-      message_type: messageType,
-      raw_payload: rawPayload,
-      created_at: msgTimestamp,
-    },
-    { onConflict: "external_message_id" },
-  );
-
-  if (msgError) throw msgError;
+  return NextResponse.json({ ok: true, processed, duplicates, unresolved, errors: errors.length });
 }
