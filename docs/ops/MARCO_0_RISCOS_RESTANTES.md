@@ -2,10 +2,10 @@
 
 Estado após o Marco 0 (hardening da base). O que ficou aberto e precisa de ação.
 
-## 1. Migration `0020` precisa ser aplicada em produção
-- `supabase/migrations/0020_drop_public_read_operational.sql` remove as ~115 policies `public_read_*`.
-- **Enquanto não for aplicada, a anon key ainda lê tudo.** O código já lê via service_role, então aplicar NÃO quebra a app.
-- Aplicar pelo SQL Editor do Supabase (projeto `bbcxqvgdsdntwojjpwoz`) ou pela CLI de migrations.
+## 1. Migration `0020` — APLICADA ✅
+- `supabase/migrations/0020_drop_public_read_operational.sql` removeu as policies `public_read_*`.
+- Confirmado em produção (`bbcxqvgdsdntwojjpwoz`): `public_read` restantes = **0**; `service_all` = 191 intactas; app segue lendo via service_role (1.238 contatos OK).
+- A anon key não lê mais tabelas operacionais.
 
 ## 2. Segredos já vazaram no histórico do Git
 - `.env.local` esteve versionado → todo segredo deve ser **rotacionado**. Ver [ROTACAO_SEGREDOS.md](ROTACAO_SEGREDOS.md).
@@ -35,5 +35,5 @@ Estado após o Marco 0 (hardening da base). O que ficou aberto e precisa de aç�
 - [x] Leitura operacional migrada para service_role escopado por tenant.
 - [x] Endpoints de diagnóstico protegidos.
 - [x] `typecheck` e `build` verdes.
-- [ ] **Migration `0020` aplicada em produção** (pendente de autorização).
+- [x] **Migration `0020` aplicada em produção** (public_read restantes = 0).
 - [ ] Segredos rotacionados.
