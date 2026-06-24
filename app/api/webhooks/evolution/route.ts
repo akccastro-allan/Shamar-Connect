@@ -55,6 +55,25 @@ export async function POST(request: NextRequest) {
         externalMessageId: m.messageId,
         body: m.body,
         messageType: m.messageType,
+        media: m.media
+          ? {
+              mediaType: m.media.mediaType,
+              mimetype: m.media.mimetype,
+              durationSeconds: m.media.durationSeconds,
+              providerMediaId: m.media.providerMediaId,
+              // Dados para baixar depois (sem token). A "key" é necessária para o
+              // getBase64FromMediaMessage da Evolution.
+              downloadMeta: {
+                key: (m.rawPayload as { key?: unknown })?.key ?? null,
+                url: m.media.url,
+                mediaKey: m.media.mediaKey,
+                directPath: m.media.directPath,
+                fileSha256: m.media.fileSha256,
+                mimetype: m.media.mimetype,
+                instance: m.instance,
+              },
+            }
+          : null,
         timestampMs: m.timestamp,
         isGroup: m.isGroup,
         senderExternalId: m.senderId,

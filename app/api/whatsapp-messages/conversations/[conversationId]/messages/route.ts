@@ -26,7 +26,7 @@ export async function GET(_request: NextRequest, context: Params) {
 
     const { data, error } = await db
       .from("whatsapp_messages")
-      .select("id, external_message_id, direction, from_id, to_id, body, message_type, created_at, raw_payload")
+      .select("id, external_message_id, direction, from_id, to_id, body, message_type, created_at, raw_payload, delivery_status, has_media, media_kind, media_status, media_duration_seconds, media_mime_type, transcription_status, transcription_text, transcription_error")
       .eq("conversation_id", conversationId)
       .eq("tenant_id", appContext.tenantId)
       .eq("organization_id", appContext.organizationId)
