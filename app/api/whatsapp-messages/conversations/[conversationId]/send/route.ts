@@ -176,11 +176,15 @@ export async function POST(request: NextRequest, context: Params) {
 
     const now = new Date().toISOString();
 
+    // insert simples: o id de saída é sempre novo (onConflict não casa com o
+    // índice composto/parcial real e quebraria o salvamento).
     const { data: savedMessage, error: messageError } = await db
       .from("whatsapp_messages")
-      .upsert({
+      .insert({
         external_message_id: sent.id,
         provider: sentProvider,
+        tenant_id: conversation.tenant_id,
+        organization_id: conversation.organization_id,
         conversation_id: conversation.id,
         contact_id: conversation.contact_id || null,
         direction: "outbound",
@@ -190,7 +194,7 @@ export async function POST(request: NextRequest, context: Params) {
         message_type: "text",
         raw_payload: { providerResult: sent, sentFrom: "whatsapp_service_center" },
         created_at: now,
-      }, { onConflict: "external_message_id" })
+      })
       .select("id, external_message_id, direction, from_id, to_id, body, message_type, created_at")
       .single();
 

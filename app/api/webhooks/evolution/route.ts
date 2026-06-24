@@ -86,65 +86,94 @@ async function persistInbound(
 ) {
   const displayName = msg.pushName || msg.senderId;
 
-  // Contato (só para conversa individual; grupo não tem contato único).
+  // Os índices únicos são compostos e parciais; por isso fazemos buscar-e-gravar
+  // manual em vez de onConflict (que não casa com índice parcial).
+
+  // 1. Contato (único por organization_id + phone). Grupo não tem contato.
   let contactId: string | null = null;
   if (!msg.isGroup && msg.senderId) {
-    const { data: contact, error } = await db
+    const { data: existing } = await db
       .from("crm_contacts")
-      .upsert(
-        { tenant_id: tenantId, organization_id: organizationId, phone: msg.senderId, name: displayName, source: "evolution", updated_at: now },
-        { onConflict: "phone" },
-      )
+      .select("id")
+      .eq("organization_id", organizationId)
+      .eq("phone", msg.senderId)
+      .maybeSingle();
+
+    if (existing?.id) {
+      contactId = existing.id;
+      await db.from("crm_contacts").update({ name: displayName, updated_at: now }).eq("id", existing.id);
+    } else {
+      const { data: created, error } = await db
+        .from("crm_contacts")
+        .insert({ tenant_id: tenantId, organization_id: organizationId, phone: msg.senderId, name: displayName, source: "evolution", updated_at: now })
+        .select("id")
+        .single();
+      if (error) throw error;
+      contactId = created?.id ?? null;
+    }
+  }
+
+  // 2. Conversa (única por organization_id + provider + external_chat_id).
+  const convFields = {
+    name: displayName,
+    contact_id: contactId,
+    is_group: msg.isGroup,
+    last_message_at: now,
+    last_inbound_at: now,
+    last_message_direction: "inbound",
+    requires_human: !msg.isGroup,
+    pending_reason: msg.isGroup ? null : "new_inbound_message",
+    sla_status: "pending",
+    updated_at: now,
+  };
+
+  let conversationId: string | null = null;
+  const { data: existingConv } = await db
+    .from("whatsapp_conversations")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("provider", "evolution")
+    .eq("external_chat_id", msg.externalChatId)
+    .maybeSingle();
+
+  if (existingConv?.id) {
+    conversationId = existingConv.id;
+    await db.from("whatsapp_conversations").update(convFields).eq("id", existingConv.id);
+  } else {
+    const { data: created, error } = await db
+      .from("whatsapp_conversations")
+      .insert({ tenant_id: tenantId, organization_id: organizationId, external_chat_id: msg.externalChatId, provider: "evolution", ...convFields })
       .select("id")
       .single();
     if (error) throw error;
-    contactId = contact?.id ?? null;
+    conversationId = created?.id ?? null;
   }
 
-  const { data: conversation, error: convError } = await db
-    .from("whatsapp_conversations")
-    .upsert(
-      {
-        tenant_id: tenantId,
-        organization_id: organizationId,
-        external_chat_id: msg.externalChatId,
-        provider: "evolution",
-        contact_id: contactId,
-        name: displayName,
-        is_group: msg.isGroup,
-        last_message_at: now,
-        last_inbound_at: now,
-        last_message_direction: "inbound",
-        requires_human: !msg.isGroup,
-        pending_reason: msg.isGroup ? null : "new_inbound_message",
-        sla_status: "pending",
-        updated_at: now,
-      },
-      { onConflict: "external_chat_id" },
-    )
+  // 3. Mensagem (única por provider + external_message_id) — ignora se já existe.
+  const { data: existingMsg } = await db
+    .from("whatsapp_messages")
     .select("id")
-    .single();
-  if (convError) throw convError;
+    .eq("provider", "evolution")
+    .eq("external_message_id", msg.messageId)
+    .maybeSingle();
+
+  if (existingMsg?.id) return;
 
   const msgTimestamp = msg.timestamp ? new Date(msg.timestamp).toISOString() : now;
-
-  const { error: msgError } = await db.from("whatsapp_messages").upsert(
-    {
-      tenant_id: tenantId,
-      organization_id: organizationId,
-      external_message_id: msg.messageId,
-      provider: "evolution",
-      conversation_id: conversation?.id ?? null,
-      contact_id: contactId,
-      direction: "inbound",
-      from_id: msg.senderId,
-      to_id: null,
-      body: msg.body,
-      message_type: msg.messageType,
-      raw_payload: msg.rawPayload,
-      created_at: msgTimestamp,
-    },
-    { onConflict: "external_message_id" },
-  );
+  const { error: msgError } = await db.from("whatsapp_messages").insert({
+    tenant_id: tenantId,
+    organization_id: organizationId,
+    external_message_id: msg.messageId,
+    provider: "evolution",
+    conversation_id: conversationId,
+    contact_id: contactId,
+    direction: "inbound",
+    from_id: msg.senderId,
+    to_id: null,
+    body: msg.body,
+    message_type: msg.messageType,
+    raw_payload: msg.rawPayload,
+    created_at: msgTimestamp,
+  });
   if (msgError) throw msgError;
 }
