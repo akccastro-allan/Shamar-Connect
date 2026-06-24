@@ -9,11 +9,14 @@
 -- ===========================================================================
 -- A) Canal Evolution da Lips (instância "lips")  [OBRIGATÓRIO antes do deploy]
 -- ===========================================================================
+-- session_id é NOT NULL no schema; canal Evolution não usa sessão de gateway,
+-- então usamos um placeholder ('lips-evolution'). A resolução Evolution é por
+-- external_instance, não por session_id.
 insert into public.channels
-  (tenant_id, organization_id, name, slug, provider, channel_type, external_instance, display_name, status, active)
+  (tenant_id, organization_id, name, slug, session_id, provider, channel_type, external_instance, display_name, status, active)
 values
   ('e6abeaae-29fc-4186-b56a-361a69cb846d', '8f074193-bf58-4537-9842-720619a9f259',
-   'WhatsApp Lips', 'lips-evolution', 'evolution', 'evolution', 'lips', 'WhatsApp Lips', 'active', true)
+   'WhatsApp Lips', 'lips-evolution', 'lips-evolution', 'evolution', 'evolution', 'lips', 'WhatsApp Lips', 'active', true)
 on conflict (tenant_id, organization_id, slug) do nothing;
 
 -- Backfill das conversas/mensagens Evolution existentes (todas da Lips) ->
@@ -39,7 +42,8 @@ where ch.provider = 'evolution' and ch.external_instance = 'lips'
 --    whatsapp_web (evita cross-company nas orgs com canais duplicados).
 -- ===========================================================================
 with single_channel as (
-  select organization_id, min(id) as channel_id
+  -- min(uuid) não existe no Postgres; pega 1 id determinístico do grupo.
+  select organization_id, (array_agg(id order by id))[1] as channel_id
   from public.channels
   where provider = 'whatsapp_web'
   group by organization_id
@@ -53,7 +57,8 @@ where c.organization_id = s.organization_id
   and c.channel_id is null;
 
 with single_channel as (
-  select organization_id, min(id) as channel_id
+  -- min(uuid) não existe no Postgres; pega 1 id determinístico do grupo.
+  select organization_id, (array_agg(id order by id))[1] as channel_id
   from public.channels
   where provider = 'whatsapp_web'
   group by organization_id
