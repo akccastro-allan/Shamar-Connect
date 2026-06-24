@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseWriteClient } from "@/lib/supabase/server";
 
 export async function GET() {
   try {
     const context = await getRequiredAppContext();
-    const db = createSupabaseServerClient();
+    const db = createSupabaseWriteClient();
 
     const { data, error } = await db
       .from("pipeline_stages")

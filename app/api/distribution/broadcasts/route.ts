@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 import { buildBroadcastMessage } from "@/lib/distribution/content-message-builder";
 
@@ -11,7 +10,7 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get("status");
     const limit = Math.min(50, Number(searchParams.get("limit") || 20));
 
-    const db = createSupabaseServerClient();
+    const db = createSupabaseWriteClient();
 
     let query = db
       .from("content_broadcasts")

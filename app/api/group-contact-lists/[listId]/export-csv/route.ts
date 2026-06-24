@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
+import { createSupabaseWriteClient } from "@/lib/supabase/server";
 
 type Params = { params: Promise<{ listId: string }> };
 
@@ -10,13 +11,15 @@ function csvValue(value: unknown) {
 
 export async function GET(request: NextRequest, context: Params) {
   try {
+    const appContext = await getRequiredAppContext();
     const { listId } = await context.params;
     const reviewStatus = request.nextUrl.searchParams.get("reviewStatus");
-    const db = createSupabaseServerClient();
+    const db = createSupabaseWriteClient();
 
     let query = db
       .from("group_contact_list_items")
       .select("name, phone, source_group_name, consent_status, crm_status, review_status, created_at")
+      .eq("organization_id", appContext.organizationId)
       .eq("list_id", listId)
       .order("created_at", { ascending: true })
       .limit(5000);
@@ -49,6 +52,9 @@ export async function GET(request: NextRequest, context: Params) {
       },
     });
   } catch (error) {
+    if (isUnauthorizedError(error)) {
+      return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
+    }
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Failed to export CSV" }, { status: 500 });
   }
 }

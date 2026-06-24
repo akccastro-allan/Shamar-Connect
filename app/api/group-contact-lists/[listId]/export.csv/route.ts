@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
+import { createSupabaseWriteClient } from "@/lib/supabase/server";
 
 type Params = { params: Promise<{ listId: string }> };
 
@@ -10,12 +11,14 @@ function csvEscape(value: unknown) {
 
 export async function GET(_request: NextRequest, context: Params) {
   try {
+    const appContext = await getRequiredAppContext();
     const { listId } = await context.params;
-    const db = createSupabaseServerClient();
+    const db = createSupabaseWriteClient();
 
     const { data, error } = await db
       .from("group_contact_list_items")
       .select("name, phone, source_group_name, consent_status, crm_status, review_status, created_at")
+      .eq("organization_id", appContext.organizationId)
       .eq("list_id", listId)
       .order("created_at", { ascending: true });
 
@@ -36,6 +39,9 @@ export async function GET(_request: NextRequest, context: Params) {
       },
     });
   } catch (error) {
+    if (isUnauthorizedError(error)) {
+      return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
+    }
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Failed to export CSV" }, { status: 500 });
   }
 }

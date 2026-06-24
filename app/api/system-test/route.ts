@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
+import { createSupabaseWriteClient } from "@/lib/supabase/server";
 
 type EnvCheck = {
   key: string;
@@ -9,7 +10,7 @@ type EnvCheck = {
 
 async function testSupabase() {
   try {
-    const db = createSupabaseServerClient();
+    const db = createSupabaseWriteClient();
     const { error } = await db.from("crm_contacts").select("id", { count: "exact", head: true });
     return { ok: !error, label: "Supabase", detail: error?.message || "Banco acessível" };
   } catch (error) {
@@ -85,6 +86,15 @@ function testBrandAssets() {
 }
 
 export async function GET() {
+  try {
+    await getRequiredAppContext();
+  } catch (error) {
+    if (isUnauthorizedError(error)) {
+      return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
+    }
+    return NextResponse.json({ ok: false, error: "Falha de autorização." }, { status: 500 });
+  }
+
   const checks = [
     { ok: true, label: "Aplicação Vercel", detail: "API do ShamarConnect respondeu" },
     testEnv(),
