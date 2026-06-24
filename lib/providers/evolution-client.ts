@@ -93,6 +93,17 @@ export async function getQrCode(): Promise<{ base64: string | null; code: string
 // Normalização do webhook (messages.upsert)
 // ---------------------------------------------------------------------------
 
+export type EvolutionMedia = {
+  mediaType: "image" | "audio" | "video" | "document" | "sticker";
+  mimetype: string | null;
+  url: string | null;
+  mediaKey: string | null;
+  directPath: string | null;
+  fileSha256: string | null;
+  durationSeconds: number | null;
+  providerMediaId: string | null; // fileSha256 serve como id estável da mídia
+};
+
 export type EvolutionInbound = {
   instance: string;
   senderId: string; // número real (dígitos)
@@ -100,6 +111,7 @@ export type EvolutionInbound = {
   messageId: string;
   body: string | null;
   messageType: string;
+  media: EvolutionMedia | null;
   timestamp: number; // epoch ms
   isGroup: boolean;
   pushName: string | null;
@@ -122,6 +134,35 @@ function extractText(message: Record<string, unknown>): string | null {
   const doc = asRecord(message["documentMessage"]);
   if (doc && Object.keys(doc).length) return String(doc["caption"] || "[documento]");
   if (asRecord(message["stickerMessage"]) && Object.keys(asRecord(message["stickerMessage"])).length) return "[figurinha]";
+  return null;
+}
+
+const MEDIA_KEYS: Array<[string, EvolutionMedia["mediaType"]]> = [
+  ["imageMessage", "image"],
+  ["audioMessage", "audio"],
+  ["videoMessage", "video"],
+  ["documentMessage", "document"],
+  ["stickerMessage", "sticker"],
+];
+
+/** Extrai metadados de mídia do payload (não baixa nada aqui). */
+function extractMedia(message: Record<string, unknown>): EvolutionMedia | null {
+  for (const [key, mediaType] of MEDIA_KEYS) {
+    const m = asRecord(message[key]);
+    if (m && Object.keys(m).length) {
+      const sha = typeof m["fileSha256"] === "string" ? (m["fileSha256"] as string) : null;
+      return {
+        mediaType,
+        mimetype: typeof m["mimetype"] === "string" ? (m["mimetype"] as string) : null,
+        url: typeof m["url"] === "string" ? (m["url"] as string) : null,
+        mediaKey: typeof m["mediaKey"] === "string" ? (m["mediaKey"] as string) : null,
+        directPath: typeof m["directPath"] === "string" ? (m["directPath"] as string) : null,
+        fileSha256: sha,
+        durationSeconds: mediaType === "audio" ? Number(m["seconds"] || 0) || null : null,
+        providerMediaId: sha,
+      };
+    }
+  }
   return null;
 }
 
@@ -149,13 +190,16 @@ export function parseEvolutionWebhook(body: unknown): EvolutionInbound[] {
     const messageId = String(key["id"] || "");
     const tsRaw = Number(item["messageTimestamp"] || 0);
 
+    const media = extractMedia(message);
+
     out.push({
       instance,
       senderId: remoteJid.replace(/@.*/, "").replace(/\D/g, ""),
       externalChatId: remoteJid,
       messageId,
       body: extractText(message),
-      messageType: typeof message["conversation"] === "string" || message["extendedTextMessage"] ? "text" : "media",
+      messageType: media ? media.mediaType : "text",
+      media,
       timestamp: tsRaw > 1e12 ? tsRaw : tsRaw * 1000, // epoch s → ms quando necessário
       isGroup,
       pushName: item["pushName"] ? String(item["pushName"]) : null,

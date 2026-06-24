@@ -665,12 +665,13 @@ export function WhatsappServiceCenter() {
     loadDepartments();
   }, []);
 
-  // Polling automático: atualiza fila e conversa aberta a cada 12s, somente com a
+  // Polling automático: atualiza fila e conversa aberta a cada ~6s, somente com a
   // aba visível, para o atendente ver mensagens novas sem apertar nenhum botão.
+  // Um único interval (deps []), limpo no unmount — sem duplicar.
   useEffect(() => {
     const interval = window.setInterval(() => {
       if (document.visibilityState === "visible") refreshSilently();
-    }, 12000);
+    }, 6000);
     return () => window.clearInterval(interval);
   }, []);
 

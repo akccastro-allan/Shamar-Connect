@@ -49,12 +49,22 @@ export async function recordUnresolvedEvent(db: Db, provider: string, body: unkn
   });
 }
 
+export type InboundMedia = {
+  mediaType: string; // image | audio | video | document | sticker
+  mimetype: string | null;
+  durationSeconds: number | null;
+  providerMediaId: string | null;
+  /** Dados p/ baixar depois (url/mediaKey/key da mensagem). NUNCA token. */
+  downloadMeta: Record<string, unknown>;
+};
+
 export type InboundMessage = {
   externalEventId: string; // id da mensagem do provider (idempotência)
   externalChatId: string; // chave da conversa no provider
   externalMessageId: string;
   body: string | null;
   messageType: string;
+  media?: InboundMedia | null;
   timestampMs: number;
   isGroup: boolean;
   senderExternalId: string; // número (WhatsApp) ou PSID (social)
@@ -162,24 +172,71 @@ export async function ingestInboundMessage(
   if (existingMsg?.id) return "duplicate";
 
   const ts = msg.timestampMs ? new Date(msg.timestampMs).toISOString() : now;
-  const { error: msgError } = await db.from("whatsapp_messages").insert({
+  const { data: insertedMsg, error: msgError } = await db
+    .from("whatsapp_messages")
+    .insert({
+      tenant_id: ch.tenantId,
+      organization_id: ch.organizationId,
+      channel_id: ch.channelId,
+      external_message_id: msg.externalMessageId,
+      provider: ch.provider,
+      conversation_id: conversationId,
+      contact_id: contactId,
+      direction: "inbound",
+      delivery_status: "delivered",
+      from_id: msg.senderExternalId,
+      to_id: null,
+      body: msg.body,
+      message_type: msg.messageType,
+      has_media: Boolean(msg.media),
+      media_kind: msg.media?.mediaType ?? null,
+      media_status: msg.media ? "pending" : "none",
+      media_mime_type: msg.media?.mimetype ?? null,
+      media_duration_seconds: msg.media?.durationSeconds ?? null,
+      raw_payload: msg.rawPayload,
+      created_at: ts,
+    })
+    .select("id")
+    .single();
+  if (msgError) throw msgError;
+
+  // Mídia: registra em message_media (idempotente). NÃO baixa aqui.
+  if (msg.media && insertedMsg?.id) {
+    await ensureMessageMedia(db, ch, insertedMsg.id, msg.media);
+  }
+
+  return "processed";
+}
+
+/**
+ * Cria o registro de mídia (sem baixar). Idempotente por
+ * (message_id + provider_media_id) ou (message_id + media_type) quando não há id.
+ */
+async function ensureMessageMedia(
+  db: Db,
+  ch: ChannelResolution,
+  messageId: string,
+  media: InboundMedia,
+): Promise<void> {
+  let q = db.from("message_media").select("id").eq("message_id", messageId);
+  q = media.providerMediaId
+    ? q.eq("provider_media_id", media.providerMediaId)
+    : q.eq("media_type", media.mediaType);
+  const { data: existing } = await q.maybeSingle();
+  if (existing) return;
+
+  await db.from("message_media").insert({
     tenant_id: ch.tenantId,
     organization_id: ch.organizationId,
     channel_id: ch.channelId,
-    external_message_id: msg.externalMessageId,
+    message_id: messageId,
     provider: ch.provider,
-    conversation_id: conversationId,
-    contact_id: contactId,
-    direction: "inbound",
-    delivery_status: "delivered",
-    from_id: msg.senderExternalId,
-    to_id: null,
-    body: msg.body,
-    message_type: msg.messageType,
-    raw_payload: msg.rawPayload,
-    created_at: ts,
+    provider_media_id: media.providerMediaId,
+    media_type: media.mediaType,
+    mime_type: media.mimetype,
+    duration_seconds: media.durationSeconds,
+    storage_bucket: "shamar-message-media",
+    download_status: "pending",
+    metadata: media.downloadMeta,
   });
-  if (msgError) throw msgError;
-
-  return "processed";
 }
