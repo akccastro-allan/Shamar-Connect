@@ -1,4 +1,12 @@
-
 # Local build/dependencies
 node_modules/
 .next/
+
+# Segredos / ambiente — NUNCA versionar (.env.example é a exceção)
+.env
+.env.*
+!.env.example
+
+# Build/diagnóstico
+tsconfig.tsbuildinfo
+*.log

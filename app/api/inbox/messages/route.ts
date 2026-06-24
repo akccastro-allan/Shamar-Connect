@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseWriteClient } from "@/lib/supabase/server";
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ ok: true, messages: [] });
     }
 
-    const client = createSupabaseServerClient();
+    const client = createSupabaseWriteClient();
 
     const { data: conversation, error: conversationError } = await client
       .from("whatsapp_conversations")

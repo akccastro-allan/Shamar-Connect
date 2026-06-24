@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 
 export async function GET(request: NextRequest) {
@@ -11,7 +10,7 @@ export async function GET(request: NextRequest) {
     const channelId = searchParams.get("channelId");
     const limit = Math.min(200, Number(searchParams.get("limit") || 100));
 
-    const db = createSupabaseServerClient();
+    const db = createSupabaseWriteClient();
 
     let query = db
       .from("pipeline_items")

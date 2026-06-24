@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
 import { getCloudConfig, isCloudConfigured, getPhoneNumberStatus } from "@/lib/providers/whatsapp-cloud-client";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseWriteClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +37,7 @@ export async function GET() {
     }
 
     // Recent messages and events from DB
-    const db = createSupabaseServerClient();
+    const db = createSupabaseWriteClient();
 
     const [messagesResult, eventsResult] = await Promise.all([
       db

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseWriteClient } from "@/lib/supabase/server";
 
 export async function GET(request: NextRequest) {
   try {
@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get("status");
     const limit = Math.min(100, Math.max(1, Number(searchParams.get("limit") || "50")));
 
-    const db = createSupabaseServerClient();
+    const db = createSupabaseWriteClient();
 
     let query = db
       .from("ai_response_logs")

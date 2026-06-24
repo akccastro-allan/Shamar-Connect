@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
+import { createSupabaseWriteClient } from "@/lib/supabase/server";
 
 const VALID_SEGMENTS = [
   "birthday_today",
@@ -62,13 +63,15 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const db = createSupabaseServerClient();
+    const context = await getRequiredAppContext();
+    const db = createSupabaseWriteClient();
 
     const { data, error } = await db
       .from("crm_contacts")
       .select(
         "id, name, phone, email, company, birth_date, birthday_month, birthday_day, last_purchase_at, last_service_at, last_quote_at, marketing_opt_in, marketing_opt_out_at, consent_status",
       )
+      .eq("organization_id", context.organizationId)
       .order("name", { ascending: true })
       .limit(500);
 
@@ -152,6 +155,9 @@ export async function GET(request: NextRequest) {
       generatedAt: now.toISOString(),
     });
   } catch (err) {
+    if (isUnauthorizedError(err)) {
+      return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
+    }
     return NextResponse.json(
       { ok: false, error: err instanceof Error ? err.message : "Erro ao carregar segmento" },
       { status: 500 },

@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
+import { createSupabaseWriteClient } from "@/lib/supabase/server";
 
-async function countTable(table: string) {
+async function countTable(table: string, organizationId: string) {
   try {
-    const db = createSupabaseServerClient();
-    const { count, error } = await db.from(table).select("id", { count: "exact", head: true });
+    const db = createSupabaseWriteClient();
+    const { count, error } = await db
+      .from(table)
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", organizationId);
     if (error) return { count: 0, error: error.message };
     return { count: count || 0 };
   } catch (error) {
@@ -31,28 +35,41 @@ async function getWhatsappStatus() {
 }
 
 export async function GET() {
-  const [contacts, conversations, messages, lists, listItems, whatsapp] = await Promise.all([
-    countTable("crm_contacts"),
-    countTable("whatsapp_conversations"),
-    countTable("whatsapp_messages"),
-    countTable("group_contact_lists"),
-    countTable("group_contact_list_items"),
-    getWhatsappStatus(),
-  ]);
+  try {
+    const context = await getRequiredAppContext();
+    const orgId = context.organizationId;
 
-  return NextResponse.json({
-    ok: true,
-    checkedAt: new Date().toISOString(),
-    whatsapp,
-    metrics: {
-      contacts: contacts.count,
-      conversations: conversations.count,
-      messages: messages.count,
-      importedLists: lists.count,
-      importedContacts: listItems.count,
-    },
-    warnings: [contacts, conversations, messages, lists, listItems]
-      .filter((item) => item.error)
-      .map((item) => item.error),
-  });
+    const [contacts, conversations, messages, lists, listItems, whatsapp] = await Promise.all([
+      countTable("crm_contacts", orgId),
+      countTable("whatsapp_conversations", orgId),
+      countTable("whatsapp_messages", orgId),
+      countTable("group_contact_lists", orgId),
+      countTable("group_contact_list_items", orgId),
+      getWhatsappStatus(),
+    ]);
+
+    return NextResponse.json({
+      ok: true,
+      checkedAt: new Date().toISOString(),
+      whatsapp,
+      metrics: {
+        contacts: contacts.count,
+        conversations: conversations.count,
+        messages: messages.count,
+        importedLists: lists.count,
+        importedContacts: listItems.count,
+      },
+      warnings: [contacts, conversations, messages, lists, listItems]
+        .filter((item) => item.error)
+        .map((item) => item.error),
+    });
+  } catch (error) {
+    if (isUnauthorizedError(error)) {
+      return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
+    }
+    return NextResponse.json(
+      { ok: false, error: error instanceof Error ? error.message : "Falha ao carregar resumo" },
+      { status: 500 },
+    );
+  }
 }

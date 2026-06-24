@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
+import { createSupabaseWriteClient } from "@/lib/supabase/server";
 import { whatsappWebGatewayClient } from "@/lib/providers/whatsapp-web-gateway-client";
 import { SHAMAR_CONNECT_ICON_PATH, SHAMAR_CONNECT_LOGO_PATH } from "@/components/brand/brand-logo";
 
@@ -28,7 +29,7 @@ async function checkAsset(path: string, label: string): Promise<CheckResult> {
 
 async function checkSupabase(): Promise<CheckResult> {
   try {
-    const db = createSupabaseServerClient();
+    const db = createSupabaseWriteClient();
     const { error } = await db.from("crm_contacts").select("id", { count: "exact", head: true });
     if (error) throw error;
     return { key: "supabase", label: "Supabase", ok: true, status: "ok", detail: "Conexão e tabela crm_contacts acessíveis" };
@@ -74,6 +75,15 @@ async function checkRequiredEnv(): Promise<CheckResult> {
 }
 
 export async function GET() {
+  try {
+    await getRequiredAppContext();
+  } catch (error) {
+    if (isUnauthorizedError(error)) {
+      return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
+    }
+    return NextResponse.json({ ok: false, error: "Falha de autorização." }, { status: 500 });
+  }
+
   const checks = await Promise.all([
     checkRequiredEnv(),
     checkSupabase(),
