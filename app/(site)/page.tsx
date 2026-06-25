@@ -1,105 +1,201 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import type { Metadata } from "next";
 
 import { getCurrentSession } from "@/lib/auth/session";
 
 export const metadata: Metadata = {
-  title: "ShamarConnect — WhatsApp + CRM + IA para empresas",
+  title: "ShamarConnect — Central de atendimento para empresas que vivem no WhatsApp",
   description:
-    "Atendimento, CRM e vendas em uma central inteligente para empresas que vivem no WhatsApp. Histórico permanente, CRM/Kanban, automações e IA supervisionada.",
+    "Pare de perder clientes por falta de organização no atendimento. O Shamar Connect reúne conversas, histórico, equipe e setores em uma central organizada.",
   openGraph: {
-    title: "ShamarConnect — WhatsApp + CRM + IA",
-    description: "Central de atendimento, CRM e automação para empresas que vendem pelo WhatsApp.",
+    title: "ShamarConnect — Atendimento organizado pelo WhatsApp",
+    description:
+      "Conversas organizadas, responsáveis definidos, histórico completo. Central de atendimento para equipes que vivem no WhatsApp.",
     url: "https://shamarconnect.com.br",
     type: "website",
   },
 };
 
+const pains = [
+  {
+    icon: "⏳",
+    title: "Cliente esperando resposta",
+    problem:
+      "O cliente chama no WhatsApp e fica esperando porque ninguém assumiu o atendimento.",
+    solution:
+      "O Shamar mostra quem está aguardando, há quanto tempo e quem precisa responder.",
+  },
+  {
+    icon: "📱",
+    title: "Conversas espalhadas",
+    problem:
+      "As mensagens ficam em celulares diferentes, sem controle de quem atendeu o quê.",
+    solution:
+      "Reunimos tudo em uma central organizada com histórico, filtros e responsáveis.",
+  },
+  {
+    icon: "👥",
+    title: "Ninguém sabe quem assumiu",
+    problem: "Duas pessoas respondem o mesmo cliente ou ninguém responde.",
+    solution:
+      "Cada conversa pode ter setor, status e responsável visível para toda a equipe.",
+  },
+  {
+    icon: "🎒",
+    title: "O dono carrega tudo nas costas",
+    problem:
+      "O gestor precisa lembrar de retorno, orçamento, pendência e cobrança manualmente.",
+    solution:
+      "A equipe passa a operar com filas, próximos passos e acompanhamento visível.",
+  },
+  {
+    icon: "💸",
+    title: "Orçamentos esquecidos",
+    problem: "O cliente pede orçamento, ninguém acompanha e a venda esfria.",
+    solution:
+      "O atendimento ganha status, responsável e próximo passo claro para a equipe.",
+  },
+  {
+    icon: "🤖",
+    title: "Robô atrapalhando",
+    problem:
+      "O cliente escreve diferente, o robô não entende e demora para chamar um humano.",
+    solution:
+      "A automação ajuda, mas o atendimento humano continua no controle.",
+  },
+  {
+    icon: "🎧",
+    title: "Áudios difíceis de atender",
+    problem:
+      "Clientes mandam áudio, mas nem sempre o atendente pode usar fone no momento.",
+    solution:
+      "O Shamar toca o áudio na central e, quando contratado, transforma áudio em texto.",
+  },
+];
+
 const segments = [
-  { icon: "🛍️", title: "Lojas e e-commerce", text: "Centralize pedidos, dúvidas e pós-venda em uma fila organizada por atendente." },
-  { icon: "🔧", title: "Prestadores de serviço", text: "Acompanhe cada cliente no pipeline: orçamento, aprovação, execução e cobrança." },
-  { icon: "📣", title: "Agências e consultorias", text: "Gerencie vários clientes no mesmo painel sem misturar conversas ou históricos." },
-  { icon: "⛪", title: "Igrejas e eventos", text: "Organize inscrições, confirmações e comunicados com múltiplos canais e equipes." },
-  { icon: "🥾", title: "Turismo e experiências", text: "Distribua conteúdo para grupos informativos e atenda individualmente no WhatsApp." },
-  { icon: "💼", title: "Equipes comerciais", text: "Pipeline visual, SLA e dashboard para o gestor acompanhar oportunidades em tempo real." },
-];
-
-const problems = [
-  { icon: "😵", title: "Conversas espalhadas em vários celulares", text: "Histórico perdido quando o atendente sai. Clientes repetindo tudo do início." },
-  { icon: "📋", title: "CRM em planilha ou na cabeça", text: "Ninguém sabe em que etapa está cada oportunidade. Vendas caem por falta de follow-up." },
-  { icon: "🤖", title: "Bot genérico respondendo tudo", text: "IA sem supervisão gera respostas erradas e afasta clientes. Falta controle humano." },
-  { icon: "🗂️", title: "Conteúdo publicado na mão a cada vez", text: "Copiar e colar para cinco grupos toda semana. Sem histórico, sem controle, sem rastreio." },
-];
-
-const modules = [
   {
-    badge: "WhatsApp e atendimento",
-    title: "Fila unificada para toda a equipe",
-    text: "Receba mensagens de múltiplos números em um painel central. Atribua conversas, registre notas e preserve o histórico completo — incluindo mensagens apagadas.",
-    bullets: ["Multi-atendente com fila organizada", "Histórico permanente", "Mensagens apagadas preservadas", "Respostas rápidas com variáveis"],
-    color: "#2ABFAB",
+    icon: "🔧",
+    title: "Oficinas e autopeças",
+    text: "Orçamento recebido, responsável definido, retorno agendado — sem perder venda por esquecimento.",
   },
   {
-    badge: "CRM e contatos",
-    title: "Cada cliente tem um perfil completo",
-    text: "Registre contatos, segmentos, notas e histórico de interações. Listas organizadas por status, etiqueta ou etapa do funil.",
-    bullets: ["Perfil de contato unificado", "Segmentação e etiquetas", "Notas e lembretes por cliente", "Importação em lote"],
-    color: "#1B2F5B",
+    icon: "🍕",
+    title: "Restaurantes e delivery",
+    text: "Pedidos organizados por atendente com histórico do cliente e status de cada conversa.",
   },
   {
-    badge: "Pipeline comercial",
-    title: "Kanban visual do seu funil de vendas",
-    text: "Mova oportunidades entre etapas, registre valores, defina responsáveis e acompanhe conversão. Dashboard com total por canal e por período.",
-    bullets: ["Etapas personalizadas", "Valor por oportunidade", "Conversão por canal", "Fechamento com motivo registrado"],
-    color: "#C9952A",
+    icon: "🏥",
+    title: "Clínicas",
+    text: "Cada atendente vê só seu setor. Agendamento, financeiro e triagem em filas separadas.",
   },
   {
-    badge: "Campanhas e distribuição",
-    title: "Conteúdo publicado em múltiplos canais",
-    text: "Crie uma divulgação, selecione os canais (Telegram, WhatsApp informativo) e publique com histórico de envio por canal.",
-    bullets: ["Geração automática do texto", "Telegram via bot", "WhatsApp: cópia com um clique", "Log de publicações"],
-    color: "#2ABFAB",
+    icon: "⛪",
+    title: "Igrejas e eventos",
+    text: "Inscrições, confirmações e comunicados organizados com múltiplos canais e equipe.",
   },
   {
-    badge: "IA supervisionada",
-    title: "Sugestões inteligentes, controle humano",
-    text: "A IA sugere respostas e classifica conversas. O atendente revisa e decide. Nunca responde automaticamente em grupos.",
-    bullets: ["Sugestões revisáveis", "Bloqueio em grupos", "Logs de auditoria", "Sem disparo automático sem aprovação"],
-    color: "#1B2F5B",
+    icon: "🏢",
+    title: "Empresas com várias marcas",
+    text: "Uma central para gerenciar múltiplas operações com histórico isolado por empresa.",
   },
   {
-    badge: "Dashboard e SLA",
-    title: "Visão executiva da operação",
-    text: "Acompanhe tempo médio de resposta, conversas abertas, oportunidades por etapa e performance por atendente em um único painel.",
-    bullets: ["Tempo de resposta", "Volume por canal", "SLA por prioridade", "Exportação de relatórios"],
-    color: "#C9952A",
+    icon: "🎙️",
+    title: "Equipes com alto volume de áudios",
+    text: "Central organizada com player de áudio e transcrição contratável conforme necessidade.",
   },
 ];
 
 const planCards = [
   {
-    slug: "starter",
-    name: "Starter",
-    price: "149",
+    slug: "essencial",
+    name: "Essencial",
+    price: "97",
     label: "Para começar com organização",
-    features: ["1 empresa", "2 usuários", "1 canal WhatsApp", "CRM básico", "Pipeline", "Histórico permanente"],
+    description: "Para pequenas operações que querem organizar a entrada dos clientes.",
+    features: [
+      "1 empresa",
+      "1 canal conectado",
+      "Até 2 usuários",
+      "Histórico de atendimento",
+      "Setores simples",
+      "Mensagens rápidas",
+      "Implantação assistida",
+    ],
     highlight: false,
   },
   {
     slug: "professional",
     name: "Professional",
-    price: "297",
+    price: "197",
     label: "Mais indicado",
-    features: ["1 empresa", "5 usuários", "1 canal WhatsApp", "CRM/Kanban completo", "IA supervisionada", "SLA e métricas"],
+    description: "Para equipes que precisam dividir atendimento e parar de perder retorno.",
+    features: [
+      "Múltiplos atendentes",
+      "Filas por setor",
+      "Responsável por conversa",
+      "Status e pendências",
+      "Histórico por cliente",
+      "Supervisão básica",
+      "Implantação e treinamento",
+    ],
     highlight: true,
   },
   {
     slug: "business",
     name: "Business",
-    price: "597",
-    label: "Para operação em expansão",
-    features: ["1 empresa", "10 usuários", "2 canais WhatsApp", "Relatórios exportáveis", "Múltiplos atendentes", "Suporte prioritário 30 dias"],
+    price: "397",
+    label: "Para operações maiores",
+    description:
+      "Para clínicas, grupos e empresas com várias marcas que precisam de recursos avançados.",
+    features: [
+      "Múltiplos canais",
+      "Múltiplas empresas",
+      "Permissões por equipe",
+      "Visão de gestor",
+      "Recursos avançados",
+      "Descontos em add-ons",
+      "Shamar Agent disponível",
+    ],
     highlight: false,
+  },
+];
+
+const addons = [
+  {
+    icon: "🎙️",
+    title: "Transcrição de Áudios",
+    text: "Transforme áudios recebidos no WhatsApp em texto para sua equipe atender mais rápido, mesmo quando não puder usar fone.",
+    note: "Transcrição sob demanda, acionada pelo atendente. Áudio original sempre disponível.",
+    from: "A partir de R$ 29/mês",
+  },
+  {
+    icon: "📞",
+    title: "Controle de Ligações",
+    text: "Escolha se sua equipe vai receber ligações pela central ou manter o atendimento apenas por mensagens.",
+    note: "Ativado ou desativado conforme a rotina da equipe. Ideal para clínicas, vendas e suporte.",
+    from: "Sob consulta",
+  },
+  {
+    icon: "⏺️",
+    title: "Gravação de Ligações",
+    text: "Grave chamadas importantes para auditoria, treinamento e conferência interna.",
+    note: "Com controle de acesso e retenção configurável. Exige atenção à privacidade e consentimento.",
+    from: "A partir de R$ 59/mês",
+  },
+  {
+    icon: "💾",
+    title: "Armazenamento Adicional",
+    text: "Amplie o espaço para guardar mídias, documentos, áudios e gravações.",
+    note: "O armazenamento padrão cobre o uso operacional. Alto volume de mídia pode exigir expansão.",
+    from: "A partir de R$ 19/mês",
+  },
+  {
+    icon: "🤖",
+    title: "Shamar Agent",
+    text: "Agente assistivo para classificar conversas, sugerir respostas e apoiar a equipe sem tirar o humano do controle.",
+    note: "Disponível a partir do plano Business. O humano continua no controle — sempre.",
+    from: "R$ 149/mês por agente",
   },
 ];
 
@@ -114,6 +210,7 @@ function CheckMark() {
 export default async function HomePage() {
   const session = await getCurrentSession();
   const isAuthenticated = session !== null;
+
   return (
     <>
       {/* Hero */}
@@ -123,26 +220,27 @@ export default async function HomePage() {
         <div className="relative mx-auto max-w-7xl px-5 py-20 md:px-8 md:py-32">
           <div className="mx-auto max-w-4xl text-center">
             <div className="mx-auto mb-7 inline-flex rounded-full border border-[#2ABFAB]/25 bg-[#2ABFAB]/10 px-5 py-2 text-sm font-black text-[#13796D]">
-              WhatsApp · CRM · IA supervisionada · Pipeline
+              Central de atendimento · Equipe organizada · Histórico completo
             </div>
             <h1 className="text-4xl font-black leading-tight tracking-tight text-[#1B2F5B] md:text-6xl lg:text-7xl">
-              Atendimento, CRM e vendas em uma central inteligente para empresas que vivem no WhatsApp.
+              Pare de perder clientes por falta de organização no atendimento.
             </h1>
             <p className="mx-auto mt-7 max-w-3xl text-lg leading-8 text-slate-600 md:text-xl">
-              Organize conversas, contatos, equipes, campanhas e oportunidades em um só lugar — com IA supervisionada e controle humano.
+              O Shamar Connect transforma mensagens soltas em atendimentos organizados — com
+              responsável, setor, histórico e próximo passo claro.
             </p>
             <div className="mt-9 flex flex-col justify-center gap-4 sm:flex-row">
               <Link
                 href="/planos"
                 className="rounded-full bg-[#2ABFAB] px-8 py-4 text-base font-black text-white shadow-lg shadow-[#2ABFAB]/25 transition hover:-translate-y-0.5 hover:shadow-xl"
               >
-                Ver planos
+                Quero organizar meu atendimento
               </Link>
               <Link
                 href={isAuthenticated ? "/operations" : "/login"}
                 className="rounded-full border border-[#1B2F5B] bg-white px-8 py-4 text-base font-black text-[#1B2F5B] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#1B2F5B] hover:text-white hover:shadow-md"
               >
-                {isAuthenticated ? "Abrir Plataforma" : "Entrar na Plataforma"}
+                {isAuthenticated ? "Abrir central" : "Entrar na central"}
               </Link>
               <Link
                 href="/contato"
@@ -170,101 +268,42 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* Problemas */}
+      {/* Dores que curamos */}
       <section className="mx-auto max-w-7xl px-5 py-20 md:px-8">
         <div className="mx-auto max-w-3xl text-center">
-          <p className="text-sm font-black uppercase tracking-[0.25em] text-[#C9952A]">O problema</p>
+          <p className="text-sm font-black uppercase tracking-[0.25em] text-[#C9952A]">Dores que curamos</p>
           <h2 className="mt-3 text-3xl font-black tracking-tight text-[#1B2F5B] md:text-5xl">
             Reconhece alguma dessas situações?
           </h2>
         </div>
-        <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          {problems.map((p) => (
+        <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {pains.map((p) => (
             <article key={p.title} className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
               <span className="text-3xl">{p.icon}</span>
               <h3 className="mt-4 text-base font-black text-[#1B2F5B]">{p.title}</h3>
-              <p className="mt-3 text-sm leading-6 text-slate-600">{p.text}</p>
+              <p className="mt-2 text-sm leading-6 text-slate-500">{p.problem}</p>
+              <div className="mt-4 border-t border-slate-100 pt-4">
+                <p className="text-xs font-black uppercase tracking-wide text-[#2ABFAB]">Como resolvemos</p>
+                <p className="mt-2 text-sm leading-6 text-slate-700">{p.solution}</p>
+              </div>
             </article>
           ))}
         </div>
         <p className="mt-10 text-center text-base font-bold text-slate-500">
-          O ShamarConnect resolve os quatro — em uma central só.
+          O ShamarConnect resolve tudo isso — em uma central só.
         </p>
-      </section>
-
-      {/* Módulos */}
-      <section id="modulos" className="bg-white py-20">
-        <div className="mx-auto max-w-7xl px-5 md:px-8">
-          <div className="mx-auto max-w-3xl text-center">
-            <p className="text-sm font-black uppercase tracking-[0.25em] text-[#C9952A]">Módulos</p>
-            <h2 className="mt-3 text-3xl font-black tracking-tight text-[#1B2F5B] md:text-5xl">
-              Tudo conectado na mesma plataforma
-            </h2>
-            <p className="mt-5 text-lg leading-8 text-slate-600">
-              Cada módulo funciona sozinho — juntos, formam uma operação comercial completa.
-            </p>
-          </div>
-          <div className="mt-14 grid gap-7 md:grid-cols-2 lg:grid-cols-3">
-            {modules.map((mod) => (
-              <article key={mod.badge} className="rounded-[2rem] border border-slate-200 bg-[#F8FAFC] p-7">
-                <span
-                  className="inline-block rounded-full px-4 py-1.5 text-xs font-black uppercase tracking-wide text-white"
-                  style={{ backgroundColor: mod.color }}
-                >
-                  {mod.badge}
-                </span>
-                <h3 className="mt-5 text-xl font-black text-[#1B2F5B]">{mod.title}</h3>
-                <p className="mt-3 text-sm leading-6 text-slate-600">{mod.text}</p>
-                <ul className="mt-5 space-y-2.5">
-                  {mod.bullets.map((b) => (
-                    <li key={b} className="flex items-start gap-3 text-sm text-slate-700">
-                      <CheckMark />
-                      <span>{b}</span>
-                    </li>
-                  ))}
-                </ul>
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Como funciona */}
-      <section className="mx-auto max-w-7xl px-5 py-20 md:px-8">
-        <div className="mx-auto max-w-3xl text-center">
-          <p className="text-sm font-black uppercase tracking-[0.25em] text-[#C9952A]">Como funciona</p>
-          <h2 className="mt-3 text-3xl font-black tracking-tight text-[#1B2F5B] md:text-5xl">
-            Operacional em dias, não semanas
-          </h2>
-        </div>
-        <div className="mt-12 grid gap-5 md:grid-cols-4">
-          {[
-            { step: "1", title: "Escolha o plano", text: "Contrate e finalize a implantação assistida." },
-            { step: "2", title: "Conecte o WhatsApp", text: "Escaneie o QR Code e a fila já começa a aparecer." },
-            { step: "3", title: "Configure a equipe", text: "Cadastre atendentes, defina filas e respostas rápidas." },
-            { step: "4", title: "Opere com controle", text: "CRM, pipeline, campanhas e IA prontos para uso." },
-          ].map((item) => (
-            <article key={item.step} className="rounded-[2rem] border border-slate-200 bg-white p-7 shadow-sm">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#1B2F5B] text-sm font-black text-white">
-                {item.step}
-              </div>
-              <h3 className="mt-5 text-lg font-black text-[#1B2F5B]">{item.title}</h3>
-              <p className="mt-3 text-sm leading-6 text-slate-600">{item.text}</p>
-            </article>
-          ))}
-        </div>
       </section>
 
       {/* Segmentos */}
       <section className="bg-white py-20">
         <div className="mx-auto max-w-7xl px-5 md:px-8">
           <div className="mx-auto max-w-3xl text-center">
-            <p className="text-sm font-black uppercase tracking-[0.25em] text-[#C9952A]">Segmentos</p>
+            <p className="text-sm font-black uppercase tracking-[0.25em] text-[#C9952A]">Para quem é</p>
             <h2 className="mt-3 text-3xl font-black tracking-tight text-[#1B2F5B] md:text-5xl">
               Feito para quem atende pelo WhatsApp
             </h2>
             <p className="mt-5 text-lg leading-8 text-slate-600">
-              Qualquer operação que vive no WhatsApp ganha estrutura, histórico e processo com o ShamarConnect.
+              Qualquer operação que vive no WhatsApp ganha estrutura, histórico e processo com o Shamar Connect.
             </p>
           </div>
           <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -281,28 +320,54 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* IA supervisionada */}
+      {/* Como funciona */}
       <section className="mx-auto max-w-7xl px-5 py-20 md:px-8">
+        <div className="mx-auto max-w-3xl text-center">
+          <p className="text-sm font-black uppercase tracking-[0.25em] text-[#C9952A]">Como funciona</p>
+          <h2 className="mt-3 text-3xl font-black tracking-tight text-[#1B2F5B] md:text-5xl">
+            Operacional em dias, não semanas
+          </h2>
+        </div>
+        <div className="mt-12 grid gap-5 md:grid-cols-4">
+          {[
+            { step: "1", title: "Escolha o plano", text: "Contrate e finalize a implantação assistida com nossa equipe." },
+            { step: "2", title: "Conecte o número", text: "Escaneie o QR Code e a fila já começa a aparecer na central." },
+            { step: "3", title: "Configure a equipe", text: "Cadastre atendentes, defina setores e mensagens rápidas." },
+            { step: "4", title: "Opere com controle", text: "Histórico, responsáveis, status e acompanhamento prontos." },
+          ].map((item) => (
+            <article key={item.step} className="rounded-[2rem] border border-slate-200 bg-white p-7 shadow-sm">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#1B2F5B] text-sm font-black text-white">
+                {item.step}
+              </div>
+              <h3 className="mt-5 text-lg font-black text-[#1B2F5B]">{item.title}</h3>
+              <p className="mt-3 text-sm leading-6 text-slate-600">{item.text}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      {/* Automação com controle */}
+      <section className="mx-auto max-w-7xl px-5 py-10 pb-20 md:px-8">
         <div className="overflow-hidden rounded-[2.5rem] bg-[#1B2F5B]">
           <div className="grid gap-10 px-8 py-14 md:grid-cols-[1.2fr_0.8fr] md:px-14 md:py-16 lg:items-center">
             <div>
               <div className="inline-flex rounded-full bg-[#2ABFAB]/20 px-4 py-2 text-sm font-black text-[#2ABFAB]">
-                Inteligência artificial
+                Automação com controle humano
               </div>
               <h2 className="mt-5 text-3xl font-black leading-tight tracking-tight text-white md:text-5xl">
-                IA com supervisão humana, não robô solto.
+                A automação ajuda. O atendente decide. Sempre.
               </h2>
               <p className="mt-5 text-base leading-8 text-white/70">
-                A IA ajuda a sugerir respostas, classificar conversas e acelerar o atendimento. O controle continua com a equipe.
+                O Shamar sugere, classifica e organiza — mas nenhuma resposta sai sem revisão humana. Grupos nunca recebem resposta automática.
               </p>
             </div>
             <div className="rounded-[2rem] bg-white/10 p-7">
               <ul className="space-y-5">
                 {[
                   { icon: "💬", text: "Sugestões revisáveis antes de enviar" },
-                  { icon: "🚫", text: "Bloqueio automático em grupos" },
-                  { icon: "📋", text: "Logs de auditoria de todas as ações da IA" },
+                  { icon: "🚫", text: "Nunca responde automaticamente em grupos" },
                   { icon: "👤", text: "Atendimento humano sempre no controle" },
+                  { icon: "📋", text: "Histórico de tudo que foi feito pela equipe" },
                 ].map((item) => (
                   <li key={item.text} className="flex items-start gap-4 text-sm font-semibold text-white/85">
                     <span className="text-xl">{item.icon}</span>
@@ -315,95 +380,102 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* Multiempresa */}
+      {/* Planos resumo */}
       <section className="bg-white py-20">
         <div className="mx-auto max-w-7xl px-5 md:px-8">
           <div className="mx-auto max-w-3xl text-center">
-            <p className="text-sm font-black uppercase tracking-[0.25em] text-[#C9952A]">Escala</p>
+            <p className="text-sm font-black uppercase tracking-[0.25em] text-[#C9952A]">Planos</p>
             <h2 className="mt-3 text-3xl font-black tracking-tight text-[#1B2F5B] md:text-5xl">
-              Multiempresa e multicanal na mesma central
+              Comece com o que precisa agora
             </h2>
             <p className="mt-5 text-lg leading-8 text-slate-600">
-              Uma única plataforma para administrar empresas, números, equipes e dashboards diferentes.
+              Todos os planos incluem implantação assistida para começar com a operação configurada.
             </p>
           </div>
-          <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-            {[
-              { icon: "👥", title: "Vários atendentes", text: "Uma empresa com equipe inteira na mesma fila, com visibilidade e atribuição." },
-              { icon: "📱", title: "Vários números", text: "Diferentes operações com WhatsApps distintos, histórico separado por canal." },
-              { icon: "🏢", title: "Vários clientes", text: "Agências que gerenciam múltiplas contas veem cada empresa isolada no mesmo painel." },
-              { icon: "📊", title: "Visão de gestor", text: "Dashboard com performance por empresa, canal e atendente — tudo num relance." },
-            ].map((item) => (
-              <article key={item.title} className="rounded-[2rem] border border-slate-200 bg-[#F8FAFC] p-6">
-                <span className="text-3xl">{item.icon}</span>
-                <h3 className="mt-4 font-black text-[#1B2F5B]">{item.title}</h3>
-                <p className="mt-3 text-sm leading-6 text-slate-600">{item.text}</p>
+          <div className="mt-12 grid gap-7 lg:grid-cols-3">
+            {planCards.map((plan) => (
+              <article
+                key={plan.slug}
+                className={
+                  plan.highlight
+                    ? "relative rounded-[2rem] border-2 border-[#2ABFAB] bg-white p-7 shadow-2xl shadow-[#2ABFAB]/10"
+                    : "rounded-[2rem] border border-slate-200 bg-white p-7 shadow-sm"
+                }
+              >
+                {plan.highlight ? (
+                  <div className="absolute -top-4 left-1/2 -translate-x-1/2 rounded-full bg-[#C9952A] px-5 py-2 text-xs font-black uppercase tracking-wide text-white shadow">
+                    Mais indicado
+                  </div>
+                ) : null}
+                <p className="text-sm font-black uppercase tracking-wide text-[#2ABFAB]">{plan.label}</p>
+                <h3 className="mt-2 text-3xl font-black text-[#1B2F5B]">{plan.name}</h3>
+                <p className="mt-3 text-sm leading-6 text-slate-500">{plan.description}</p>
+                <div className="mt-5 flex items-end gap-1">
+                  <span className="text-base font-black text-slate-500">R$</span>
+                  <span className="text-5xl font-black tracking-tight text-[#1B2F5B]">{plan.price}</span>
+                  <span className="mb-1.5 text-sm font-bold text-slate-500">/mês</span>
+                </div>
+                <ul className="mt-6 space-y-2.5">
+                  {plan.features.map((f) => (
+                    <li key={f} className="flex items-start gap-3 text-sm text-slate-700">
+                      <CheckMark />
+                      <span>{f}</span>
+                    </li>
+                  ))}
+                </ul>
+                <Link
+                  href="/planos"
+                  className={
+                    plan.highlight
+                      ? "mt-7 flex w-full justify-center rounded-2xl bg-[#2ABFAB] px-5 py-3.5 text-sm font-black text-white shadow-lg shadow-[#2ABFAB]/20 transition hover:-translate-y-0.5"
+                      : "mt-7 flex w-full justify-center rounded-2xl bg-[#1B2F5B] px-5 py-3.5 text-sm font-black text-white shadow-md transition hover:-translate-y-0.5"
+                  }
+                >
+                  Ver plano completo
+                </Link>
               </article>
             ))}
           </div>
+          <p className="mt-8 text-center text-sm text-slate-500">
+            Todos os planos incluem implantação assistida.{" "}
+            <Link href="/planos" className="font-black text-[#2ABFAB] hover:underline">
+              Ver detalhes e recursos opcionais →
+            </Link>
+          </p>
         </div>
       </section>
 
-      {/* Planos */}
-      <section className="mx-auto max-w-7xl px-5 py-20 md:px-8">
+      {/* Recursos opcionais */}
+      <section id="recursos-opcionais" className="mx-auto max-w-7xl px-5 py-20 md:px-8">
         <div className="mx-auto max-w-3xl text-center">
-          <p className="text-sm font-black uppercase tracking-[0.25em] text-[#C9952A]">Planos</p>
+          <p className="text-sm font-black uppercase tracking-[0.25em] text-[#C9952A]">Recursos opcionais</p>
           <h2 className="mt-3 text-3xl font-black tracking-tight text-[#1B2F5B] md:text-5xl">
-            Planos transparentes com implantação incluída
+            Contrate apenas o que sua operação precisa
           </h2>
           <p className="mt-5 text-lg leading-8 text-slate-600">
-            Todos os planos incluem implantação assistida para começar com a operação configurada.
+            Nem toda empresa precisa dos mesmos recursos. Comece com o plano base e adicione
+            transcrição, gravação, armazenamento ou agente conforme a operação amadurece.
           </p>
         </div>
-        <div className="mt-12 grid gap-7 lg:grid-cols-3">
-          {planCards.map((plan) => (
-            <article
-              key={plan.slug}
-              className={
-                plan.highlight
-                  ? "relative rounded-[2rem] border-2 border-[#2ABFAB] bg-white p-7 shadow-2xl shadow-[#2ABFAB]/10"
-                  : "rounded-[2rem] border border-slate-200 bg-white p-7 shadow-sm"
-              }
-            >
-              {plan.highlight ? (
-                <div className="absolute -top-4 left-1/2 -translate-x-1/2 rounded-full bg-[#C9952A] px-5 py-2 text-xs font-black uppercase tracking-wide text-white shadow">
-                  Mais indicado
-                </div>
-              ) : null}
-              <p className="text-sm font-black uppercase tracking-wide text-[#2ABFAB]">{plan.label}</p>
-              <h3 className="mt-2 text-3xl font-black text-[#1B2F5B]">{plan.name}</h3>
-              <div className="mt-5 flex items-end gap-1">
-                <span className="text-base font-black text-slate-500">R$</span>
-                <span className="text-5xl font-black tracking-tight text-[#1B2F5B]">{plan.price}</span>
-                <span className="mb-1.5 text-sm font-bold text-slate-500">/mês</span>
-              </div>
-              <ul className="mt-6 space-y-2.5">
-                {plan.features.map((f) => (
-                  <li key={f} className="flex items-start gap-3 text-sm text-slate-700">
-                    <CheckMark />
-                    <span>{f}</span>
-                  </li>
-                ))}
-              </ul>
-              <Link
-                href="/planos"
-                className={
-                  plan.highlight
-                    ? "mt-7 flex w-full justify-center rounded-2xl bg-[#2ABFAB] px-5 py-3.5 text-sm font-black text-white shadow-lg shadow-[#2ABFAB]/20 transition hover:-translate-y-0.5"
-                    : "mt-7 flex w-full justify-center rounded-2xl bg-[#1B2F5B] px-5 py-3.5 text-sm font-black text-white shadow-md transition hover:-translate-y-0.5"
-                }
-              >
-                Ver plano completo
-              </Link>
+        <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {addons.map((addon) => (
+            <article key={addon.title} className="rounded-[2rem] border border-slate-200 bg-[#F8FAFC] p-6">
+              <span className="text-3xl">{addon.icon}</span>
+              <h3 className="mt-4 text-base font-black text-[#1B2F5B]">{addon.title}</h3>
+              <p className="mt-3 text-sm leading-6 text-slate-600">{addon.text}</p>
+              <p className="mt-3 text-xs leading-5 text-slate-400">{addon.note}</p>
+              <p className="mt-4 text-sm font-black text-[#2ABFAB]">{addon.from}</p>
             </article>
           ))}
         </div>
-        <p className="mt-8 text-center text-sm text-slate-500">
-          Todos os planos incluem implantação assistida.{" "}
-          <Link href="/planos" className="font-black text-[#2ABFAB] hover:underline">
-            Ver detalhes completos →
+        <div className="mt-8 text-center">
+          <Link
+            href="/planos#addons"
+            className="rounded-full border border-[#2ABFAB] px-8 py-4 text-sm font-black text-[#2ABFAB] transition hover:bg-[#2ABFAB] hover:text-white"
+          >
+            Ver recursos opcionais e preços →
           </Link>
-        </p>
+        </div>
       </section>
 
       {/* CTA final */}
@@ -421,13 +493,13 @@ export default async function HomePage() {
               href="/planos"
               className="rounded-full bg-[#2ABFAB] px-8 py-4 text-sm font-black text-white shadow-lg shadow-black/10 transition hover:-translate-y-0.5 hover:shadow-xl"
             >
-              Começar agora
+              Montar minha implantação
             </Link>
             <Link
               href="/contato"
               className="rounded-full border border-white/20 bg-white/10 px-8 py-4 text-sm font-black text-white transition hover:-translate-y-0.5 hover:bg-white/15"
             >
-              Falar com especialista
+              Agendar demonstração
             </Link>
           </div>
         </div>
