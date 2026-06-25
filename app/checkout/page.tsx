@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { BrandLogo } from "@/components/brand/brand-logo";
+import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 import { CheckoutForm } from "./checkout-form";
 
 type CheckoutPageProps = {
@@ -14,6 +15,15 @@ function normalizePlan(plan?: string) {
 export default async function CheckoutPage({ searchParams }: CheckoutPageProps) {
   const params = await searchParams;
   const initialPlan = normalizePlan(params?.plan);
+
+  const db = createSupabaseWriteClient();
+  const { data: paymentMethodRules } = await db
+    .from("billing_payment_method_rules")
+    .select("payment_method, enabled, display_order, is_recommended, fixed_fee_cents, percentage_fee, description")
+    .eq("enabled", true)
+    .order("display_order");
+
+  const rules = paymentMethodRules ?? [];
 
   return (
     <main className="min-h-screen bg-[#F8FAFC] text-slate-950">
@@ -43,7 +53,7 @@ export default async function CheckoutPage({ searchParams }: CheckoutPageProps) 
       </section>
 
       <section className="mx-auto max-w-7xl px-5 py-12 md:px-8">
-        <CheckoutForm initialPlan={initialPlan} />
+        <CheckoutForm initialPlan={initialPlan} paymentMethodRules={rules} />
       </section>
     </main>
   );

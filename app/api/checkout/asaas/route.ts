@@ -4,9 +4,12 @@ import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 const ASAAS_API_BASE_URL = process.env.ASAAS_API_BASE_URL || "https://api-sandbox.asaas.com/v3";
 const ASAAS_API_KEY = process.env.ASAAS_API_KEY || "";
 
+type PaymentMethod = "pix" | "credit_card" | "boleto";
+
 type CheckoutInput = {
   planSlug?: string;
   billingCycle?: "monthly" | "annual";
+  paymentMethod?: PaymentMethod;
   customerName?: string;
   customerEmail?: string;
   customerPhone?: string;
@@ -17,6 +20,12 @@ type CheckoutInput = {
   aiAddonEnabled?: boolean;
 };
 
+const ASAAS_BILLING_TYPE: Record<PaymentMethod, string> = {
+  pix: "PIX",
+  credit_card: "CREDIT_CARD",
+  boleto: "BOLETO",
+};
+
 function onlyDigits(value?: string) {
   return String(value || "").replace(/\D/g, "");
 }
@@ -24,6 +33,11 @@ function onlyDigits(value?: string) {
 function normalizePlanSlug(value?: string) {
   const slug = String(value || "").trim().toLowerCase();
   return ["starter", "professional", "business"].includes(slug) ? slug : "";
+}
+
+function normalizePaymentMethod(value?: string): PaymentMethod {
+  if (value === "credit_card" || value === "boleto") return value;
+  return "pix";
 }
 
 function normalizePositiveInteger(value: unknown) {
@@ -74,6 +88,7 @@ export async function POST(request: NextRequest) {
 
   const planSlug = normalizePlanSlug(input.planSlug);
   const billingCycle = input.billingCycle === "annual" ? "annual" : "monthly";
+  const paymentMethod = normalizePaymentMethod(input.paymentMethod);
   const customerName = String(input.customerName || "").trim();
   const customerEmail = String(input.customerEmail || "").trim().toLowerCase();
   const customerPhone = onlyDigits(input.customerPhone);
@@ -95,16 +110,22 @@ export async function POST(request: NextRequest) {
   }
 
   const db = createSupabaseWriteClient();
-  const { data: plan, error: planError } = await db
-    .from("billing_plan_price_rules")
-    .select("*")
-    .eq("plan_slug", planSlug)
-    .eq("is_active", true)
-    .maybeSingle();
 
-  if (planError || !plan) {
+  const [planResult, methodResult] = await Promise.all([
+    db.from("billing_plan_price_rules").select("*").eq("plan_slug", planSlug).eq("is_active", true).maybeSingle(),
+    db.from("billing_payment_method_rules").select("*").eq("payment_method", paymentMethod).eq("enabled", true).maybeSingle(),
+  ]);
+
+  if (planResult.error || !planResult.data) {
     return NextResponse.json({ ok: false, error: "Plano não encontrado." }, { status: 404 });
   }
+
+  if (methodResult.error || !methodResult.data) {
+    return NextResponse.json({ ok: false, error: "Método de pagamento indisponível." }, { status: 400 });
+  }
+
+  const plan = planResult.data;
+  const methodRule = methodResult.data;
 
   const baseAmount = billingCycle === "annual" ? money(plan.annual_price || plan.monthly_price * 10) : money(plan.monthly_price);
   const setupAmount = money(plan.setup_fee);
@@ -112,6 +133,12 @@ export async function POST(request: NextRequest) {
   const extraUsersAmount = money(extraUsers * Number(plan.extra_user_price || 0));
   const aiAddonAmount = aiAddonEnabled ? money(plan.ai_addon_price) : 0;
   const totalAmount = money(baseAmount + setupAmount + extraWhatsappAmount + extraUsersAmount + aiAddonAmount);
+
+  // Fee calculation: fixed (cents) + percentage of total
+  const fixedFee = money(methodRule.fixed_fee_cents / 100);
+  const percentageFee = money(totalAmount * Number(methodRule.percentage_fee || 0));
+  const paymentMethodFeeCents = Math.round((fixedFee + percentageFee) * 100);
+  const finalAmount = money(totalAmount + fixedFee + percentageFee);
 
   const { data: checkoutSession, error: sessionError } = await db
     .from("billing_checkout_sessions")
@@ -128,6 +155,9 @@ export async function POST(request: NextRequest) {
       extra_users: extraUsers,
       ai_addon_enabled: aiAddonEnabled,
       total_amount: totalAmount,
+      payment_method: paymentMethod,
+      payment_method_fee_cents: paymentMethodFeeCents,
+      final_amount: finalAmount,
       currency: "BRL",
       billing_provider: "asaas",
       status: "pending",
@@ -161,8 +191,8 @@ export async function POST(request: NextRequest) {
 
     const payment = await asaasRequest("/payments", {
       customer: customer.id,
-      billingType: "PIX",
-      value: totalAmount,
+      billingType: ASAAS_BILLING_TYPE[paymentMethod],
+      value: finalAmount,
       dueDate: dueDate.toISOString().slice(0, 10),
       description: `ShamarConnect ${plan.plan_name} - ${billingCycle === "annual" ? "anual" : "mensal"}`,
       externalReference: `shamar_checkout_${checkoutSession.id}`,
@@ -186,9 +216,12 @@ export async function POST(request: NextRequest) {
       ok: true,
       checkoutId: checkoutSession.id,
       provider: "asaas",
+      paymentMethod,
       paymentId: payment.id,
       paymentUrl,
-      totalAmount,
+      baseAmount: totalAmount,
+      feeCents: paymentMethodFeeCents,
+      finalAmount,
     });
   } catch (error) {
     await db
