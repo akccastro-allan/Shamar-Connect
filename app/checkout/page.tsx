@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { BrandLogo } from "@/components/brand/brand-logo";
-import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 import { CheckoutForm } from "./checkout-form";
 
 type CheckoutPageProps = {
@@ -16,14 +15,26 @@ export default async function CheckoutPage({ searchParams }: CheckoutPageProps) 
   const params = await searchParams;
   const initialPlan = normalizePlan(params?.plan);
 
-  const db = createSupabaseWriteClient();
-  const { data: paymentMethodRules } = await db
-    .from("billing_payment_method_rules")
-    .select("payment_method, enabled, display_order, is_recommended, fixed_fee_cents, percentage_fee, description")
-    .eq("enabled", true)
-    .order("display_order");
+  const DEFAULT_PAYMENT_RULES = [
+    { payment_method: "pix" as const, enabled: true, display_order: 1, is_recommended: true, fixed_fee_cents: 0, percentage_fee: 0, description: "Recomendado — confirmação mais rápida para iniciar sua implantação." },
+    { payment_method: "credit_card" as const, enabled: true, display_order: 2, is_recommended: false, fixed_fee_cents: 0, percentage_fee: 0, description: "Pague com cartão de crédito." },
+    { payment_method: "boleto" as const, enabled: true, display_order: 3, is_recommended: false, fixed_fee_cents: 500, percentage_fee: 0, description: "Boleto possui compensação mais lenta e pode incluir custo operacional adicional." },
+  ];
 
-  const rules = paymentMethodRules ?? [];
+  let rules = DEFAULT_PAYMENT_RULES;
+
+  try {
+    const { createSupabaseWriteClient } = await import("@/lib/supabase/server-write");
+    const db = createSupabaseWriteClient();
+    const { data } = await db
+      .from("billing_payment_method_rules")
+      .select("payment_method, enabled, display_order, is_recommended, fixed_fee_cents, percentage_fee, description")
+      .eq("enabled", true)
+      .order("display_order");
+    if (data && data.length > 0) rules = data as typeof DEFAULT_PAYMENT_RULES;
+  } catch {
+    // Supabase indisponível — usa regras padrão
+  }
 
   return (
     <main className="min-h-screen bg-[#F8FAFC] text-slate-950">
