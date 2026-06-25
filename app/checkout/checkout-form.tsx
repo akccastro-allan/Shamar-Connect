@@ -2,6 +2,18 @@
 
 import { useMemo, useState } from "react";
 
+type PaymentMethod = "pix" | "credit_card" | "boleto";
+
+type PaymentMethodRule = {
+  payment_method: PaymentMethod;
+  enabled: boolean;
+  display_order: number;
+  is_recommended: boolean;
+  fixed_fee_cents: number;
+  percentage_fee: number;
+  description: string;
+};
+
 const planLabels: Record<string, string> = {
   starter: "Starter",
   professional: "Professional",
@@ -14,13 +26,25 @@ const planPrices: Record<string, string> = {
   business: "R$ 597/mês + R$ 997 implantação",
 };
 
-type CheckoutFormProps = {
-  initialPlan: string;
+const METHOD_LABEL: Record<PaymentMethod, string> = {
+  pix: "PIX",
+  credit_card: "Cartão de crédito",
+  boleto: "Boleto bancário",
 };
 
-export function CheckoutForm({ initialPlan }: CheckoutFormProps) {
+type CheckoutFormProps = {
+  initialPlan: string;
+  paymentMethodRules: PaymentMethodRule[];
+};
+
+function money(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+export function CheckoutForm({ initialPlan, paymentMethodRules }: CheckoutFormProps) {
   const [planSlug, setPlanSlug] = useState(initialPlan);
   const [billingCycle, setBillingCycle] = useState("monthly");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("pix");
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -31,6 +55,11 @@ export function CheckoutForm({ initialPlan }: CheckoutFormProps) {
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
   const [error, setError] = useState("");
+
+  const enabledMethods = useMemo(
+    () => [...paymentMethodRules].filter((r) => r.enabled).sort((a, b) => a.display_order - b.display_order),
+    [paymentMethodRules],
+  );
 
   const summary = useMemo(() => {
     const basePrices: Record<string, number> = { starter: 149, professional: 297, business: 597 };
@@ -43,17 +72,16 @@ export function CheckoutForm({ initialPlan }: CheckoutFormProps) {
     const whatsapp = extraWhatsappConnections * extraWhatsappPrices[planSlug];
     const users = extraUsers * extraUserPrices[planSlug];
     const ai = aiAddonEnabled ? 79.9 : 0;
-    const total = base + setup + whatsapp + users + ai;
+    const subtotal = money(base + setup + whatsapp + users + ai);
 
-    return {
-      base,
-      setup,
-      whatsapp,
-      users,
-      ai,
-      total,
-    };
-  }, [aiAddonEnabled, billingCycle, extraUsers, extraWhatsappConnections, planSlug]);
+    const rule = enabledMethods.find((r) => r.payment_method === paymentMethod);
+    const fixedFee = rule ? money(rule.fixed_fee_cents / 100) : 0;
+    const percentageFee = rule ? money(subtotal * Number(rule.percentage_fee || 0)) : 0;
+    const fee = money(fixedFee + percentageFee);
+    const total = money(subtotal + fee);
+
+    return { base, setup, whatsapp, users, ai, subtotal, fee, total };
+  }, [aiAddonEnabled, billingCycle, extraUsers, extraWhatsappConnections, planSlug, paymentMethod, enabledMethods]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -74,6 +102,7 @@ export function CheckoutForm({ initialPlan }: CheckoutFormProps) {
         body: JSON.stringify({
           planSlug,
           billingCycle,
+          paymentMethod,
           customerName,
           customerEmail,
           customerPhone,
@@ -122,6 +151,51 @@ export function CheckoutForm({ initialPlan }: CheckoutFormProps) {
               <option value="annual">Anual com 2 mensalidades de desconto</option>
             </select>
           </label>
+
+          {/* Método de pagamento */}
+          <div className="grid gap-2">
+            <p className="text-sm font-bold text-slate-700">Forma de pagamento</p>
+            <div className="grid gap-3">
+              {enabledMethods.map((rule) => {
+                const selected = paymentMethod === rule.payment_method;
+                return (
+                  <label
+                    key={rule.payment_method}
+                    className={`flex cursor-pointer items-start gap-4 rounded-2xl border p-4 transition ${
+                      selected
+                        ? "border-[#2ABFAB] bg-[#2ABFAB]/5"
+                        : "border-slate-200 bg-white hover:border-slate-300"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="paymentMethod"
+                      value={rule.payment_method}
+                      checked={selected}
+                      onChange={() => setPaymentMethod(rule.payment_method)}
+                      className="mt-1 accent-[#2ABFAB]"
+                    />
+                    <div className="flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-black text-slate-800">{METHOD_LABEL[rule.payment_method]}</span>
+                        {rule.is_recommended && (
+                          <span className="rounded-full bg-[#2ABFAB]/15 px-2.5 py-0.5 text-xs font-black text-[#13796D]">
+                            Recomendado
+                          </span>
+                        )}
+                        {rule.fixed_fee_cents > 0 && (
+                          <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-700">
+                            + R$ {(rule.fixed_fee_cents / 100).toFixed(2).replace(".", ",")} de custo operacional
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-1 text-xs leading-5 text-slate-500">{rule.description}</p>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
 
           <label className="grid gap-2 text-sm font-bold text-slate-700">
             Nome/Razão social
@@ -182,11 +256,18 @@ export function CheckoutForm({ initialPlan }: CheckoutFormProps) {
           <div className="flex justify-between gap-4"><span>WhatsApps extras</span><strong>R$ {summary.whatsapp.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</strong></div>
           <div className="flex justify-between gap-4"><span>Usuários extras</span><strong>R$ {summary.users.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</strong></div>
           <div className="flex justify-between gap-4"><span>Módulo IA</span><strong>R$ {summary.ai.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</strong></div>
+          {summary.fee > 0 && (
+            <div className="flex justify-between gap-4 text-amber-700">
+              <span>Custo operacional ({METHOD_LABEL[paymentMethod]})</span>
+              <strong>R$ {summary.fee.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</strong>
+            </div>
+          )}
         </div>
 
         <div className="mt-8 rounded-3xl bg-slate-50 p-5">
-          <p className="text-sm font-bold text-slate-500">Total inicial</p>
+          <p className="text-sm font-bold text-slate-500">Total a pagar</p>
           <p className="mt-2 text-4xl font-black text-[#1B2F5B]">R$ {summary.total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+          <p className="mt-2 text-xs text-slate-500">via {METHOD_LABEL[paymentMethod]}</p>
         </div>
 
         <button disabled={status === "loading"} className="mt-7 w-full rounded-2xl bg-[#2ABFAB] px-5 py-4 text-sm font-black text-white shadow-lg shadow-[#2ABFAB]/20 transition hover:-translate-y-0.5 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60">
@@ -194,7 +275,7 @@ export function CheckoutForm({ initialPlan }: CheckoutFormProps) {
         </button>
 
         <p className="mt-5 text-xs leading-5 text-slate-500">
-          O pagamento é processado pelo Asaas. A ativação da conta depende da confirmação de pagamento e das regras de liberação do plano contratado.
+          O pagamento é processado pelo Asaas. A ativação da conta depende da confirmação de pagamento e implantação assistida.
         </p>
       </aside>
     </form>

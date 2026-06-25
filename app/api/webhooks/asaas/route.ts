@@ -217,6 +217,14 @@ export async function POST(request: NextRequest) {
       .eq("provider_payment_id", paymentId)
       .maybeSingle();
 
+    // Capture payment method from Asaas payload (billingType field)
+    const asaasMethod = String(payment.billingType || "").toUpperCase();
+    const paymentMethodFromAsaas =
+      asaasMethod === "PIX" ? "pix"
+      : asaasMethod === "CREDIT_CARD" ? "credit_card"
+      : asaasMethod === "BOLETO" ? "boleto"
+      : null;
+
     if (!existing) {
       await db.from("finance_payments").insert({
         amount: Number(payment.value || payment.netValue || 0),
@@ -231,6 +239,7 @@ export async function POST(request: NextRequest) {
         provider_payment_id: paymentId,
         provider_customer_id: customerId || null,
         checkout_session_id: checkoutId,
+        payment_method: paymentMethodFromAsaas,
         raw_payload: payload,
       });
     } else {
@@ -240,6 +249,7 @@ export async function POST(request: NextRequest) {
           status: normalizedStatus,
           paid_at: normalizedStatus === "paid" ? new Date().toISOString() : undefined,
           confirmed_at: normalizedStatus === "paid" ? new Date().toISOString() : undefined,
+          payment_method: paymentMethodFromAsaas ?? undefined,
           raw_payload: payload,
           updated_at: new Date().toISOString(),
         })
@@ -247,20 +257,14 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  let provisionResult = null;
-
+  // Pagamento confirmado: marcar como aguardando implantação.
+  // Ativação é manual — humano controla quando o cliente está pronto.
   if (checkoutId && normalizedStatus === "paid") {
-    // Try to activate subscription via RPC
-    const { data: rpcResult } = await db.rpc("activate_paid_checkout_subscription", {
-      checkout_session_id: checkoutId,
-    });
-
-    const rpcStatus = (rpcResult as Record<string, unknown>)?.status;
-
-    // If no tenant linked yet — auto-provision the client
-    if (rpcStatus === "paid_pending_activation") {
-      provisionResult = await provisionAndActivate(db, checkoutId);
-    }
+    await db
+      .from("billing_checkout_sessions")
+      .update({ status: "paid_pending_activation", updated_at: new Date().toISOString() })
+      .eq("id", checkoutId)
+      .eq("status", "paid");
   }
 
   return NextResponse.json({
@@ -269,7 +273,6 @@ export async function POST(request: NextRequest) {
     paymentId,
     checkoutId,
     status: normalizedStatus,
-    provisioned: provisionResult?.ok ?? null,
   });
 }
 
