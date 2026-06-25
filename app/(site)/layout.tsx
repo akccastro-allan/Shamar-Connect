@@ -9,6 +9,7 @@ import { getCurrentSession } from "@/lib/auth/session";
 const navLinks = [
   { href: "/", label: "Início" },
   { href: "/planos", label: "Planos" },
+  { href: "/checkout?plan=professional", label: "Comprar" },
   { href: "/sobre", label: "Sobre" },
   { href: "/blog", label: "Blog" },
   { href: "/contato", label: "Contato" },
@@ -64,10 +65,10 @@ export default async function SiteLayout({ children }: { children: ReactNode }) 
             ) : (
               <>
                 <Link
-                  href="/planos"
+                  href="/checkout?plan=professional"
                   className="hidden rounded-full border border-[#2ABFAB] px-4 py-2 text-sm font-black text-[#2ABFAB] transition hover:bg-[#2ABFAB] hover:text-white sm:inline-flex"
                 >
-                  Ver planos
+                  Comprar
                 </Link>
                 <Link
                   href="/login"
