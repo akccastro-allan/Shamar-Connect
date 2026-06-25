@@ -84,7 +84,9 @@ export async function ingestInboundMessage(
 ): Promise<"processed" | "duplicate"> {
   const now = new Date().toISOString();
 
-  // 1) Idempotência por canal (evento já processado?).
+  // 1) Idempotência por canal (evento já processado?). O registro do evento é
+  // gravado SÓ NO FINAL (após persistir a mensagem). Assim, se algo falhar no
+  // meio, o reenvio do provider reprocessa em vez de ficar preso em "processed".
   const { data: seen } = await db
     .from("provider_events")
     .select("id")
@@ -93,18 +95,6 @@ export async function ingestInboundMessage(
     .eq("external_event_id", msg.externalEventId)
     .maybeSingle();
   if (seen) return "duplicate";
-
-  await db.from("provider_events").insert({
-    provider: ch.provider,
-    event: "messages.inbound",
-    external_event_id: msg.externalEventId,
-    channel_id: ch.channelId,
-    tenant_id: ch.tenantId,
-    organization_id: ch.organizationId,
-    payload: msg.rawPayload,
-    processing_status: "processed",
-    created_at: now,
-  });
 
   // 2) Contato por identidade de canal (grupos não têm contato).
   let contactId: string | null = null;
@@ -165,11 +155,31 @@ export async function ingestInboundMessage(
   // 4) Mensagem (única por channel_id + external_message_id).
   const { data: existingMsg } = await db
     .from("whatsapp_messages")
-    .select("id")
+    .select("id, has_media")
     .eq("channel_id", ch.channelId)
     .eq("external_message_id", msg.externalMessageId)
     .maybeSingle();
-  if (existingMsg?.id) return "duplicate";
+
+  if (existingMsg?.id) {
+    // Mensagem já existe (reenvio). Se trouxe mídia e ainda não estava marcada,
+    // atualiza os campos de mídia para não perder a figurinha/áudio.
+    if (msg.media && !existingMsg.has_media) {
+      await db
+        .from("whatsapp_messages")
+        .update({
+          message_type: msg.messageType,
+          has_media: true,
+          media_kind: msg.media.mediaType,
+          media_status: "pending_download",
+          media_mime_type: msg.media.mimetype,
+          media_duration_seconds: msg.media.durationSeconds,
+        })
+        .eq("id", existingMsg.id);
+      await ensureMessageMedia(db, ch, existingMsg.id, msg.media);
+    }
+    await recordProcessedEvent(db, ch, msg, now);
+    return "duplicate";
+  }
 
   const ts = msg.timestampMs ? new Date(msg.timestampMs).toISOString() : now;
   const { data: insertedMsg, error: msgError } = await db
@@ -190,7 +200,8 @@ export async function ingestInboundMessage(
       message_type: msg.messageType,
       has_media: Boolean(msg.media),
       media_kind: msg.media?.mediaType ?? null,
-      media_status: msg.media ? "pending" : "none",
+      // CHECK real: none|pending_download|downloading|stored|download_failed|skipped.
+      media_status: msg.media ? "pending_download" : "none",
       media_mime_type: msg.media?.mimetype ?? null,
       media_duration_seconds: msg.media?.durationSeconds ?? null,
       raw_payload: msg.rawPayload,
@@ -205,7 +216,30 @@ export async function ingestInboundMessage(
     await ensureMessageMedia(db, ch, insertedMsg.id, msg.media);
   }
 
+  // 5) Só agora marca o evento como processado (idempotência pós-sucesso).
+  await recordProcessedEvent(db, ch, msg, now);
+
   return "processed";
+}
+
+/** Registra o provider_event como processado (idempotência por canal). */
+async function recordProcessedEvent(
+  db: Db,
+  ch: ChannelResolution,
+  msg: InboundMessage,
+  now: string,
+): Promise<void> {
+  await db.from("provider_events").insert({
+    provider: ch.provider,
+    event: "messages.inbound",
+    external_event_id: msg.externalEventId,
+    channel_id: ch.channelId,
+    tenant_id: ch.tenantId,
+    organization_id: ch.organizationId,
+    payload: msg.rawPayload,
+    processing_status: "processed",
+    created_at: now,
+  });
 }
 
 /**
