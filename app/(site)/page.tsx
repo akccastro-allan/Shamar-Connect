@@ -77,7 +77,7 @@ const segments = [
   {
     icon: "🔧",
     title: "Oficinas e autopeças",
-    text: "Orçamento recebido, responsável definido, retorno agendado — sem perder venda por esquecimento.",
+    text: "Organiza a entrada, o pré-orçamento e o retorno ao cliente — sem substituir o sistema que a empresa já usa.",
   },
   {
     icon: "🍕",
@@ -316,6 +316,49 @@ export default async function HomePage() {
                 </div>
               </article>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Oficinas e autopeças — seção dedicada */}
+      <section className="mx-auto max-w-7xl px-5 py-20 md:px-8">
+        <div className="overflow-hidden rounded-[2.5rem] border border-slate-200 bg-white">
+          <div className="grid gap-0 md:grid-cols-[1fr_1fr]">
+            <div className="bg-[#1B2F5B] px-8 py-12 md:px-12 md:py-14">
+              <div className="inline-flex rounded-full bg-[#2ABFAB]/20 px-4 py-2 text-sm font-black text-[#2ABFAB]">
+                Oficinas e autopeças
+              </div>
+              <h2 className="mt-5 text-2xl font-black leading-tight tracking-tight text-white md:text-4xl">
+                Organiza a entrada. Trabalha junto com o sistema que você já usa.
+              </h2>
+              <p className="mt-5 text-base leading-8 text-white/70">
+                O Shamar Connect não substitui o ERP ou sistema de gestão da oficina. O objetivo é parar de perder clientes na entrada, organizar orçamentos, definir responsáveis e acompanhar retornos.
+              </p>
+              <p className="mt-4 text-base leading-8 text-white/70">
+                Conforme a operação amadurece, o Shamar pode integrar com o sistema atual da empresa — estoque, produtos, pedidos e serviços.
+              </p>
+            </div>
+            <div className="px-8 py-12 md:px-12 md:py-14">
+              <p className="text-xs font-black uppercase tracking-[0.2em] text-[#C9952A]">O que organizamos primeiro</p>
+              <ul className="mt-6 space-y-4">
+                {[
+                  { icon: "📥", title: "Atendimento de entrada", text: "Toda mensagem recebida tem responsável e status visível para a equipe." },
+                  { icon: "📋", title: "Pré-orçamento", text: "O cliente que pede orçamento entra na fila com próximo passo definido." },
+                  { icon: "🧍", title: "Cliente presencial registrado", text: "Quem aparece na loja também pode ser registrado com histórico e retorno agendado." },
+                  { icon: "🔁", title: "Retorno de orçamento", text: "Nenhuma venda esfria por esquecimento — a equipe acompanha cada pendência." },
+                  { icon: "🔗", title: "Integração futura com sistema atual", text: "Quando a operação estiver pronta, o Shamar conversa com o sistema de gestão da oficina." },
+                  { icon: "🛒", title: "E-commerce de peças e serviços", text: "Fase adicional para quem quer ampliar o canal de vendas digital." },
+                ].map((item) => (
+                  <li key={item.title} className="flex items-start gap-4">
+                    <span className="mt-0.5 text-xl">{item.icon}</span>
+                    <div>
+                      <p className="text-sm font-black text-[#1B2F5B]">{item.title}</p>
+                      <p className="mt-1 text-sm leading-6 text-slate-500">{item.text}</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
         </div>
       </section>
