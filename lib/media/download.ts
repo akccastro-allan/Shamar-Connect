@@ -29,30 +29,37 @@ export async function ensureMediaDownloaded(
     return { success: true, storagePath: media.storage_path };
   }
 
-  // 3) Marca como "downloading" para evitar corrida paralela
+  // Se está em downloading por outro processo, aguarda (retorna pending para a UI retentar)
+  if (media.download_status === "downloading") {
+    return { success: false, error: "Download em andamento. Tente novamente em instantes." };
+  }
+
+  // 3) Marca como "downloading" (funciona para pending e failed — permite retry no botão)
   await db
     .from("message_media")
-    .update({ download_status: "downloading" })
-    .eq("id", mediaId)
-    .eq("download_status", "pending"); // só atualiza se ainda pending (idempotência)
+    .update({ download_status: "downloading", download_error: null })
+    .eq("id", mediaId);
 
   try {
     const msgId = messageId || media.message_id;
     const base64Data = await resolveBase64(db, media, msgId);
 
     // 4) Upload no bucket
-    const ext = mimeToExt(media.mime_type);
+    // Normaliza o content-type: "audio/ogg; codecs=opus" → "audio/ogg"
+    // O Supabase compara contra allowed_mime_types sem sufixo de codecs.
+    const normalizedMime = normalizeMime(media.mime_type);
+    const ext = mimeToExt(normalizedMime);
     const storagePath = `msg/${msgId}/${mediaId}.${ext}`;
 
     const { error: uploadError } = await db.storage
       .from("shamar-message-media")
       .upload(storagePath, Buffer.from(base64Data, "base64"), {
-        contentType: media.mime_type || "application/octet-stream",
+        contentType: normalizedMime,
         upsert: true,
       });
 
     if (uploadError) {
-      await markFailed(db, mediaId, msgId, `Upload falhou: ${uploadError.message}`);
+      await markFailed(db, mediaId, msgId, `Upload: ${uploadError.message}`);
       return { success: false, error: "Não foi possível armazenar a mídia agora." };
     }
 
@@ -148,6 +155,12 @@ async function markFailed(db: SupabaseClient, mediaId: string, messageId: string
     .eq("id", messageId);
 }
 
+/** Remove sufixo de codecs: "audio/ogg; codecs=opus" → "audio/ogg". */
+function normalizeMime(mime?: string | null): string {
+  if (!mime) return "application/octet-stream";
+  return mime.split(";")[0].trim();
+}
+
 function mimeToExt(mime?: string | null): string {
   if (!mime) return "bin";
   if (mime.includes("webp")) return "webp";
@@ -156,6 +169,7 @@ function mimeToExt(mime?: string | null): string {
   if (mime.includes("wav")) return "wav";
   if (mime.includes("webm")) return "webm";
   if (mime.includes("m4a") || mime.includes("mp4")) return "m4a";
+  if (mime.includes("aac")) return "aac";
   if (mime.includes("png")) return "png";
   if (mime.includes("jpeg") || mime.includes("jpg")) return "jpg";
   if (mime.includes("pdf")) return "pdf";

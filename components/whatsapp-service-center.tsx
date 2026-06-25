@@ -183,6 +183,109 @@ function useMediaUrl(messageId: string) {
   return { url, loading, error, retry };
 }
 
+/**
+ * Card de áudio com player + transcrição sob demanda.
+ * "Ver transcrição" / "Reprocessar" disparam POST /transcribe.
+ * Nunca transcreve automaticamente ao abrir.
+ */
+function AudioCard({
+  message,
+  url,
+  loading,
+  onRetryMedia,
+  duration,
+}: {
+  message: Message;
+  url: string | null;
+  loading: boolean;
+  onRetryMedia: () => void;
+  duration: string;
+}) {
+  const [transcribing, setTranscribing] = useState(false);
+  const [localText, setLocalText] = useState<string | null>(message.transcription_text || null);
+  const [localStatus, setLocalStatus] = useState<string | null>(message.transcription_status || null);
+  const [localError, setLocalError] = useState<string | null>(message.transcription_error || null);
+
+  async function requestTranscription() {
+    setTranscribing(true);
+    setLocalStatus("processing");
+    setLocalError(null);
+    try {
+      const r = await fetch(`/api/whatsapp-messages/messages/${message.id}/transcribe`, {
+        method: "POST",
+      });
+      const data = (await r.json()) as { ok: boolean; status?: string; text?: string | null; error?: string | null };
+      if (data.ok && data.text) {
+        setLocalText(data.text);
+        setLocalStatus("done");
+      } else {
+        setLocalStatus("failed");
+        setLocalError(data.error || "Não foi possível transcrever.");
+      }
+    } catch {
+      setLocalStatus("failed");
+      setLocalError("Não foi possível transcrever. Tente novamente.");
+    } finally {
+      setTranscribing(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border bg-blue-50 p-3">
+      <span className="text-xs font-medium text-slate-700">🎧 Áudio recebido — {duration}</span>
+
+      {url ? (
+        <audio controls className="h-8 w-full">
+          <source src={url} type={message.media_mime_type || "audio/ogg"} />
+          Seu navegador não suporta áudio.
+        </audio>
+      ) : loading ? (
+        <p className="text-xs text-slate-500">Carregando áudio…</p>
+      ) : (
+        <MediaError onRetry={onRetryMedia} />
+      )}
+
+      {/* Seção de transcrição */}
+      {localStatus === "done" && localText ? (
+        <div className="rounded-lg bg-white p-2 text-xs">
+          <p className="text-slate-700">{localText}</p>
+          <p className="mt-1 text-[10px] italic text-slate-500">
+            Transcrição automática. Confira o áudio em caso de dúvida.
+          </p>
+          <button
+            onClick={requestTranscription}
+            disabled={transcribing}
+            className="mt-1 text-[10px] font-medium text-blue-600 hover:underline disabled:opacity-50"
+          >
+            Reprocessar
+          </button>
+        </div>
+      ) : localStatus === "processing" || transcribing ? (
+        <p className="text-xs text-slate-600">Transcrevendo…</p>
+      ) : localStatus === "failed" ? (
+        <div className="flex flex-col gap-1">
+          <p className="text-xs text-red-600">{localError || "Falha ao transcrever."}</p>
+          <button
+            onClick={requestTranscription}
+            disabled={transcribing}
+            className="self-start text-xs font-medium text-blue-600 hover:underline disabled:opacity-50"
+          >
+            Reprocessar
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={requestTranscription}
+          disabled={transcribing}
+          className="self-start text-xs font-medium text-blue-600 hover:underline disabled:opacity-50"
+        >
+          Ver transcrição
+        </button>
+      )}
+    </div>
+  );
+}
+
 /** Bloco de erro padrão para todas as mídias. */
 function MediaError({ onRetry }: { onRetry: () => void }) {
   return (
@@ -240,31 +343,13 @@ function MediaCard({ message }: { message: Message }) {
   if (kind === "audio" || kind === "ptt") {
     const duration = message.media_duration_seconds ? `${Math.round(message.media_duration_seconds)}s` : "—";
     return (
-      <div className="flex flex-col gap-2 rounded-xl border bg-blue-50 p-3">
-        <span className="text-xs font-medium text-slate-700">🎧 Áudio recebido — {duration}</span>
-        {url ? (
-          <audio controls className="h-8 w-full">
-            <source src={url} type={message.media_mime_type || "audio/ogg"} />
-            Seu navegador não suporta áudio.
-          </audio>
-        ) : loading ? (
-          <p className="text-xs text-slate-500">Carregando áudio…</p>
-        ) : (
-          <MediaError onRetry={retry} />
-        )}
-        {message.transcription_text ? (
-          <div className="rounded-lg bg-white p-2 text-xs">
-            <p className="text-slate-700">{message.transcription_text}</p>
-            <p className="mt-1 text-[10px] italic text-slate-500">
-              Transcrição automática. Confira o áudio em caso de dúvida.
-            </p>
-          </div>
-        ) : message.transcription_status === "processing" ? (
-          <p className="text-xs text-slate-600">Transcrevendo…</p>
-        ) : message.transcription_status === "failed" ? (
-          <p className="text-xs text-red-600">Falha ao transcrever. {message.transcription_error}</p>
-        ) : null}
-      </div>
+      <AudioCard
+        message={message}
+        url={url}
+        loading={loading}
+        onRetryMedia={retry}
+        duration={duration}
+      />
     );
   }
 
