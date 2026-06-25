@@ -68,6 +68,14 @@ type Message = {
   raw_payload?: RawPayload;
   media_summary?: string | null;
   has_media?: boolean | null;
+  media_kind?: string | null;
+  media_status?: string | null;
+  media_duration_seconds?: number | null;
+  media_mime_type?: string | null;
+  transcription_status?: string | null;
+  transcription_text?: string | null;
+  transcription_error?: string | null;
+  delivery_status?: string | null;
   created_at: string;
 };
 
@@ -145,6 +153,128 @@ function getMediaLabel(message: Message) {
   if (type === "video") return "Vídeo";
   if (type === "document") return "Documento";
   return message.media_summary || "Mídia";
+}
+
+/** Hook que busca e cacheia signed URL para mídia. */
+function useMediaUrl(messageId: string, mediaId?: string) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!mediaId) return;
+    setLoading(true);
+    fetch(`/api/whatsapp-messages/media/${mediaId}`)
+      .then((r) => {
+        if (!r.ok) throw new Error(r.statusText);
+        return r.json() as Promise<{ ok: boolean; url?: string; error?: string }>;
+      })
+      .then((data) => {
+        if (data.ok && data.url) setUrl(data.url);
+        else setError(data.error || "Falha ao carregar mídia.");
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : "Erro ao carregar mídia."))
+      .finally(() => setLoading(false));
+  }, [mediaId]);
+
+  return { url, loading, error };
+}
+
+/**
+ * Componente MediaCard — renderiza figurinha/imagem/áudio/documento com signed URL.
+ * Usa media_kind do PR 1 para definir qual tipo renderizar.
+ */
+function MediaCard({ message, mediaId }: { message: Message; mediaId: string }) {
+  const { url, loading, error } = useMediaUrl(message.id, mediaId);
+  const kind = message.media_kind || message.message_type;
+
+  if (kind === "sticker") {
+    return (
+      <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed bg-slate-50 p-4">
+        {url ? (
+          <img src={url} alt="Figurinha" className="h-24 w-24 object-contain" />
+        ) : error ? (
+          <p className="text-xs text-red-600">Falha: {error}</p>
+        ) : (
+          <p className="text-xs text-slate-500">Figurinha (carregando…)</p>
+        )}
+      </div>
+    );
+  }
+
+  if (kind === "image") {
+    return (
+      <div className="flex flex-col gap-2">
+        {url ? (
+          <img src={url} alt="Imagem" className="max-h-48 max-w-[220px] rounded-xl object-contain" />
+        ) : error ? (
+          <div className="text-xs text-slate-600">Imagem recebida, mas não foi possível carregar. {error}</div>
+        ) : (
+          <div className="text-xs text-slate-500">Imagem (carregando…)</div>
+        )}
+        {message.body && !message.body.startsWith("[") ? <p className="whitespace-pre-wrap text-sm leading-6">{message.body}</p> : null}
+      </div>
+    );
+  }
+
+  if (kind === "audio" || kind === "ptt") {
+    const duration = message.media_duration_seconds ? `${Math.round(message.media_duration_seconds)}s` : "—";
+    return (
+      <div className="flex flex-col gap-2 rounded-xl border bg-blue-50 p-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium text-slate-700">🎧 Áudio recebido — {duration}</span>
+        </div>
+        {url ? (
+          <audio controls className="h-8 w-full">
+            <source src={url} type={message.media_mime_type || "audio/ogg"} />
+            Seu navegador não suporta áudio.
+          </audio>
+        ) : error ? (
+          <p className="text-xs text-red-600">Falha ao carregar: {error}</p>
+        ) : (
+          <p className="text-xs text-slate-500">Carregando áudio…</p>
+        )}
+        {message.transcription_text ? (
+          <div className="rounded-lg bg-white p-2 text-xs">
+            <p className="text-slate-700">{message.transcription_text}</p>
+            <p className="mt-1 text-[10px] italic text-slate-500">*Transcrição automática. Confira o áudio em caso de dúvida.*</p>
+          </div>
+        ) : message.transcription_status === "processing" ? (
+          <p className="text-xs text-slate-600">Transcrevendo…</p>
+        ) : message.transcription_status === "failed" ? (
+          <p className="text-xs text-red-600">Falha ao transcrever: {message.transcription_error}</p>
+        ) : (
+          <button className="text-xs font-medium text-blue-600 hover:underline">Ver transcrição</button>
+        )}
+      </div>
+    );
+  }
+
+  if (kind === "document") {
+    return (
+      <div className="flex items-center gap-2 rounded-xl border bg-amber-50 p-3">
+        <FileText className="h-5 w-5 text-amber-600" />
+        <div className="flex-1">
+          <p className="text-xs font-medium text-slate-700">Documento recebido</p>
+          <p className="text-[10px] text-slate-500">{message.media_mime_type || "Tipo desconhecido"}</p>
+        </div>
+        {url ? (
+          <a href={url} download className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-100">Baixar</a>
+        ) : error ? (
+          <p className="text-xs text-red-600">{error}</p>
+        ) : (
+          <p className="text-xs text-slate-500">Carregando…</p>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2 rounded-xl border border-dashed bg-slate-50 p-3 text-xs text-slate-600">
+      <FileText className="h-4 w-4" />
+      <span>Mídia recebida</span>
+    </div>
+  );
 }
 
 function parseTime(value?: string | null) {
@@ -927,10 +1057,15 @@ export function WhatsappServiceCenter() {
                 const outbound = message.direction === "outbound";
                 const mediaSource = getInlineMediaSource(message);
                 const mediaLabel = getMediaLabel(message);
+                // Regra: se tem has_media=true (novo), usar MediaCard com signed URL.
+                // Fallback para old inline media (raw_payload.media.data com base64 embutido).
+                const showNewMediaCard = message.has_media && message.media_kind;
                 return (
                   <div key={message.id} className={`flex ${outbound ? "justify-end" : "justify-start"}`}>
                     <div className={`max-w-[78%] rounded-2xl px-4 py-3 text-sm shadow-sm ${outbound ? "bg-emerald-600 text-white" : "bg-white text-slate-900"}`}>
-                      {mediaSource ? (
+                      {showNewMediaCard ? (
+                        <MediaCard message={message} mediaId={message.id} />
+                      ) : mediaSource ? (
                         <div className="space-y-2">
                           <img src={mediaSource} alt={mediaLabel} className="max-h-48 max-w-[220px] rounded-xl object-contain" />
                           {message.body && !message.body.startsWith("[") ? <p className="whitespace-pre-wrap leading-6">{message.body}</p> : null}
