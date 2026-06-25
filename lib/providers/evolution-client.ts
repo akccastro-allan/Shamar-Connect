@@ -151,15 +151,16 @@ function extractMedia(message: Record<string, unknown>): EvolutionMedia | null {
     const m = asRecord(message[key]);
     if (m && Object.keys(m).length) {
       const sha = typeof m["fileSha256"] === "string" ? (m["fileSha256"] as string) : null;
+      const mkey = typeof m["mediaKey"] === "string" ? (m["mediaKey"] as string) : null;
       return {
         mediaType,
         mimetype: typeof m["mimetype"] === "string" ? (m["mimetype"] as string) : null,
         url: typeof m["url"] === "string" ? (m["url"] as string) : null,
-        mediaKey: typeof m["mediaKey"] === "string" ? (m["mediaKey"] as string) : null,
+        mediaKey: mkey,
         directPath: typeof m["directPath"] === "string" ? (m["directPath"] as string) : null,
         fileSha256: sha,
         durationSeconds: mediaType === "audio" ? Number(m["seconds"] || 0) || null : null,
-        providerMediaId: sha,
+        providerMediaId: sha || mkey,
       };
     }
   }
