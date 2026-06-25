@@ -155,37 +155,55 @@ function getMediaLabel(message: Message) {
   return message.media_summary || "Mídia";
 }
 
-/** Hook que busca e cacheia signed URL para mídia. */
-function useMediaUrl(messageId: string, mediaId?: string) {
+/** Hook que busca signed URL para mídia. retry() recarrega. */
+function useMediaUrl(messageId: string) {
   const [url, setUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    if (!mediaId) return;
+    if (!messageId) return;
     setLoading(true);
-    fetch(`/api/whatsapp-messages/media/${mediaId}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(r.statusText);
-        return r.json() as Promise<{ ok: boolean; url?: string; error?: string }>;
-      })
+    setError(null);
+    setUrl(null);
+    fetch(`/api/whatsapp-messages/media/${messageId}`)
+      .then((r) => r.json() as Promise<{ ok: boolean; url?: string; error?: string }>)
       .then((data) => {
         if (data.ok && data.url) setUrl(data.url);
-        else setError(data.error || "Falha ao carregar mídia.");
+        else setError(data.error || "Não foi possível carregar a mídia agora.");
       })
-      .catch((e) => setError(e instanceof Error ? e.message : "Erro ao carregar mídia."))
+      .catch(() => setError("Não foi possível carregar a mídia agora."))
       .finally(() => setLoading(false));
-  }, [mediaId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messageId, attempt]);
 
-  return { url, loading, error };
+  const retry = () => setAttempt((n) => n + 1);
+
+  return { url, loading, error, retry };
+}
+
+/** Bloco de erro padrão para todas as mídias. */
+function MediaError({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border border-dashed bg-slate-50 p-3 text-center">
+      <p className="text-xs text-slate-600">Mídia recebida, mas não foi possível carregar agora.</p>
+      <button
+        onClick={onRetry}
+        className="mx-auto rounded-lg bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-200"
+      >
+        Tentar novamente
+      </button>
+    </div>
+  );
 }
 
 /**
  * Componente MediaCard — renderiza figurinha/imagem/áudio/documento com signed URL.
- * Usa media_kind do PR 1 para definir qual tipo renderizar.
+ * Recebe message.id (whatsapp_messages.id); a rota /media/[id] resolve o message_media.
  */
-function MediaCard({ message, mediaId }: { message: Message; mediaId: string }) {
-  const { url, loading, error } = useMediaUrl(message.id, mediaId);
+function MediaCard({ message }: { message: Message }) {
+  const { url, loading, error, retry } = useMediaUrl(message.id);
   const kind = message.media_kind || message.message_type;
 
   if (kind === "sticker") {
@@ -193,10 +211,10 @@ function MediaCard({ message, mediaId }: { message: Message; mediaId: string }) 
       <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed bg-slate-50 p-4">
         {url ? (
           <img src={url} alt="Figurinha" className="h-24 w-24 object-contain" />
-        ) : error ? (
-          <p className="text-xs text-red-600">Falha: {error}</p>
-        ) : (
+        ) : loading ? (
           <p className="text-xs text-slate-500">Figurinha (carregando…)</p>
+        ) : (
+          <MediaError onRetry={retry} />
         )}
       </div>
     );
@@ -207,12 +225,14 @@ function MediaCard({ message, mediaId }: { message: Message; mediaId: string }) 
       <div className="flex flex-col gap-2">
         {url ? (
           <img src={url} alt="Imagem" className="max-h-48 max-w-[220px] rounded-xl object-contain" />
-        ) : error ? (
-          <div className="text-xs text-slate-600">Imagem recebida, mas não foi possível carregar. {error}</div>
+        ) : loading ? (
+          <p className="text-xs text-slate-500">Imagem (carregando…)</p>
         ) : (
-          <div className="text-xs text-slate-500">Imagem (carregando…)</div>
+          <MediaError onRetry={retry} />
         )}
-        {message.body && !message.body.startsWith("[") ? <p className="whitespace-pre-wrap text-sm leading-6">{message.body}</p> : null}
+        {message.body && !message.body.startsWith("[") ? (
+          <p className="whitespace-pre-wrap text-sm leading-6">{message.body}</p>
+        ) : null}
       </div>
     );
   }
@@ -221,31 +241,29 @@ function MediaCard({ message, mediaId }: { message: Message; mediaId: string }) 
     const duration = message.media_duration_seconds ? `${Math.round(message.media_duration_seconds)}s` : "—";
     return (
       <div className="flex flex-col gap-2 rounded-xl border bg-blue-50 p-3">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-slate-700">🎧 Áudio recebido — {duration}</span>
-        </div>
+        <span className="text-xs font-medium text-slate-700">🎧 Áudio recebido — {duration}</span>
         {url ? (
           <audio controls className="h-8 w-full">
             <source src={url} type={message.media_mime_type || "audio/ogg"} />
             Seu navegador não suporta áudio.
           </audio>
-        ) : error ? (
-          <p className="text-xs text-red-600">Falha ao carregar: {error}</p>
-        ) : (
+        ) : loading ? (
           <p className="text-xs text-slate-500">Carregando áudio…</p>
+        ) : (
+          <MediaError onRetry={retry} />
         )}
         {message.transcription_text ? (
           <div className="rounded-lg bg-white p-2 text-xs">
             <p className="text-slate-700">{message.transcription_text}</p>
-            <p className="mt-1 text-[10px] italic text-slate-500">*Transcrição automática. Confira o áudio em caso de dúvida.*</p>
+            <p className="mt-1 text-[10px] italic text-slate-500">
+              Transcrição automática. Confira o áudio em caso de dúvida.
+            </p>
           </div>
         ) : message.transcription_status === "processing" ? (
           <p className="text-xs text-slate-600">Transcrevendo…</p>
         ) : message.transcription_status === "failed" ? (
-          <p className="text-xs text-red-600">Falha ao transcrever: {message.transcription_error}</p>
-        ) : (
-          <button className="text-xs font-medium text-blue-600 hover:underline">Ver transcrição</button>
-        )}
+          <p className="text-xs text-red-600">Falha ao transcrever. {message.transcription_error}</p>
+        ) : null}
       </div>
     );
   }
@@ -259,11 +277,15 @@ function MediaCard({ message, mediaId }: { message: Message; mediaId: string }) 
           <p className="text-[10px] text-slate-500">{message.media_mime_type || "Tipo desconhecido"}</p>
         </div>
         {url ? (
-          <a href={url} download className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-100">Baixar</a>
-        ) : error ? (
-          <p className="text-xs text-red-600">{error}</p>
-        ) : (
+          <a href={url} download className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-100">
+            Baixar
+          </a>
+        ) : loading ? (
           <p className="text-xs text-slate-500">Carregando…</p>
+        ) : (
+          <button onClick={retry} className="text-xs font-medium text-blue-600 hover:underline">
+            Tentar novamente
+          </button>
         )}
       </div>
     );
@@ -1064,7 +1086,7 @@ export function WhatsappServiceCenter() {
                   <div key={message.id} className={`flex ${outbound ? "justify-end" : "justify-start"}`}>
                     <div className={`max-w-[78%] rounded-2xl px-4 py-3 text-sm shadow-sm ${outbound ? "bg-emerald-600 text-white" : "bg-white text-slate-900"}`}>
                       {showNewMediaCard ? (
-                        <MediaCard message={message} mediaId={message.id} />
+                        <MediaCard message={message} />
                       ) : mediaSource ? (
                         <div className="space-y-2">
                           <img src={mediaSource} alt={mediaLabel} className="max-h-48 max-w-[220px] rounded-xl object-contain" />
