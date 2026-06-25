@@ -233,9 +233,8 @@ export async function POST(request: NextRequest) {
       .eq("provider_payment_id", paymentId)
       .maybeSingle();
 
-    // finance_payments usa "confirmed" (constraint: pending/confirmed/failed/cancelled/refunded/chargeback)
-    const fpStatus = normalizedStatus === "paid" ? "confirmed" : normalizedStatus;
-    const isConfirmed = fpStatus === "confirmed";
+    const fpStatus = normalizedStatus;
+    const isConfirmed = fpStatus === "paid";
 
     if (!existing) {
       await db.from("finance_payments").insert({
