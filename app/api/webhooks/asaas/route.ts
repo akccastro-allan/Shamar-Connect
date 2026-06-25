@@ -233,13 +233,17 @@ export async function POST(request: NextRequest) {
       .eq("provider_payment_id", paymentId)
       .maybeSingle();
 
+    // finance_payments usa "confirmed" (constraint: pending/confirmed/failed/cancelled/refunded/chargeback)
+    const fpStatus = normalizedStatus === "paid" ? "confirmed" : normalizedStatus;
+    const isConfirmed = fpStatus === "confirmed";
+
     if (!existing) {
       await db.from("finance_payments").insert({
         amount: Number(payment.value || payment.netValue || 0),
         currency: "BRL",
-        status: normalizedStatus,
-        paid_at: normalizedStatus === "paid" ? now : null,
-        confirmed_at: normalizedStatus === "paid" ? now : null,
+        status: fpStatus,
+        paid_at: isConfirmed ? now : null,
+        confirmed_at: isConfirmed ? now : null,
         transaction_id: paymentId,
         external_reference: externalReference || null,
         gateway_name: "asaas",
@@ -251,10 +255,10 @@ export async function POST(request: NextRequest) {
         raw_payload: payload,
       });
     } else {
-      // Nunca regride de "paid" para status anterior.
-      const alreadyPaid = existing.status === "paid";
-      const statusUpdate = alreadyPaid ? {} : { status: normalizedStatus };
-      const paidFields = normalizedStatus === "paid"
+      // Nunca regride de "confirmed" para status anterior.
+      const alreadyConfirmed = existing.status === "confirmed";
+      const statusUpdate = alreadyConfirmed ? {} : { status: fpStatus };
+      const paidFields = isConfirmed
         ? { paid_at: now, confirmed_at: now }
         : {};
 
