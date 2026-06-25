@@ -14,6 +14,27 @@ type PaymentMethodRule = {
   description: string;
 };
 
+type AddonSlug =
+  | "ai_assist"
+  | "transcription_start"
+  | "transcription_volume"
+  | "call_recording_100h"
+  | "call_recording_500h"
+  | "call_recording_1000h"
+  | "storage_10gb"
+  | "storage_50gb"
+  | "storage_100gb"
+  | "agent_local";
+
+type Addon = {
+  slug: AddonSlug;
+  name: string;
+  description: string;
+  price: number;
+  businessPrice?: number;
+  note?: string;
+};
+
 const planLabels: Record<string, string> = {
   starter: "Starter",
   professional: "Professional",
@@ -32,6 +53,76 @@ const METHOD_LABEL: Record<PaymentMethod, string> = {
   boleto: "Boleto bancário",
 };
 
+const ADDONS: Addon[] = [
+  {
+    slug: "ai_assist",
+    name: "IA assistiva",
+    description: "Apoio com sugestões, organização e recursos inteligentes, sempre com humano no controle.",
+    price: 79.9,
+    note: "Não é o Shamar Agent local.",
+  },
+  {
+    slug: "transcription_start",
+    name: "Transcrição Start",
+    description: "Transcrição sob demanda de áudios recebidos no atendimento, até 1.000 min/mês.",
+    price: 29,
+    businessPrice: 24,
+  },
+  {
+    slug: "transcription_volume",
+    name: "Transcrição Volume",
+    description: "Pacote para operações com muito áudio, até 10.000 min/mês.",
+    price: 449,
+    businessPrice: 399,
+  },
+  {
+    slug: "call_recording_100h",
+    name: "Gravação 100h",
+    description: "Gravação opcional de ligações para conferência, auditoria e treinamento.",
+    price: 79,
+    businessPrice: 59,
+  },
+  {
+    slug: "call_recording_500h",
+    name: "Gravação 500h",
+    description: "Pacote intermediário de gravação de chamadas.",
+    price: 249,
+    businessPrice: 199,
+  },
+  {
+    slug: "call_recording_1000h",
+    name: "Gravação 1.000h",
+    description: "Pacote avançado de gravação de chamadas.",
+    price: 399,
+    businessPrice: 349,
+  },
+  {
+    slug: "storage_10gb",
+    name: "Armazenamento +10 GB",
+    description: "Espaço adicional para mídias, documentos, áudios e gravações.",
+    price: 19,
+  },
+  {
+    slug: "storage_50gb",
+    name: "Armazenamento +50 GB",
+    description: "Mais retenção e maior volume de mídia.",
+    price: 79,
+  },
+  {
+    slug: "storage_100gb",
+    name: "Armazenamento +100 GB",
+    description: "Para alto volume, retenção longa e gravações.",
+    price: 139,
+  },
+  {
+    slug: "agent_local",
+    name: "Shamar Agent Local",
+    description: "Conector local para buscar dados autorizados nos sistemas internos do cliente.",
+    price: 149,
+    note: "Instalação/integração pode exigir diagnóstico separado.",
+  },
+];
+
 type CheckoutFormProps = {
   initialPlan: string;
   paymentMethodRules: PaymentMethodRule[];
@@ -39,6 +130,11 @@ type CheckoutFormProps = {
 
 function money(value: number) {
   return Math.round(value * 100) / 100;
+}
+
+function getAddonPrice(addon: Addon, planSlug: string) {
+  if (planSlug === "business" && typeof addon.businessPrice === "number") return addon.businessPrice;
+  return addon.price;
 }
 
 export function CheckoutForm({ initialPlan, paymentMethodRules }: CheckoutFormProps) {
@@ -51,7 +147,7 @@ export function CheckoutForm({ initialPlan, paymentMethodRules }: CheckoutFormPr
   const [customerDocument, setCustomerDocument] = useState("");
   const [extraWhatsappConnections, setExtraWhatsappConnections] = useState(0);
   const [extraUsers, setExtraUsers] = useState(0);
-  const [aiAddonEnabled, setAiAddonEnabled] = useState(false);
+  const [selectedAddons, setSelectedAddons] = useState<AddonSlug[]>([]);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
   const [error, setError] = useState("");
@@ -71,8 +167,11 @@ export function CheckoutForm({ initialPlan, paymentMethodRules }: CheckoutFormPr
     const setup = setupPrices[planSlug];
     const whatsapp = extraWhatsappConnections * extraWhatsappPrices[planSlug];
     const users = extraUsers * extraUserPrices[planSlug];
-    const ai = aiAddonEnabled ? 79.9 : 0;
-    const subtotal = money(base + setup + whatsapp + users + ai);
+    const addonItems = ADDONS
+      .filter((addon) => selectedAddons.includes(addon.slug))
+      .map((addon) => ({ ...addon, selectedPrice: getAddonPrice(addon, planSlug) }));
+    const addons = addonItems.reduce((total, addon) => total + addon.selectedPrice, 0);
+    const subtotal = money(base + setup + whatsapp + users + addons);
 
     const rule = enabledMethods.find((r) => r.payment_method === paymentMethod);
     const fixedFee = rule ? money(rule.fixed_fee_cents / 100) : 0;
@@ -80,8 +179,15 @@ export function CheckoutForm({ initialPlan, paymentMethodRules }: CheckoutFormPr
     const fee = money(fixedFee + percentageFee);
     const total = money(subtotal + fee);
 
-    return { base, setup, whatsapp, users, ai, subtotal, fee, total };
-  }, [aiAddonEnabled, billingCycle, extraUsers, extraWhatsappConnections, planSlug, paymentMethod, enabledMethods]);
+    return { base, setup, whatsapp, users, addonItems, addons, subtotal, fee, total };
+  }, [billingCycle, extraUsers, extraWhatsappConnections, planSlug, paymentMethod, enabledMethods, selectedAddons]);
+
+  function toggleAddon(slug: AddonSlug) {
+    setSelectedAddons((current) => {
+      if (current.includes(slug)) return current.filter((item) => item !== slug);
+      return [...current, slug];
+    });
+  }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -109,7 +215,12 @@ export function CheckoutForm({ initialPlan, paymentMethodRules }: CheckoutFormPr
           customerDocument,
           extraWhatsappConnections,
           extraUsers,
-          aiAddonEnabled,
+          selectedAddons: summary.addonItems.map((addon) => ({
+            slug: addon.slug,
+            name: addon.name,
+            price: addon.selectedPrice,
+          })),
+          aiAddonEnabled: selectedAddons.includes("ai_assist"),
         }),
       });
 
@@ -152,7 +263,6 @@ export function CheckoutForm({ initialPlan, paymentMethodRules }: CheckoutFormPr
             </select>
           </label>
 
-          {/* Método de pagamento */}
           <div className="grid gap-2">
             <p className="text-sm font-bold text-slate-700">Forma de pagamento</p>
             <div className="grid gap-3">
@@ -178,16 +288,16 @@ export function CheckoutForm({ initialPlan, paymentMethodRules }: CheckoutFormPr
                     <div className="flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-sm font-black text-slate-800">{METHOD_LABEL[rule.payment_method]}</span>
-                        {rule.is_recommended && (
+                        {rule.is_recommended ? (
                           <span className="rounded-full bg-[#2ABFAB]/15 px-2.5 py-0.5 text-xs font-black text-[#13796D]">
                             Recomendado
                           </span>
-                        )}
-                        {rule.fixed_fee_cents > 0 && (
+                        ) : null}
+                        {rule.fixed_fee_cents > 0 ? (
                           <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-700">
                             + R$ {(rule.fixed_fee_cents / 100).toFixed(2).replace(".", ",")} de custo operacional
                           </span>
-                        )}
+                        ) : null}
                       </div>
                       <p className="mt-1 text-xs leading-5 text-slate-500">{rule.description}</p>
                     </div>
@@ -231,10 +341,44 @@ export function CheckoutForm({ initialPlan, paymentMethodRules }: CheckoutFormPr
             </label>
           </div>
 
-          <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-700">
-            <input type="checkbox" checked={aiAddonEnabled} onChange={(event) => setAiAddonEnabled(event.target.checked)} className="mt-1" />
-            Adicionar Módulo IA por R$ 79,90/mês.
-          </label>
+          <div className="grid gap-3">
+            <div>
+              <h3 className="text-base font-black text-[#1B2F5B]">Adicionais</h3>
+              <p className="mt-1 text-sm leading-6 text-slate-600">
+                Selecione o que o cliente quer contratar junto com o plano. Integrações complexas podem exigir diagnóstico separado.
+              </p>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              {ADDONS.map((addon) => {
+                const selected = selectedAddons.includes(addon.slug);
+                const price = getAddonPrice(addon, planSlug);
+                return (
+                  <label
+                    key={addon.slug}
+                    className={
+                      selected
+                        ? "cursor-pointer rounded-2xl border-2 border-[#2ABFAB] bg-[#2ABFAB]/5 p-4"
+                        : "cursor-pointer rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:border-[#2ABFAB]/40"
+                    }
+                  >
+                    <div className="flex items-start gap-3">
+                      <input type="checkbox" checked={selected} onChange={() => toggleAddon(addon.slug)} className="mt-1 accent-[#2ABFAB]" />
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-black text-[#1B2F5B]">{addon.name}</span>
+                          <span className="rounded-full bg-white px-2.5 py-0.5 text-xs font-black text-[#13796D]">
+                            R$ {price.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}/mês
+                          </span>
+                        </div>
+                        <p className="mt-2 text-xs leading-5 text-slate-600">{addon.description}</p>
+                        {addon.note ? <p className="mt-2 text-xs font-bold text-[#8A5D12]">{addon.note}</p> : null}
+                      </div>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
 
           <label className="flex items-start gap-3 rounded-2xl border border-[#C9952A]/20 bg-[#FFF7E8] p-4 text-sm font-semibold text-[#8A5D12]">
             <input type="checkbox" checked={acceptedTerms} onChange={(event) => setAcceptedTerms(event.target.checked)} className="mt-1" />
@@ -255,13 +399,26 @@ export function CheckoutForm({ initialPlan, paymentMethodRules }: CheckoutFormPr
           <div className="flex justify-between gap-4"><span>Implantação</span><strong>R$ {summary.setup.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</strong></div>
           <div className="flex justify-between gap-4"><span>WhatsApps extras</span><strong>R$ {summary.whatsapp.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</strong></div>
           <div className="flex justify-between gap-4"><span>Usuários extras</span><strong>R$ {summary.users.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</strong></div>
-          <div className="flex justify-between gap-4"><span>Módulo IA</span><strong>R$ {summary.ai.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</strong></div>
-          {summary.fee > 0 && (
+          {summary.addonItems.length > 0 ? (
+            <div className="border-t border-slate-100 pt-4">
+              <p className="mb-3 font-black text-[#1B2F5B]">Adicionais</p>
+              <div className="space-y-3">
+                {summary.addonItems.map((addon) => (
+                  <div key={addon.slug} className="flex justify-between gap-4">
+                    <span>{addon.name}</span>
+                    <strong>R$ {addon.selectedPrice.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</strong>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          <div className="flex justify-between gap-4 border-t border-slate-100 pt-4"><span>Subtotal</span><strong>R$ {summary.subtotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</strong></div>
+          {summary.fee > 0 ? (
             <div className="flex justify-between gap-4 text-amber-700">
               <span>Custo operacional ({METHOD_LABEL[paymentMethod]})</span>
               <strong>R$ {summary.fee.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</strong>
             </div>
-          )}
+          ) : null}
         </div>
 
         <div className="mt-8 rounded-3xl bg-slate-50 p-5">
