@@ -6,6 +6,12 @@ const ASAAS_API_KEY = process.env.ASAAS_API_KEY || "";
 
 type PaymentMethod = "pix" | "credit_card" | "boleto";
 
+type SelectedAddon = {
+  slug?: string;
+  name?: string;
+  price?: number;
+};
+
 type CheckoutInput = {
   planSlug?: string;
   billingCycle?: "monthly" | "annual";
@@ -17,6 +23,7 @@ type CheckoutInput = {
   companyName?: string;
   extraWhatsappConnections?: number;
   extraUsers?: number;
+  selectedAddons?: SelectedAddon[];
   aiAddonEnabled?: boolean;
 };
 
@@ -49,6 +56,23 @@ function normalizePositiveInteger(value: unknown) {
 function money(value: unknown) {
   const parsed = Number(value || 0);
   return Math.round(parsed * 100) / 100;
+}
+
+function normalizeSelectedAddons(value: unknown): Array<{ slug: string; name: string; price: number }> {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => {
+      const addon = item as SelectedAddon;
+      const slug = String(addon.slug || "").trim().toLowerCase();
+      const name = String(addon.name || slug || "Adicional").trim();
+      const price = money(addon.price);
+
+      if (!slug || !name || price <= 0) return null;
+
+      return { slug, name, price };
+    })
+    .filter((item): item is { slug: string; name: string; price: number } => item !== null);
 }
 
 async function asaasRequest(path: string, body: Record<string, unknown>) {
@@ -96,7 +120,8 @@ export async function POST(request: NextRequest) {
   const companyName = String(input.companyName || input.customerName || "").trim();
   const extraWhatsappConnections = normalizePositiveInteger(input.extraWhatsappConnections);
   const extraUsers = normalizePositiveInteger(input.extraUsers);
-  const aiAddonEnabled = Boolean(input.aiAddonEnabled);
+  const selectedAddons = normalizeSelectedAddons(input.selectedAddons);
+  const aiAddonEnabled = selectedAddons.some((addon) => addon.slug === "ai_assist") || Boolean(input.aiAddonEnabled);
 
   if (!planSlug) {
     return NextResponse.json({ ok: false, error: "Plano inválido." }, { status: 400 });
@@ -131,10 +156,9 @@ export async function POST(request: NextRequest) {
   const setupAmount = money(plan.setup_fee);
   const extraWhatsappAmount = money(extraWhatsappConnections * Number(plan.extra_whatsapp_price || 0));
   const extraUsersAmount = money(extraUsers * Number(plan.extra_user_price || 0));
-  const aiAddonAmount = aiAddonEnabled ? money(plan.ai_addon_price) : 0;
-  const totalAmount = money(baseAmount + setupAmount + extraWhatsappAmount + extraUsersAmount + aiAddonAmount);
+  const addonsAmount = money(selectedAddons.reduce((total, addon) => total + addon.price, 0));
+  const totalAmount = money(baseAmount + setupAmount + extraWhatsappAmount + extraUsersAmount + addonsAmount);
 
-  // Fee calculation: fixed (cents) + percentage of total
   const fixedFee = money(methodRule.fixed_fee_cents / 100);
   const percentageFee = money(totalAmount * Number(methodRule.percentage_fee || 0));
   const paymentMethodFeeCents = Math.round((fixedFee + percentageFee) * 100);
@@ -165,7 +189,8 @@ export async function POST(request: NextRequest) {
         companyName,
         extraWhatsappAmount,
         extraUsersAmount,
-        aiAddonAmount,
+        selectedAddons,
+        addonsAmount,
         planName: plan.plan_name,
       },
     })
@@ -189,12 +214,16 @@ export async function POST(request: NextRequest) {
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + 1);
 
+    const addonDescription = selectedAddons.length > 0
+      ? ` + adicionais: ${selectedAddons.map((addon) => addon.name).join(", ")}`
+      : "";
+
     const payment = await asaasRequest("/payments", {
       customer: customer.id,
       billingType: ASAAS_BILLING_TYPE[paymentMethod],
       value: finalAmount,
       dueDate: dueDate.toISOString().slice(0, 10),
-      description: `ShamarConnect ${plan.plan_name} - ${billingCycle === "annual" ? "anual" : "mensal"}`,
+      description: `ShamarConnect ${plan.plan_name} - ${billingCycle === "annual" ? "anual" : "mensal"}${addonDescription}`,
       externalReference: `shamar_checkout_${checkoutSession.id}`,
     });
 
