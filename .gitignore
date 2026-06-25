@@ -6,6 +6,8 @@ node_modules/
 .env
 .env.*
 !.env.example
+CRON_SECRET.txt
+*.secret.txt
 
 # Build/diagnóstico
 tsconfig.tsbuildinfo
