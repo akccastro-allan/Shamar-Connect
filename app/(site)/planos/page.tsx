@@ -292,7 +292,7 @@ export default async function PlanosPage({ searchParams }: PlanosPageProps) {
           </div>
 
           <div className="mt-10 rounded-[2rem] bg-[#1B2F5B] p-8 text-white md:p-10">
-            <h3 className="text-2xl font-black">Linha vermelha de promessa</h3>
+            <h3 className="text-2xl font-black">O que o Shamar Connect organiza — e o que não substitui</h3>
             <p className="mt-4 text-sm leading-7 text-white/75">
               O Shamar Connect organiza atendimento, relacionamento e vendas. O Shamar Agent busca informações autorizadas no sistema atual. O sistema atual continua cuidando da gestão interna.
             </p>
