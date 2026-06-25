@@ -189,35 +189,36 @@ export async function POST(request: NextRequest) {
     : null;
   const normalizedStatus = normalizePaymentStatus(eventName, payment.status as string);
 
+  const now = new Date().toISOString();
+
   if (checkoutId) {
     const update: Record<string, unknown> = {
       provider_payment_id: paymentId || null,
       provider_customer_id: customerId || null,
       raw_payload: payload,
-      updated_at: new Date().toISOString(),
+      updated_at: now,
     };
 
     if (normalizedStatus === "paid") {
-      update.status = "paid";
-      update.paid_at = new Date().toISOString();
+      // Vai direto para paid_pending_activation — nunca deixa "paid" como estado final.
+      // Ativação é manual; humano controla quando o cliente está pronto.
+      update.status = "paid_pending_activation";
+      update.paid_at = now;
     }
 
     if (["cancelled", "refunded"].includes(normalizedStatus)) {
       update.status = "cancelled";
     }
 
-    await db.from("billing_checkout_sessions").update(update).eq("id", checkoutId);
+    // Não sobrescreve paid_pending_activation com estado anterior.
+    await db
+      .from("billing_checkout_sessions")
+      .update(update)
+      .eq("id", checkoutId)
+      .not("status", "in", '("paid_pending_activation","active","cancelled")');
   }
 
   if (paymentId) {
-    const { data: existing } = await db
-      .from("finance_payments")
-      .select("id")
-      .eq("billing_provider", "asaas")
-      .eq("provider_payment_id", paymentId)
-      .maybeSingle();
-
-    // Capture payment method from Asaas payload (billingType field)
     const asaasMethod = String(payment.billingType || "").toUpperCase();
     const paymentMethodFromAsaas =
       asaasMethod === "PIX" ? "pix"
@@ -225,13 +226,20 @@ export async function POST(request: NextRequest) {
       : asaasMethod === "BOLETO" ? "boleto"
       : null;
 
+    const { data: existing } = await db
+      .from("finance_payments")
+      .select("id, status")
+      .eq("billing_provider", "asaas")
+      .eq("provider_payment_id", paymentId)
+      .maybeSingle();
+
     if (!existing) {
       await db.from("finance_payments").insert({
         amount: Number(payment.value || payment.netValue || 0),
         currency: "BRL",
         status: normalizedStatus,
-        paid_at: normalizedStatus === "paid" ? new Date().toISOString() : null,
-        confirmed_at: normalizedStatus === "paid" ? new Date().toISOString() : null,
+        paid_at: normalizedStatus === "paid" ? now : null,
+        confirmed_at: normalizedStatus === "paid" ? now : null,
         transaction_id: paymentId,
         external_reference: externalReference || null,
         gateway_name: "asaas",
@@ -243,28 +251,24 @@ export async function POST(request: NextRequest) {
         raw_payload: payload,
       });
     } else {
+      // Nunca regride de "paid" para status anterior.
+      const alreadyPaid = existing.status === "paid";
+      const statusUpdate = alreadyPaid ? {} : { status: normalizedStatus };
+      const paidFields = normalizedStatus === "paid"
+        ? { paid_at: now, confirmed_at: now }
+        : {};
+
       await db
         .from("finance_payments")
         .update({
-          status: normalizedStatus,
-          paid_at: normalizedStatus === "paid" ? new Date().toISOString() : undefined,
-          confirmed_at: normalizedStatus === "paid" ? new Date().toISOString() : undefined,
+          ...statusUpdate,
+          ...paidFields,
           payment_method: paymentMethodFromAsaas ?? undefined,
           raw_payload: payload,
-          updated_at: new Date().toISOString(),
+          updated_at: now,
         })
         .eq("id", existing.id);
     }
-  }
-
-  // Pagamento confirmado: marcar como aguardando implantação.
-  // Ativação é manual — humano controla quando o cliente está pronto.
-  if (checkoutId && normalizedStatus === "paid") {
-    await db
-      .from("billing_checkout_sessions")
-      .update({ status: "paid_pending_activation", updated_at: new Date().toISOString() })
-      .eq("id", checkoutId)
-      .eq("status", "paid");
   }
 
   return NextResponse.json({
