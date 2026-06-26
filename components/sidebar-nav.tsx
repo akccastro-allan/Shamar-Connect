@@ -95,6 +95,7 @@ const navigationGroups: NavGroup[] = [
     items: [
       { href: "/admin", label: "Administração", icon: ShieldCheck },
       { href: "/admin/users", label: "Clientes", icon: Building2 },
+      { href: "/admin/subscriptions", label: "Assinaturas", icon: Wallet },
       { href: "/admin/support", label: "Admin suporte", icon: Ticket },
       { href: "/demo-checklist", label: "Demo Checklist", icon: ListChecks },
       { href: "/financeiro", label: "Financeiro", icon: Wallet },
