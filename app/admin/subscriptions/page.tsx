@@ -48,12 +48,16 @@ function fmtDate(iso: string | null) {
   return new Date(iso).toLocaleDateString("pt-BR");
 }
 
+type PlanForm = { plan_slug: string; billing_cycle: string; total_amount: string; reason: string };
+
 export default function AdminSubscriptionsPage() {
   const [subs, setSubs] = useState<Sub[]>([]);
   const [loading, setLoading] = useState(false);
   const [acting, setActing] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [editingPlan, setEditingPlan] = useState<string | null>(null);
+  const [planForm, setPlanForm] = useState<PlanForm>({ plan_slug: "", billing_cycle: "monthly", total_amount: "", reason: "" });
 
   async function load() {
     setLoading(true);
@@ -71,6 +75,35 @@ export default function AdminSubscriptionsPage() {
   }
 
   useEffect(() => { load(); }, []);
+
+  function openPlanEdit(sub: Sub) {
+    setPlanForm({ plan_slug: sub.plan_slug, billing_cycle: sub.billing_cycle, total_amount: String(sub.total_amount), reason: "" });
+    setEditingPlan(sub.id);
+  }
+
+  async function savePlan(id: string) {
+    const amount = parseFloat(planForm.total_amount.replace(",", "."));
+    if (isNaN(amount) || amount < 0) { setError("Valor inválido."); return; }
+    setActing(id);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await fetch(`/api/admin/subscriptions/${id}/plan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan_slug: planForm.plan_slug, billing_cycle: planForm.billing_cycle, total_amount: amount, reason: planForm.reason }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data?.error || "Falha");
+      setNotice("Plano atualizado com sucesso.");
+      setEditingPlan(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro inesperado");
+    } finally {
+      setActing(null);
+    }
+  }
 
   async function changeStatus(id: string, status: string, label: string) {
     if (!confirm(`Confirmar: ${label} esta assinatura?`)) return;
@@ -178,7 +211,38 @@ export default function AdminSubscriptionsPage() {
                           Reativar
                         </Button>
                       )}
+                      <Button size="sm" variant="outline" disabled={acting === sub.id}
+                        onClick={() => editingPlan === sub.id ? setEditingPlan(null) : openPlanEdit(sub)}>
+                        {editingPlan === sub.id ? "Cancelar" : "Mudar plano"}
+                      </Button>
                     </div>
+                    {editingPlan === sub.id && (
+                      <div className="mt-3 space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="flex gap-2">
+                          <select value={planForm.plan_slug} onChange={(e) => setPlanForm((f) => ({ ...f, plan_slug: e.target.value }))}
+                            className="flex-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs">
+                            <option value="starter">Essencial</option>
+                            <option value="professional">Professional</option>
+                            <option value="business">Business</option>
+                          </select>
+                          <select value={planForm.billing_cycle} onChange={(e) => setPlanForm((f) => ({ ...f, billing_cycle: e.target.value }))}
+                            className="flex-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs">
+                            <option value="monthly">Mensal</option>
+                            <option value="annual">Anual</option>
+                          </select>
+                        </div>
+                        <input type="text" placeholder="Valor (R$)" value={planForm.total_amount}
+                          onChange={(e) => setPlanForm((f) => ({ ...f, total_amount: e.target.value }))}
+                          className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs" />
+                        <input type="text" placeholder="Motivo (opcional)" value={planForm.reason}
+                          onChange={(e) => setPlanForm((f) => ({ ...f, reason: e.target.value }))}
+                          className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs" />
+                        <Button size="sm" className="w-full bg-[#1B2F5B] hover:bg-[#1B2F5B]/90" disabled={acting === sub.id}
+                          onClick={() => savePlan(sub.id)}>
+                          {acting === sub.id ? "Salvando…" : "Confirmar mudança de plano"}
+                        </Button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}

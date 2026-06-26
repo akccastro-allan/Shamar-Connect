@@ -14,6 +14,9 @@ export default function ImplantacaoDetailPage({ params }: { params: Params }) {
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copiedPassword, setCopiedPassword] = useState(false);
+  const [deptLoading, setDeptLoading] = useState(false);
+  const [deptResult, setDeptResult] = useState<string | null>(null);
+  const [deptError, setDeptError] = useState<string | null>(null);
 
   async function handleProvision() {
     setLoading(true);
@@ -36,6 +39,30 @@ export default function ImplantacaoDetailPage({ params }: { params: Params }) {
       setError("Erro de rede. Tente novamente.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function setupClinicDepartments() {
+    const tenantId = String(result?.tenantId ?? "");
+    const organizationId = String(result?.organizationId ?? "");
+    if (!tenantId || !organizationId) return;
+    setDeptLoading(true);
+    setDeptError(null);
+    setDeptResult(null);
+    try {
+      const res = await fetch("/api/admin/setup-clinic-departments", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ tenantId, organizationId }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error ?? "Falha ao criar departamentos.");
+      const names = (data.created as Array<{ name: string }> ?? []).map((d) => d.name);
+      setDeptResult(names.length === 0 ? "Departamentos já existem." : `Criados: ${names.join(", ")}.`);
+    } catch (err) {
+      setDeptError(err instanceof Error ? err.message : "Erro inesperado.");
+    } finally {
+      setDeptLoading(false);
     }
   }
 
@@ -126,6 +153,20 @@ export default function ImplantacaoDetailPage({ params }: { params: Params }) {
 
               <div className="rounded-2xl bg-amber-50 p-4 text-xs text-amber-800">
                 Guarde a senha temporária — ela não será exibida novamente. Envie ao cliente e oriente a troca no primeiro acesso.
+              </div>
+
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                <p className="text-xs font-black uppercase tracking-wide text-slate-500">Clínica médica?</p>
+                <p className="mt-1 text-xs text-slate-500">Cria os 4 setores padrão: Agendamento, Financeiro, Triagem e Geral. Idempotente — seguro chamar mais de uma vez.</p>
+                <button
+                  onClick={setupClinicDepartments}
+                  disabled={deptLoading}
+                  className="mt-3 w-full rounded-full border border-[#2ABFAB] py-2.5 text-sm font-black text-[#13796D] hover:bg-[#2ABFAB]/10 disabled:opacity-60"
+                >
+                  {deptLoading ? "Criando departamentos…" : "Criar departamentos de clínica"}
+                </button>
+                {deptResult && <p className="mt-2 text-xs font-bold text-emerald-700">{deptResult}</p>}
+                {deptError && <p className="mt-2 text-xs font-bold text-red-600">{deptError}</p>}
               </div>
 
               <button
