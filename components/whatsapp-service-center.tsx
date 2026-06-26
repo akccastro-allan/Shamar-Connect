@@ -28,7 +28,7 @@ type Conversation = {
   channel_id?: string | null;
   provider?: string | null;
   crm_contacts?: { id: string; name: string | null; phone: string | null; email: string | null; company: string | null; consent_status: string | null } | null;
-  channels?: { id: string; name: string; slug: string; color: string } | null;
+  channels?: { id: string; name: string; slug: string; color: string; transcription_enabled?: boolean | null } | null;
   latest_message?: { body: string | null; direction: "inbound" | "outbound"; created_at: string } | null;
   assigned_to?: string | null;
   assigned_name?: string | null;
@@ -194,12 +194,14 @@ function AudioCard({
   loading,
   onRetryMedia,
   duration,
+  transcriptionEnabled,
 }: {
   message: Message;
   url: string | null;
   loading: boolean;
   onRetryMedia: () => void;
   duration: string;
+  transcriptionEnabled: boolean;
 }) {
   const [transcribing, setTranscribing] = useState(false);
   const [localText, setLocalText] = useState<string | null>(message.transcription_text || null);
@@ -245,42 +247,44 @@ function AudioCard({
         <MediaError onRetry={onRetryMedia} />
       )}
 
-      {/* Seção de transcrição */}
-      {localStatus === "done" && localText ? (
-        <div className="rounded-lg bg-white p-2 text-xs">
-          <p className="text-slate-700">{localText}</p>
-          <p className="mt-1 text-[10px] italic text-slate-500">
-            Transcrição automática. Confira o áudio em caso de dúvida.
-          </p>
-          <button
-            onClick={requestTranscription}
-            disabled={transcribing}
-            className="mt-1 text-[10px] font-medium text-blue-600 hover:underline disabled:opacity-50"
-          >
-            Reprocessar
-          </button>
-        </div>
-      ) : localStatus === "processing" || transcribing ? (
-        <p className="text-xs text-slate-600">Transcrevendo…</p>
-      ) : localStatus === "failed" ? (
-        <div className="flex flex-col gap-1">
-          <p className="text-xs text-red-600">{localError || "Falha ao transcrever."}</p>
+      {/* Seção de transcrição — só visível quando habilitada no canal */}
+      {transcriptionEnabled && (
+        localStatus === "done" && localText ? (
+          <div className="rounded-lg bg-white p-2 text-xs">
+            <p className="text-slate-700">{localText}</p>
+            <p className="mt-1 text-[10px] italic text-slate-500">
+              Transcrição automática. Confira o áudio em caso de dúvida.
+            </p>
+            <button
+              onClick={requestTranscription}
+              disabled={transcribing}
+              className="mt-1 text-[10px] font-medium text-blue-600 hover:underline disabled:opacity-50"
+            >
+              Reprocessar
+            </button>
+          </div>
+        ) : localStatus === "processing" || transcribing ? (
+          <p className="text-xs text-slate-600">Transcrevendo…</p>
+        ) : localStatus === "failed" ? (
+          <div className="flex flex-col gap-1">
+            <p className="text-xs text-red-600">{localError || "Falha ao transcrever."}</p>
+            <button
+              onClick={requestTranscription}
+              disabled={transcribing}
+              className="self-start text-xs font-medium text-blue-600 hover:underline disabled:opacity-50"
+            >
+              Reprocessar
+            </button>
+          </div>
+        ) : (
           <button
             onClick={requestTranscription}
             disabled={transcribing}
             className="self-start text-xs font-medium text-blue-600 hover:underline disabled:opacity-50"
           >
-            Reprocessar
+            Ver transcrição
           </button>
-        </div>
-      ) : (
-        <button
-          onClick={requestTranscription}
-          disabled={transcribing}
-          className="self-start text-xs font-medium text-blue-600 hover:underline disabled:opacity-50"
-        >
-          Ver transcrição
-        </button>
+        )
       )}
     </div>
   );
@@ -305,7 +309,7 @@ function MediaError({ onRetry }: { onRetry: () => void }) {
  * Componente MediaCard — renderiza figurinha/imagem/áudio/documento com signed URL.
  * Recebe message.id (whatsapp_messages.id); a rota /media/[id] resolve o message_media.
  */
-function MediaCard({ message }: { message: Message }) {
+function MediaCard({ message, transcriptionEnabled }: { message: Message; transcriptionEnabled: boolean }) {
   const { url, loading, error, retry } = useMediaUrl(message.id);
   const kind = message.media_kind || message.message_type;
 
@@ -349,6 +353,7 @@ function MediaCard({ message }: { message: Message }) {
         loading={loading}
         onRetryMedia={retry}
         duration={duration}
+        transcriptionEnabled={transcriptionEnabled}
       />
     );
   }
@@ -1171,7 +1176,7 @@ export function WhatsappServiceCenter() {
                   <div key={message.id} className={`flex ${outbound ? "justify-end" : "justify-start"}`}>
                     <div className={`max-w-[78%] rounded-2xl px-4 py-3 text-sm shadow-sm ${outbound ? "bg-emerald-600 text-white" : "bg-white text-slate-900"}`}>
                       {showNewMediaCard ? (
-                        <MediaCard message={message} />
+                        <MediaCard message={message} transcriptionEnabled={selectedConversation?.channels?.transcription_enabled === true} />
                       ) : mediaSource ? (
                         <div className="space-y-2">
                           <img src={mediaSource} alt={mediaLabel} className="max-h-48 max-w-[220px] rounded-xl object-contain" />
