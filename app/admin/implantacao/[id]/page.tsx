@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { use } from "react";
+import { CheckoutDetailPanel } from "./checkout-detail-panel";
 
 const METHOD_LABEL: Record<string, string> = {
   pix: "PIX",
@@ -61,6 +62,8 @@ export default function ImplantacaoDetailPage({ params }: { params: Params }) {
         <div className="rounded-3xl border border-slate-100 bg-white p-8 shadow-sm">
           <p className="text-xs font-black uppercase tracking-widest text-[#C9952A]">Implantação</p>
           <h1 className="mt-2 text-2xl font-black text-[#1B2F5B]">Checkout #{id.slice(0, 8)}</h1>
+
+          {!result ? <CheckoutDetailPanel checkoutId={id} /> : null}
 
           {!result && (
             <>
