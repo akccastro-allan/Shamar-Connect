@@ -18,7 +18,7 @@ export async function GET() {
 
     const { data, error } = await db
       .from("tenant_users")
-      .select("id, role, status, department_id, created_at, app_users:app_user_id(name, email), departments:department_id(id, name, color)")
+      .select("id, app_user_id, role, status, department_id, created_at, app_users:app_user_id(name, email), departments:department_id(id, name, color)")
       .eq("tenant_id", ctx.tenantId)
       .eq("organization_id", ctx.organizationId)
       .order("created_at", { ascending: true });
