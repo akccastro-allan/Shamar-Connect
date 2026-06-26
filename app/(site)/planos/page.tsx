@@ -9,7 +9,8 @@ export const metadata: Metadata = {
 
 const plans = [
   {
-    name: "Essencial",
+    slug: "starter",
+    name: "Starter",
     label: "Para começar com organização",
     description:
       "Para pequenas operações que precisam centralizar atendimento, histórico e respostas rápidas.",
@@ -31,6 +32,7 @@ const plans = [
     ],
   },
   {
+    slug: "professional",
     name: "Professional",
     label: "Mais indicado",
     description:
@@ -55,6 +57,7 @@ const plans = [
     ],
   },
   {
+    slug: "business",
     name: "Business",
     label: "Para operações maiores",
     description:
@@ -80,16 +83,16 @@ const plans = [
 ];
 
 const addOns = [
-  ["Transcrição Start", "Áudios em texto sob demanda", "R$ 29/mês até 1.000 min", "R$ 24/mês até 1.000 min"],
-  ["Transcrição Volume", "Para maior volume de áudio", "R$ 449/mês até 10.000 min", "R$ 399/mês até 10.000 min"],
+  ["IA assistiva", "Apoio com sugestões e recursos inteligentes", "R$ 79,90/mês", "R$ 79,90/mês"],
+  ["Transcrição Start", "Áudios em texto sob demanda, até 1.000 min/mês", "R$ 29/mês", "R$ 24/mês"],
+  ["Transcrição Volume", "Para maior volume de áudio, até 10.000 min/mês", "R$ 449/mês", "R$ 399/mês"],
   ["Gravação 100h", "Chamadas para conferência e treinamento", "R$ 79/mês", "R$ 59/mês"],
   ["Gravação 500h", "Pacote intermediário de chamadas", "R$ 249/mês", "R$ 199/mês"],
   ["Gravação 1.000h", "Pacote avançado de chamadas", "R$ 399/mês", "R$ 349/mês"],
-  ["Armazenamento +10 GB", "Mídias, documentos, áudios e gravações", "R$ 19/mês", "R$ 19/mês"],
-  ["Armazenamento +50 GB", "Mais retenção e volume de mídia", "R$ 79/mês", "R$ 79/mês"],
-  ["Armazenamento +100 GB", "Alto volume e retenção maior", "R$ 139/mês", "R$ 139/mês"],
+  ["Armazenamento +10 GB", "Mídias, documentos, áudios e gravações", "R$ 29/mês", "R$ 29/mês"],
+  ["Armazenamento +50 GB", "Mais retenção e volume de mídia", "R$ 119/mês", "R$ 119/mês"],
+  ["Armazenamento +100 GB", "Alto volume e retenção maior", "R$ 199/mês", "R$ 199/mês"],
   ["Shamar Agent Local", "Conector local para buscar dados autorizados", "R$ 149/mês por conector", "R$ 149/mês por conector"],
-  ["Agent com ações controladas", "Ações futuras com permissão e auditoria", "R$ 249/mês por conector", "R$ 249/mês por conector"],
 ];
 
 const services = [
@@ -154,20 +157,20 @@ export default async function PlanosPage({ searchParams }: PlanosPageProps) {
             Planos base · Implantação assistida · Add-ons opcionais
           </div>
           <h1 className="mx-auto mt-7 max-w-5xl text-4xl font-black tracking-tight text-[#1B2F5B] md:text-6xl">
-            Comece organizando o atendimento. Adicione integrações quando fizer sentido.
+            Escolha o plano, pague com segurança e entre na fila de implantação.
           </h1>
           <p className="mx-auto mt-6 max-w-3xl text-base leading-8 text-slate-600 md:text-xl">
-            O Shamar Connect centraliza canais, equipe, histórico, responsáveis e retornos. O Shamar Agent conecta sistemas internos ao atendimento sem substituir o sistema que sua empresa já usa.
+            O Shamar Connect centraliza canais, equipe, histórico, responsáveis e retornos. O pagamento confirma a contratação; a liberação é feita com implantação assistida para evitar configuração errada.
           </p>
           <div className="mt-9 flex flex-col justify-center gap-4 sm:flex-row">
             <a href="#planos" className="rounded-full bg-[#2ABFAB] px-7 py-4 text-base font-black text-white shadow-lg shadow-[#2ABFAB]/20 transition hover:-translate-y-0.5 hover:shadow-xl">
-              Ver planos
+              Escolher plano
             </a>
-            <a href="#addons" className="rounded-full border border-slate-300 bg-white px-7 py-4 text-base font-black text-[#1B2F5B] shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
-              Ver add-ons
-            </a>
+            <Link href="/checkout" className="rounded-full border border-slate-300 bg-white px-7 py-4 text-base font-black text-[#1B2F5B] shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+              Ir direto para checkout
+            </Link>
             <Link href="/contato" className="rounded-full border border-slate-300 bg-white px-7 py-4 text-base font-black text-[#1B2F5B] shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
-              Falar com especialista
+              Falar antes de contratar
             </Link>
           </div>
         </div>
@@ -205,12 +208,23 @@ export default async function PlanosPage({ searchParams }: PlanosPageProps) {
 
               <div className="mt-7 rounded-3xl bg-slate-50 p-5">
                 <p className="text-xs font-black uppercase tracking-wide text-slate-500">Plano base</p>
-                <p className="mt-2 text-3xl font-black tracking-tight text-[#1B2F5B]">Sob consulta</p>
-                <p className="mt-3 text-sm leading-6 text-slate-600">Proposta conforme canais, usuários, implantação e add-ons.</p>
+                <p className="mt-2 text-3xl font-black tracking-tight text-[#1B2F5B]">
+                  {plan.slug === "starter" ? "R$ 149" : plan.slug === "professional" ? "R$ 297" : "R$ 597"}
+                  <span className="text-base font-bold text-slate-500">/mês</span>
+                </p>
+                <p className="mt-1 text-sm font-bold text-slate-500">
+                  {plan.slug === "starter" ? "+ R$ 297 implantação" : plan.slug === "professional" ? "+ R$ 497 implantação" : "+ R$ 997 implantação"}
+                </p>
               </div>
 
-              <Link href="/contato" className={plan.highlight ? "mt-7 flex w-full justify-center rounded-2xl bg-[#2ABFAB] px-5 py-4 text-sm font-black text-white shadow-lg shadow-[#2ABFAB]/20 transition hover:-translate-y-0.5 hover:shadow-xl" : "mt-7 flex w-full justify-center rounded-2xl bg-[#1B2F5B] px-5 py-4 text-sm font-black text-white shadow-md transition hover:-translate-y-0.5 hover:shadow-lg"}>
-                Montar proposta {plan.name}
+              <Link
+                href={`/checkout?plan=${plan.slug}`}
+                className={plan.highlight ? "mt-7 flex w-full justify-center rounded-2xl bg-[#2ABFAB] px-5 py-4 text-sm font-black text-white shadow-lg shadow-[#2ABFAB]/20 transition hover:-translate-y-0.5 hover:shadow-xl" : "mt-7 flex w-full justify-center rounded-2xl bg-[#1B2F5B] px-5 py-4 text-sm font-black text-white shadow-md transition hover:-translate-y-0.5 hover:shadow-lg"}
+              >
+                Contratar {plan.name}
+              </Link>
+              <Link href="/contato" className="mt-3 flex w-full justify-center text-sm font-bold text-slate-500 hover:text-[#1B2F5B]">
+                Tirar dúvida antes
               </Link>
 
               <div className="mt-7 border-t border-slate-100 pt-7">
@@ -321,14 +335,19 @@ export default async function PlanosPage({ searchParams }: PlanosPageProps) {
         <div className="mx-auto max-w-6xl overflow-hidden rounded-[2rem] bg-[#1B2F5B] px-6 py-16 text-center text-white shadow-2xl md:px-12">
           <p className="text-sm font-black uppercase tracking-[0.25em] text-[#2ABFAB]">Shamar Connect</p>
           <h2 className="mx-auto mt-4 max-w-3xl text-3xl font-black tracking-tight md:text-5xl">
-            Monte uma proposta do tamanho da sua operação
+            Organize o atendimento, escolha um plano e comece com implantação assistida.
           </h2>
           <p className="mx-auto mt-5 max-w-2xl text-base leading-8 text-white/70">
-            Comece pelo atendimento organizado e adicione integrações, transcrição, gravação ou armazenamento conforme a necessidade real da empresa.
+            O Shamar Connect não substitui sua equipe nem seu sistema atual. Ele organiza a entrada do cliente, registra histórico, define responsáveis e dá visibilidade para o gestor.
           </p>
-          <Link href="/contato" className="mt-9 inline-flex rounded-full bg-[#2ABFAB] px-8 py-4 text-sm font-black text-white shadow-lg shadow-black/10 transition hover:-translate-y-0.5 hover:shadow-xl">
-            Falar com especialista
-          </Link>
+          <div className="mt-9 flex flex-col justify-center gap-4 sm:flex-row">
+            <a href="#planos" className="rounded-full bg-[#2ABFAB] px-8 py-4 text-sm font-black text-white shadow-lg shadow-black/10 transition hover:-translate-y-0.5 hover:shadow-xl">
+              Ver planos
+            </a>
+            <Link href="/contato" className="rounded-full border border-white/20 bg-white/10 px-8 py-4 text-sm font-black text-white transition hover:-translate-y-0.5 hover:bg-white/15">
+              Falar com especialista
+            </Link>
+          </div>
         </div>
       </section>
     </>

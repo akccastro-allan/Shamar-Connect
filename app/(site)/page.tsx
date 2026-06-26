@@ -141,7 +141,7 @@ const optionalResources = [
   {
     title: "Armazenamento adicional",
     text: "Espaço extra para guardar mídias, documentos, áudios e gravações conforme o volume da operação.",
-    price: "+10 GB por R$ 19/mês",
+    price: "+10 GB por R$ 29/mês",
   },
   {
     title: "Shamar Agent",
@@ -202,22 +202,22 @@ export default async function HomePage() {
             </p>
             <div className="mt-9 flex flex-col justify-center gap-4 sm:flex-row">
               <Link
-                href="/contato"
+                href="/planos"
                 className="rounded-full bg-[#2ABFAB] px-8 py-4 text-base font-black text-white shadow-lg shadow-[#2ABFAB]/25 transition hover:-translate-y-0.5 hover:shadow-xl"
               >
-                Quero organizar meu atendimento
+                Ver planos e contratar
+              </Link>
+              <Link
+                href="/contato"
+                className="rounded-full border border-[#1B2F5B] bg-white px-8 py-4 text-base font-black text-[#1B2F5B] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#1B2F5B] hover:text-white hover:shadow-md"
+              >
+                Falar com especialista
               </Link>
               <Link
                 href={isAuthenticated ? "/operations" : "/login"}
-                className="rounded-full border border-[#1B2F5B] bg-white px-8 py-4 text-base font-black text-[#1B2F5B] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#1B2F5B] hover:text-white hover:shadow-md"
-              >
-                {isAuthenticated ? "Abrir Plataforma" : "Entrar na Plataforma"}
-              </Link>
-              <Link
-                href="/planos"
                 className="rounded-full border border-slate-300 bg-white px-8 py-4 text-base font-black text-[#1B2F5B] shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
               >
-                Ver planos e add-ons
+                {isAuthenticated ? "Abrir Plataforma" : "Entrar na Plataforma"}
               </Link>
             </div>
           </div>
@@ -425,23 +425,23 @@ export default async function HomePage() {
         <div className="mx-auto max-w-6xl overflow-hidden rounded-[2rem] bg-[#1B2F5B] px-6 py-16 text-center text-white shadow-2xl md:px-12">
           <p className="text-sm font-black uppercase tracking-[0.25em] text-[#2ABFAB]">Shamar Connect</p>
           <h2 className="mx-auto mt-4 max-w-3xl text-3xl font-black tracking-tight md:text-5xl">
-            Sua equipe não precisa de mais um sistema confuso. Precisa de atendimento organizado.
+            Organize o atendimento, escolha um plano e comece com implantação assistida.
           </h2>
           <p className="mx-auto mt-5 max-w-2xl text-base leading-8 text-white/70">
-            Fale com a nossa equipe para montar uma implantação alinhada ao tamanho da sua operação e aos sistemas que você já usa.
+            O Shamar Connect não substitui sua equipe nem seu sistema atual. Ele organiza a entrada do cliente, registra histórico, define responsáveis e dá visibilidade para o gestor.
           </p>
           <div className="mt-9 flex flex-col justify-center gap-4 sm:flex-row">
             <Link
-              href="/contato"
+              href="/planos"
               className="rounded-full bg-[#2ABFAB] px-8 py-4 text-sm font-black text-white shadow-lg shadow-black/10 transition hover:-translate-y-0.5 hover:shadow-xl"
             >
-              Falar com especialista
+              Ver planos
             </Link>
             <Link
-              href="/planos"
+              href="/contato"
               className="rounded-full border border-white/20 bg-white/10 px-8 py-4 text-sm font-black text-white transition hover:-translate-y-0.5 hover:bg-white/15"
             >
-              Ver planos e recursos
+              Falar com especialista
             </Link>
           </div>
         </div>
