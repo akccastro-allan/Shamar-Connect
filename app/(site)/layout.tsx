@@ -18,18 +18,18 @@ const navLinks = [
 export const metadata: Metadata = {
   metadataBase: new URL("https://shamarconnect.com.br"),
   title: {
-    default: "ShamarConnect — WhatsApp + CRM + IA",
+    default: "ShamarConnect — Central de atendimento, relacionamento e vendas",
     template: "%s | ShamarConnect",
   },
   description:
-    "Atenda melhor, organize contatos, acompanhe oportunidades e profissionalize sua operação comercial no WhatsApp com CRM, automações e IA.",
+    "Organize WhatsApp, Instagram, Facebook, atendentes, setores, histórico, retornos e vendas em uma central com humano no controle.",
   keywords: [
     "CRM WhatsApp",
     "atendimento WhatsApp",
-    "sistema WhatsApp empresa",
-    "CRM para pequenas empresas",
-    "WhatsApp com IA",
-    "automação WhatsApp",
+    "central de atendimento WhatsApp",
+    "sistema para atendimento comercial",
+    "funil comercial WhatsApp",
+    "histórico de atendimento",
     "ShamarConnect",
   ],
 };
