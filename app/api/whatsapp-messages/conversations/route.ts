@@ -29,7 +29,7 @@ export async function GET() {
 
     let query = db
       .from("whatsapp_conversations")
-      .select("id, external_chat_id, name, is_group, status, unread_count, last_message_at, created_at, last_inbound_at, last_outbound_at, last_message_direction, requires_human, pending_reason, sla_status, sla_due_at, watchdog_checked_at, channel_id, provider, assigned_to, department_id, crm_contacts(id, name, phone, email, company, consent_status), channels(id, name, slug, color), departments:department_id(id, name, color)")
+      .select("id, external_chat_id, name, is_group, status, unread_count, last_message_at, created_at, last_inbound_at, last_outbound_at, last_message_direction, requires_human, pending_reason, sla_status, sla_due_at, watchdog_checked_at, channel_id, provider, assigned_to, department_id, crm_contacts(id, name, phone, email, company, consent_status), channels(id, name, slug, color, transcription_enabled), departments:department_id(id, name, color)")
       .eq("tenant_id", context.tenantId)
       .eq("organization_id", context.organizationId);
 
