@@ -32,6 +32,7 @@ const navigationGroups: NavGroup[] = [
       { href: "/inbox", label: "Inbox", icon: Inbox },
       { href: "/social-inbox", label: "Social Inbox", icon: AtSign },
       { href: "/operations", label: "Operações", icon: Activity },
+      { href: "/reports/team", label: "Relatório da equipe", icon: TrendingUp },
     ],
   },
   {
@@ -71,6 +72,7 @@ const navigationGroups: NavGroup[] = [
     icon: Settings,
     items: [
       { href: "/settings/profile", label: "Meu perfil", icon: UserRound },
+      { href: "/settings/billing", label: "Assinatura", icon: Wallet },
       { href: "/settings/team", label: "Equipe", icon: Users },
       { href: "/settings/departments", label: "Setores", icon: Building2 },
       { href: "/settings/whatsapp", label: "Conexão WhatsApp", icon: MessageCircle },

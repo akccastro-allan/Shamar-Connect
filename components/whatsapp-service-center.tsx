@@ -518,6 +518,7 @@ export function WhatsappServiceCenter() {
   const [me, setMe] = useState<MeInfo | null>(null);
   const [assignTab, setAssignTab] = useState<"mine" | "waiting" | "all">("waiting");
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [teamMembers, setTeamMembers] = useState<{ id: string; name: string | null; email: string }[]>([]);
   const [deptFilter, setDeptFilter] = useState<string>("");
   const [assigning, setAssigning] = useState(false);
   const [quickReplyQuery, setQuickReplyQuery] = useState("");
@@ -680,6 +681,21 @@ export function WhatsappServiceCenter() {
       setDepartments((data.departments || []).filter((d) => (d as { is_active?: boolean }).is_active !== false));
     } catch {
       // setor é opcional; não bloqueia o atendimento.
+    }
+  }
+
+  async function loadTeamMembers() {
+    try {
+      const data = await readJson<{ ok: boolean; members: { app_user_id: string; role: string; status: string; app_users: { name: string | null; email: string } | null }[] }>("/api/team");
+      if (data.ok) {
+        setTeamMembers(
+          (data.members || [])
+            .filter((m) => m.status === "active" && m.app_users)
+            .map((m) => ({ id: m.app_user_id, name: m.app_users?.name || null, email: m.app_users?.email || "" }))
+        );
+      }
+    } catch {
+      // equipe é opcional; não bloqueia o atendimento.
     }
   }
 
@@ -905,6 +921,7 @@ export function WhatsappServiceCenter() {
     loadQuickReplies();
     loadConversationFlows();
     loadDepartments();
+    loadTeamMembers();
   }, []);
 
   // Polling automático: atualiza fila e conversa aberta a cada ~6s, somente com a
@@ -1148,6 +1165,20 @@ export function WhatsappServiceCenter() {
                 {selectedConversation.assigned_to && (selectedConversation.assigned_to === me?.appUserId || me?.isSupervisor) ? (
                   <Button size="sm" variant="outline" onClick={() => assignConversation({ assignTo: null })} disabled={assigning}>Liberar</Button>
                 ) : null}
+                {me?.isSupervisor && teamMembers.length > 0 && (
+                  <select
+                    value=""
+                    onChange={(e) => { if (e.target.value) assignConversation({ assignTo: e.target.value }); }}
+                    disabled={assigning}
+                    title="Transferir para atendente"
+                    className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs"
+                  >
+                    <option value="">Transferir para…</option>
+                    {teamMembers
+                      .filter((m) => m.id !== selectedConversation.assigned_to)
+                      .map((m) => <option key={m.id} value={m.id}>{m.name || m.email}</option>)}
+                  </select>
+                )}
                 {departments.length > 0 && (
                   <select
                     value={selectedConversation.department_id || ""}
