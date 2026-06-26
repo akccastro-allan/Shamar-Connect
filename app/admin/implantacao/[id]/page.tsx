@@ -5,18 +5,6 @@ import { useRouter } from "next/navigation";
 import { use } from "react";
 import { CheckoutDetailPanel } from "./checkout-detail-panel";
 
-const METHOD_LABEL: Record<string, string> = {
-  pix: "PIX",
-  credit_card: "Cartão de crédito",
-  boleto: "Boleto bancário",
-};
-
-const PLAN_LABEL: Record<string, string> = {
-  starter: "Essencial",
-  professional: "Professional",
-  business: "Business",
-};
-
 type Params = Promise<{ id: string }>;
 
 export default function ImplantacaoDetailPage({ params }: { params: Params }) {
@@ -54,8 +42,12 @@ export default function ImplantacaoDetailPage({ params }: { params: Params }) {
   async function copyTemporaryPassword() {
     const password = String(result?.tempPassword ?? "");
     if (!password) return;
-    await navigator.clipboard.writeText(password);
-    setCopiedPassword(true);
+    try {
+      await navigator.clipboard.writeText(password);
+      setCopiedPassword(true);
+    } catch {
+      setError("Não foi possível copiar a senha automaticamente.");
+    }
   }
 
   return (
@@ -118,6 +110,12 @@ export default function ImplantacaoDetailPage({ params }: { params: Params }) {
                 <Row label="E-mail" value={String(result.email ?? "—")} />
                 <Row label="Senha temporária" value={String(result.tempPassword ?? "—")} highlight />
               </div>
+
+              {error && (
+                <div className="rounded-2xl bg-red-50 p-4 text-sm font-bold text-red-700">
+                  {error}
+                </div>
+              )}
 
               <button
                 onClick={copyTemporaryPassword}
