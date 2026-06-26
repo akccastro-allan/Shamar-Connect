@@ -100,19 +100,19 @@ const ADDONS: Addon[] = [
     slug: "storage_10gb",
     name: "Armazenamento +10 GB",
     description: "Espaço adicional para mídias, documentos, áudios e gravações.",
-    price: 19,
+    price: 29,
   },
   {
     slug: "storage_50gb",
     name: "Armazenamento +50 GB",
     description: "Mais retenção e maior volume de mídia.",
-    price: 79,
+    price: 119,
   },
   {
     slug: "storage_100gb",
     name: "Armazenamento +100 GB",
     description: "Para alto volume, retenção longa e gravações.",
-    price: 139,
+    price: 199,
   },
   {
     slug: "agent_local",
