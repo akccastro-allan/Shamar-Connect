@@ -25,11 +25,13 @@ export default function ImplantacaoDetailPage({ params }: { params: Params }) {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [copiedPassword, setCopiedPassword] = useState(false);
 
   async function handleProvision() {
     setLoading(true);
     setError(null);
     setResult(null);
+    setCopiedPassword(false);
     try {
       const res = await fetch(`/api/admin/implantacao/${id}/provision`, {
         method: "POST",
@@ -47,6 +49,13 @@ export default function ImplantacaoDetailPage({ params }: { params: Params }) {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function copyTemporaryPassword() {
+    const password = String(result?.tempPassword ?? "");
+    if (!password) return;
+    await navigator.clipboard.writeText(password);
+    setCopiedPassword(true);
   }
 
   return (
@@ -109,6 +118,13 @@ export default function ImplantacaoDetailPage({ params }: { params: Params }) {
                 <Row label="E-mail" value={String(result.email ?? "—")} />
                 <Row label="Senha temporária" value={String(result.tempPassword ?? "—")} highlight />
               </div>
+
+              <button
+                onClick={copyTemporaryPassword}
+                className="w-full rounded-full bg-[#2ABFAB] py-3 text-sm font-black text-white hover:bg-[#22a898]"
+              >
+                {copiedPassword ? "Senha copiada" : "Copiar senha temporária"}
+              </button>
 
               <div className="rounded-2xl bg-amber-50 p-4 text-xs text-amber-800">
                 Guarde a senha temporária — ela não será exibida novamente. Envie ao cliente e oriente a troca no primeiro acesso.
