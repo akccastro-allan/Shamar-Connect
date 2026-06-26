@@ -504,8 +504,22 @@ function playAlertSound() {
   oscillator.stop(audioContext.currentTime + 0.34);
 }
 
+const BASE_TITLE = "ShamarConnect";
+
+function requestNotificationPermission() {
+  if (typeof Notification !== "undefined" && Notification.permission === "default") {
+    Notification.requestPermission().catch(() => {});
+  }
+}
+
+function fireNotification(title: string, body: string) {
+  if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+  try { new Notification(title, { body, icon: "/favicon.ico" }); } catch { /* noop */ }
+}
+
 export function WhatsappServiceCenter() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const prevConvIdsRef = useRef<Set<string>>(new Set());
   const [messages, setMessages] = useState<Message[]>([]);
   const [quickReplies, setQuickReplies] = useState<QuickReply[]>([]);
   const [conversationFlows, setConversationFlows] = useState<ConversationFlow[]>([]);
@@ -664,7 +678,22 @@ export function WhatsappServiceCenter() {
         fetch("/api/channels").then((r) => r.json()).catch(() => ({ ok: false, channels: [] })),
       ]);
       if (convData.me) setMe(convData.me);
-      setConversations(sortConversationsForQueue(convData.conversations || []));
+      const fresh = convData.conversations || [];
+      // Notificação de novas conversas com mensagens não lidas
+      const newUnread = fresh.filter(
+        (c) => c.unread_count > 0 && !prevConvIdsRef.current.has(c.id)
+      );
+      if (newUnread.length > 0 && document.visibilityState !== "visible") {
+        fireNotification(
+          `${newUnread.length} nova${newUnread.length > 1 ? "s" : ""} conversa${newUnread.length > 1 ? "s" : ""}`,
+          newUnread.map((c) => c.name || c.external_chat_id || "Contato").join(", ")
+        );
+      }
+      prevConvIdsRef.current = new Set(fresh.map((c) => c.id));
+      // Badge no título da aba
+      const totalUnread = fresh.reduce((s, c) => s + (c.unread_count || 0), 0);
+      document.title = totalUnread > 0 ? `(${totalUnread}) ${BASE_TITLE}` : BASE_TITLE;
+      setConversations(sortConversationsForQueue(fresh));
       if (channelsData.ok && channelsData.channels?.length) {
         setAvailableChannels(channelsData.channels);
       }
@@ -922,6 +951,8 @@ export function WhatsappServiceCenter() {
     loadConversationFlows();
     loadDepartments();
     loadTeamMembers();
+    requestNotificationPermission();
+    return () => { document.title = BASE_TITLE; };
   }, []);
 
   // Polling automático: atualiza fila e conversa aberta a cada ~6s, somente com a

@@ -41,7 +41,7 @@ function formatTime(value?: string | null) {
   }
 }
 
-type ChannelRow = { id: string; name: string; slug: string; session_id: string; color: string; active: boolean };
+type ChannelRow = { id: string; name: string; slug: string; session_id: string | null; provider?: string | null; phone_number_id?: string | null; color: string; active: boolean };
 
 export function OperationsDashboard() {
   const [sessions, setSessions] = useState<SessionStatus[]>([]);
@@ -100,8 +100,9 @@ export function OperationsDashboard() {
       const tenantChannels: ChannelRow[] = channelsData.ok ? channelsData.channels : [];
       if (channelsData.ok) setChannels(tenantChannels);
 
+      const webChannels = tenantChannels.filter((ch) => ch.provider !== "meta_whatsapp" && ch.session_id);
       const statuses = await Promise.all(
-        tenantChannels.map((ch) => fetchSessionStatus(ch.session_id, ch.name))
+        webChannels.map((ch) => fetchSessionStatus(ch.session_id!, ch.name))
       );
       setSessions(statuses);
       setLastChecked(new Date().toISOString());
@@ -223,6 +224,33 @@ export function OperationsDashboard() {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Meta WhatsApp (Cloud API) channels */}
+      {channels.filter((ch) => ch.provider === "meta_whatsapp").length > 0 && (
+        <div>
+          <h2 className="mb-3 text-sm font-semibold text-foreground">WhatsApp Cloud API (Meta oficial)</h2>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {channels.filter((ch) => ch.provider === "meta_whatsapp").map((ch) => (
+              <div key={ch.id} className="rounded-xl border border-[#2ABFAB]/30 bg-[#2ABFAB]/5 p-3 flex items-start gap-3"
+                style={{ borderLeftColor: "#2ABFAB", borderLeftWidth: 4 }}>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold truncate">{ch.name}</p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {ch.phone_number_id ? `ID: ${ch.phone_number_id}` : "phone_number_id não configurado"}
+                  </p>
+                  <p className={`text-xs mt-1 font-medium ${ch.active ? "text-emerald-600" : "text-slate-400"}`}>
+                    {ch.active ? "Canal ativo" : "Canal inativo"}
+                  </p>
+                </div>
+                <Link href="/settings/whatsapp-cloud"
+                  className="shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                  Config
+                </Link>
+              </div>
+            ))}
           </div>
         </div>
       )}
