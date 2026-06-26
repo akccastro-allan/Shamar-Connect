@@ -31,6 +31,7 @@ export async function POST(request: NextRequest) {
     const companyName = String(body?.companyName || "").trim();
     const sessions: string[] = Array.isArray(body?.sessions) ? body.sessions : [];
     const tempPassword = String(body?.tempPassword || "").trim() || generatePassword();
+    const checkoutSessionId = body?.checkoutSessionId ? String(body.checkoutSessionId).trim() : null;
 
     if (!ownerName) return NextResponse.json({ ok: false, error: "Nome do responsável é obrigatório." }, { status: 400 });
     if (!ownerEmail || !ownerEmail.includes("@")) return NextResponse.json({ ok: false, error: "E-mail inválido." }, { status: 400 });
@@ -139,6 +140,21 @@ export async function POST(request: NextRequest) {
       if (channelError) throw channelError;
     }
 
+    // 7. Activate subscription from checkout (when provisioned via checkout flow)
+    let subscriptionResult: Record<string, unknown> | null = null;
+    if (checkoutSessionId) {
+      // Update checkout with tenant/org before calling RPC
+      await db
+        .from("billing_checkout_sessions")
+        .update({ tenant_id: tenant.id, organization_id: org.id, updated_at: now })
+        .eq("id", checkoutSessionId);
+
+      const { data: rpcResult } = await db.rpc("activate_paid_checkout_subscription", {
+        p_checkout_id: checkoutSessionId,
+      });
+      subscriptionResult = rpcResult as Record<string, unknown> | null;
+    }
+
     return NextResponse.json({
       ok: true,
       client: {
@@ -148,6 +164,7 @@ export async function POST(request: NextRequest) {
         email: ownerEmail,
         tempPassword,
         sessions: validSessions,
+        subscription: subscriptionResult,
       },
     });
   } catch (error) {
