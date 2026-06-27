@@ -1,5 +1,11 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import {
+  CheckCircle2,
+  ShieldCheck,
+  Sparkles,
+  Zap,
+} from "lucide-react";
 
 export const metadata: Metadata = {
   title: "Planos — Shamar Connect",
@@ -10,10 +16,14 @@ export const metadata: Metadata = {
 const plans = [
   {
     slug: "starter",
-    name: "Starter",
-    label: "Para começar com organização",
+    name: "Essencial",
+    eyebrow: "Para começar organizado",
     description:
       "Para pequenas operações que precisam centralizar atendimento, histórico e respostas rápidas.",
+    price: "R$ 149",
+    setup: "Implantação R$ 297",
+    highlight: false,
+    bestFor: "negócios com poucos atendentes",
     features: [
       "1 empresa",
       "1 canal inicial",
@@ -23,21 +33,17 @@ const plans = [
       "notas internas",
       "implantação assistida",
     ],
-    notIncluded: [
-      "integração com sistema interno",
-      "transcrição de áudios",
-      "gravação de ligações",
-      "armazenamento adicional",
-      "customizações",
-    ],
   },
   {
     slug: "professional",
     name: "Professional",
-    label: "Mais indicado",
+    eyebrow: "Mais indicado",
     description:
       "Para equipes que precisam dividir atendimento, controlar responsáveis, acompanhar orçamento, retorno e pós-venda.",
+    price: "R$ 297",
+    setup: "Implantação R$ 497",
     highlight: true,
+    bestFor: "equipes comerciais e atendimento diário",
     features: [
       "múltiplos atendentes",
       "setores e filas",
@@ -48,20 +54,17 @@ const plans = [
       "métricas básicas",
       "implantação e treinamento",
     ],
-    notIncluded: [
-      "substituição do sistema atual",
-      "Shamar Agent incluso no plano base",
-      "integração sem diagnóstico",
-      "transcrição, gravação e armazenamento extra",
-      "desenvolvimento exclusivo",
-    ],
   },
   {
     slug: "business",
     name: "Business",
-    label: "Para operações maiores",
+    eyebrow: "Para operações maiores",
     description:
       "Para empresas com vários canais, marcas, equipes, add-ons e necessidade de integração.",
+    price: "R$ 597",
+    setup: "Implantação R$ 997",
+    highlight: false,
+    bestFor: "operações com volume e gestão",
     features: [
       "múltiplos canais",
       "múltiplas equipes ou marcas",
@@ -72,27 +75,20 @@ const plans = [
       "preparação para Shamar Agent",
       "implantação assistida avançada",
     ],
-    notIncluded: [
-      "instalação do Shamar Agent sem contratação",
-      "integrações customizadas sem orçamento",
-      "substituição de sistema interno",
-      "gravação sem configuração",
-      "ações automáticas sem auditoria",
-    ],
   },
 ];
 
 const addOns = [
-  ["IA assistiva", "Apoio com sugestões e recursos inteligentes", "R$ 79,90/mês", "R$ 79,90/mês"],
-  ["Transcrição Start", "Áudios em texto sob demanda, até 1.000 min/mês", "R$ 29/mês", "R$ 24/mês"],
-  ["Transcrição Volume", "Para maior volume de áudio, até 10.000 min/mês", "R$ 449/mês", "R$ 399/mês"],
-  ["Gravação 100h", "Chamadas para conferência e treinamento", "R$ 79/mês", "R$ 59/mês"],
-  ["Gravação 500h", "Pacote intermediário de chamadas", "R$ 249/mês", "R$ 199/mês"],
-  ["Gravação 1.000h", "Pacote avançado de chamadas", "R$ 399/mês", "R$ 349/mês"],
-  ["Armazenamento +10 GB", "Mídias, documentos, áudios e gravações", "R$ 29/mês", "R$ 29/mês"],
-  ["Armazenamento +50 GB", "Mais retenção e volume de mídia", "R$ 119/mês", "R$ 119/mês"],
-  ["Armazenamento +100 GB", "Alto volume e retenção maior", "R$ 199/mês", "R$ 199/mês"],
-  ["Shamar Agent Local", "Conector local para buscar dados autorizados", "R$ 149/mês por conector", "R$ 149/mês por conector"],
+  ["IA assistiva", "Sugestões e apoio inteligente", "R$ 79,90/mês"],
+  ["Transcrição Start", "Áudios em texto até 1.000 min/mês", "R$ 29/mês"],
+  ["Transcrição Volume", "Áudios em texto até 10.000 min/mês", "R$ 449/mês"],
+  ["Gravação 100h", "Chamadas para conferência e treinamento", "R$ 79/mês"],
+  ["Gravação 500h", "Pacote intermediário de chamadas", "R$ 249/mês"],
+  ["Gravação 1.000h", "Pacote avançado de chamadas", "R$ 399/mês"],
+  ["Armazenamento +10 GB", "Mídias, documentos e gravações", "R$ 29/mês"],
+  ["Armazenamento +50 GB", "Mais retenção e volume de mídia", "R$ 119/mês"],
+  ["Armazenamento +100 GB", "Alto volume e retenção maior", "R$ 199/mês"],
+  ["Shamar Agent Local", "Conector local para dados autorizados", "R$ 149/mês por conector"],
 ];
 
 const services = [
@@ -124,17 +120,79 @@ const faqs = [
   ],
 ];
 
+type PlanosPageProps = {
+  searchParams?: Promise<{ reason?: string }>;
+};
+
 function CheckIcon() {
   return (
-    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#2ABFAB]/10 text-xs font-black text-[#2ABFAB]">
-      ✓
+    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#2ABFAB]/12 text-[#13796D]">
+      <CheckCircle2 className="h-3.5 w-3.5" />
     </span>
   );
 }
 
-type PlanosPageProps = {
-  searchParams?: Promise<{ reason?: string }>;
-};
+function PlanMiniPreview() {
+  return (
+    <div className="relative mx-auto max-w-[520px]">
+      <div className="absolute -left-4 top-10 hidden rounded-2xl bg-white px-4 py-3 shadow-2xl shadow-black/20 md:block">
+        <p className="text-[11px] font-black uppercase tracking-wide text-slate-400">Plano atual</p>
+        <p className="mt-1 text-sm font-black text-[#132B57]">Professional</p>
+      </div>
+      <div className="absolute -right-4 bottom-12 hidden rounded-2xl bg-white px-4 py-3 shadow-2xl shadow-black/20 lg:block">
+        <p className="text-[11px] font-black uppercase tracking-wide text-slate-400">Implantação</p>
+        <p className="mt-1 text-sm font-black text-[#13796D]">Assistida</p>
+      </div>
+
+      <div className="rounded-[2.25rem] bg-white/8 p-4 ring-1 ring-white/10 backdrop-blur">
+        <div className="overflow-hidden rounded-[1.75rem] bg-white shadow-2xl shadow-black/25">
+          <div className="border-b border-slate-100 bg-[#F7F9FC] px-5 py-4">
+            <p className="text-xs font-black uppercase tracking-[0.22em] text-[#13796D]">Contratação</p>
+            <p className="mt-1 text-sm font-black text-[#132B57]">Resumo do plano</p>
+          </div>
+
+          <div className="space-y-3 p-5">
+            {[
+              ["Essencial", "R$ 149/mês", false],
+              ["Professional", "R$ 297/mês", true],
+              ["Business", "R$ 597/mês", false],
+            ].map(([name, price, active]) => (
+              <div
+                key={String(name)}
+                className={`rounded-2xl border p-4 ${
+                  active ? "border-[#2ABFAB]/35 bg-[#2ABFAB]/7" : "border-slate-100 bg-[#F8FAFC]"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="font-black text-[#132B57]">{name}</p>
+                    <p className="mt-1 text-xs font-bold text-slate-500">Implantação assistida</p>
+                  </div>
+                  <p className="font-black text-[#132B57]">{price}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-3 gap-3 border-t border-slate-100 p-5">
+            {[
+              ["Canal", "WhatsApp"],
+              ["Equipe", "Setores"],
+              ["Status", "Ativo"],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-2xl bg-[#F7F9FC] p-3">
+                <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">{label}</p>
+                <p className="mt-1 text-xs font-black text-[#132B57]">{value}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="absolute -bottom-8 left-1/2 h-16 w-[78%] -translate-x-1/2 rounded-full bg-[#2ABFAB]/20 blur-3xl" />
+    </div>
+  );
+}
 
 export default async function PlanosPage({ searchParams }: PlanosPageProps) {
   const params = await searchParams;
@@ -150,86 +208,119 @@ export default async function PlanosPage({ searchParams }: PlanosPageProps) {
         </section>
       ) : null}
 
-      <section className="relative overflow-hidden bg-white">
-        <div className="absolute left-1/2 top-0 h-72 w-72 -translate-x-1/2 rounded-full bg-[#2ABFAB]/20 blur-3xl" />
-        <div className="relative mx-auto max-w-7xl px-5 py-20 text-center md:px-8 md:py-28">
-          <div className="mx-auto inline-flex rounded-full border border-[#2ABFAB]/20 bg-[#2ABFAB]/10 px-4 py-2 text-sm font-black text-[#13796D]">
-            Planos base · Implantação assistida · Add-ons opcionais
+      <section className="relative overflow-hidden bg-[#0B1220] text-white">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(42,191,171,0.22),transparent_32%),radial-gradient(circle_at_88%_12%,rgba(255,255,255,0.10),transparent_28%)]" />
+        <div className="absolute -right-24 bottom-10 h-72 w-72 rotate-12 rounded-[3rem] bg-white/5" />
+        <div className="absolute right-24 top-24 h-52 w-52 rotate-12 rounded-[2.5rem] bg-[#2ABFAB]/10" />
+
+        <div className="relative mx-auto grid max-w-7xl items-center gap-12 px-5 py-16 md:px-8 md:py-24 lg:grid-cols-[0.92fr_1.08fr]">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full bg-white/8 px-4 py-2 text-sm font-black text-[#86F2E2] ring-1 ring-white/10">
+              <Sparkles className="h-4 w-4" />
+              Planos base · Implantação assistida
+            </div>
+
+            <h1 className="mt-7 max-w-3xl text-4xl font-black leading-[1.04] tracking-tight md:text-6xl">
+              Escolha o plano para organizar seu atendimento.
+            </h1>
+
+            <p className="mt-6 max-w-2xl text-lg leading-8 text-white/70">
+              O pagamento confirma a contratação. A liberação é feita com implantação assistida para evitar configuração errada e começar com a operação organizada.
+            </p>
+
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <a
+                href="#planos"
+                className="inline-flex items-center justify-center rounded-full bg-[#2ABFAB] px-7 py-4 text-sm font-black text-white shadow-xl shadow-[#2ABFAB]/20 transition hover:-translate-y-0.5 hover:bg-[#22A898]"
+              >
+                Escolher plano
+              </a>
+              <Link
+                href="/checkout?plan=professional"
+                className="inline-flex items-center justify-center rounded-full border border-white/18 bg-white/8 px-7 py-4 text-sm font-black text-white transition hover:-translate-y-0.5 hover:bg-white/12"
+              >
+                Ir direto para checkout
+              </Link>
+              <Link
+                href="/contato"
+                className="inline-flex items-center justify-center rounded-full px-7 py-4 text-sm font-black text-white/80 transition hover:bg-white/8"
+              >
+                Falar antes
+              </Link>
+            </div>
+
+            <div className="mt-10 grid max-w-xl gap-3 sm:grid-cols-2">
+              {["Sem auto-provisionamento", "Checkout seguro", "Ativação assistida", "Add-ons opcionais"].map((item) => (
+                <div key={item} className="flex items-center gap-3 rounded-2xl bg-white/7 px-4 py-3 ring-1 ring-white/10">
+                  <CheckIcon />
+                  <span className="text-sm font-bold text-white/82">{item}</span>
+                </div>
+              ))}
+            </div>
           </div>
-          <h1 className="mx-auto mt-7 max-w-5xl text-4xl font-black tracking-tight text-[#1B2F5B] md:text-6xl">
-            Escolha o plano, pague com segurança e entre na fila de implantação.
-          </h1>
-          <p className="mx-auto mt-6 max-w-3xl text-base leading-8 text-slate-600 md:text-xl">
-            O Shamar Connect centraliza canais, equipe, histórico, responsáveis e retornos. O pagamento confirma a contratação; a liberação é feita com implantação assistida para evitar configuração errada.
-          </p>
-          <div className="mt-9 flex flex-col justify-center gap-4 sm:flex-row">
-            <a href="#planos" className="rounded-full bg-[#2ABFAB] px-7 py-4 text-base font-black text-white shadow-lg shadow-[#2ABFAB]/20 transition hover:-translate-y-0.5 hover:shadow-xl">
-              Escolher plano
-            </a>
-            <Link href="/checkout?plan=professional" className="rounded-full border border-slate-300 bg-white px-7 py-4 text-base font-black text-[#1B2F5B] shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
-              Ir direto para checkout
-            </Link>
-            <Link href="/contato" className="rounded-full border border-slate-300 bg-white px-7 py-4 text-base font-black text-[#1B2F5B] shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
-              Falar antes de contratar
-            </Link>
-          </div>
+
+          <PlanMiniPreview />
         </div>
       </section>
 
-      <section id="planos" className="mx-auto max-w-7xl px-5 py-20 md:px-8">
-        <div className="mx-auto max-w-3xl text-center">
-          <p className="text-sm font-black uppercase tracking-[0.25em] text-[#C9952A]">Planos</p>
-          <h2 className="mt-3 text-3xl font-black tracking-tight text-[#1B2F5B] md:text-5xl">
-            Planos base para diferentes estágios da operação
-          </h2>
-          <p className="mt-5 text-lg leading-8 text-slate-600">
-            O plano base organiza o atendimento. Os add-ons entram conforme necessidade real da empresa.
-          </p>
-        </div>
+      <section id="planos" className="bg-[#F6F8FC] py-20">
+        <div className="mx-auto max-w-7xl px-5 md:px-8">
+          <div className="grid gap-8 md:grid-cols-[0.8fr_1.2fr] md:items-end">
+            <div>
+              <p className="text-sm font-black uppercase tracking-[0.22em] text-[#C9952A]">Planos</p>
+              <h2 className="mt-3 text-3xl font-black tracking-tight text-[#132B57] md:text-5xl">
+                Três formas simples de começar.
+              </h2>
+            </div>
+            <p className="text-base leading-8 text-slate-600">
+              O plano base organiza o atendimento. Os recursos opcionais entram quando a empresa realmente precisa de mais volume, gravação, transcrição ou integração.
+            </p>
+          </div>
 
-        <div className="mt-14 grid gap-7 lg:grid-cols-3">
-          {plans.map((plan) => (
-            <article
-              key={plan.name}
-              className={
-                plan.highlight
-                  ? "relative rounded-[2rem] border-2 border-[#2ABFAB] bg-white p-7 shadow-2xl shadow-[#2ABFAB]/10"
-                  : "rounded-[2rem] border border-slate-200 bg-white p-7 shadow-sm"
-              }
-            >
-              {plan.highlight ? (
-                <div className="absolute -top-4 left-1/2 -translate-x-1/2 rounded-full bg-[#C9952A] px-5 py-2 text-xs font-black uppercase tracking-wide text-white shadow-lg">
-                  Mais indicado
-                </div>
-              ) : null}
-              <p className="text-sm font-black uppercase tracking-wide text-[#2ABFAB]">{plan.label}</p>
-              <h3 className="mt-3 text-3xl font-black text-[#1B2F5B]">{plan.name}</h3>
-              <p className="mt-4 min-h-24 text-sm leading-6 text-slate-600">{plan.description}</p>
-
-              <div className="mt-7 rounded-3xl bg-slate-50 p-5">
-                <p className="text-xs font-black uppercase tracking-wide text-slate-500">Plano base</p>
-                <p className="mt-2 text-3xl font-black tracking-tight text-[#1B2F5B]">
-                  {plan.slug === "starter" ? "R$ 149" : plan.slug === "professional" ? "R$ 297" : "R$ 597"}
-                  <span className="text-base font-bold text-slate-500">/mês</span>
-                </p>
-                <p className="mt-1 text-sm font-bold text-slate-500">
-                  {plan.slug === "starter" ? "+ R$ 297 implantação" : plan.slug === "professional" ? "+ R$ 497 implantação" : "+ R$ 997 implantação"}
-                </p>
-              </div>
-
-              <Link
-                href={`/checkout?plan=${plan.slug}`}
-                className={plan.highlight ? "mt-7 flex w-full justify-center rounded-2xl bg-[#2ABFAB] px-5 py-4 text-sm font-black text-white shadow-lg shadow-[#2ABFAB]/20 transition hover:-translate-y-0.5 hover:shadow-xl" : "mt-7 flex w-full justify-center rounded-2xl bg-[#1B2F5B] px-5 py-4 text-sm font-black text-white shadow-md transition hover:-translate-y-0.5 hover:shadow-lg"}
+          <div className="mt-12 grid gap-6 lg:grid-cols-3">
+            {plans.map((plan) => (
+              <article
+                key={plan.slug}
+                className={`relative rounded-[2rem] border bg-white p-7 shadow-sm ${
+                  plan.highlight ? "border-[#2ABFAB] shadow-xl shadow-[#2ABFAB]/10" : "border-slate-200"
+                }`}
               >
-                Contratar {plan.name}
-              </Link>
-              <Link href="/contato" className="mt-3 flex w-full justify-center text-sm font-bold text-slate-500 hover:text-[#1B2F5B]">
-                Tirar dúvida antes
-              </Link>
+                {plan.highlight ? (
+                  <div className="absolute -top-4 left-7 rounded-full bg-[#C9952A] px-4 py-2 text-xs font-black uppercase tracking-wide text-white">
+                    Mais indicado
+                  </div>
+                ) : null}
 
-              <div className="mt-7 border-t border-slate-100 pt-7">
-                <h4 className="text-sm font-black text-[#1B2F5B]">Inclui</h4>
-                <ul className="mt-4 space-y-3">
+                <p className="text-sm font-black uppercase tracking-wide text-[#13796D]">{plan.eyebrow}</p>
+                <h3 className="mt-3 text-3xl font-black text-[#132B57]">{plan.name}</h3>
+                <p className="mt-4 min-h-20 text-sm leading-6 text-slate-600">{plan.description}</p>
+
+                <div className="mt-7 rounded-3xl bg-[#F7F9FC] p-5">
+                  <p className="text-xs font-black uppercase tracking-wide text-slate-500">Plano base</p>
+                  <div className="mt-2 flex items-end gap-2">
+                    <span className="text-4xl font-black tracking-tight text-[#132B57]">{plan.price}</span>
+                    <span className="pb-1 text-sm font-bold text-slate-500">/mês</span>
+                  </div>
+                  <p className="mt-2 text-sm font-bold text-slate-500">{plan.setup}</p>
+                </div>
+
+                <div className="mt-5 rounded-3xl border border-slate-100 bg-white p-5">
+                  <p className="text-xs font-black uppercase tracking-wide text-slate-400">Ideal para</p>
+                  <p className="mt-2 text-sm font-black text-[#132B57]">{plan.bestFor}</p>
+                </div>
+
+                <Link
+                  href={`/checkout?plan=${plan.slug}`}
+                  className={`mt-7 inline-flex w-full items-center justify-center rounded-2xl px-5 py-4 text-sm font-black transition hover:-translate-y-0.5 ${
+                    plan.highlight
+                      ? "bg-[#2ABFAB] text-white shadow-lg shadow-[#2ABFAB]/20 hover:bg-[#22A898]"
+                      : "bg-[#132B57] text-white shadow-md shadow-[#132B57]/10 hover:bg-[#0E2147]"
+                  }`}
+                >
+                  Contratar {plan.name}
+                </Link>
+
+                <ul className="mt-7 space-y-3">
                   {plan.features.map((feature) => (
                     <li key={feature} className="flex items-start gap-3 text-sm text-slate-700">
                       <CheckIcon />
@@ -237,93 +328,90 @@ export default async function PlanosPage({ searchParams }: PlanosPageProps) {
                     </li>
                   ))}
                 </ul>
-              </div>
-
-              <div className="mt-7 rounded-3xl bg-slate-50 p-5">
-                <h4 className="text-sm font-black text-[#1B2F5B]">Não inclui no plano base</h4>
-                <ul className="mt-3 space-y-2 text-sm text-slate-600">
-                  {plan.notIncluded.map((item) => <li key={item}>• {item}</li>)}
-                </ul>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section id="addons" className="mx-auto max-w-7xl px-5 py-20 md:px-8">
-        <div className="mx-auto max-w-3xl text-center">
-          <p className="text-sm font-black uppercase tracking-[0.25em] text-[#C9952A]">Add-ons</p>
-          <h2 className="mt-3 text-3xl font-black tracking-tight text-[#1B2F5B] md:text-5xl">
-            Recursos opcionais com preço separado
-          </h2>
-          <p className="mt-5 text-lg leading-8 text-slate-600">
-            Transcrição, gravação, armazenamento e Agent não precisam ser contratados por todos.
-          </p>
-        </div>
-
-        <div className="mt-12 overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm">
-          <div className="grid grid-cols-4 bg-[#1B2F5B] px-5 py-4 text-sm font-black text-white">
-            <div>Recurso</div>
-            <div>Descrição</div>
-            <div className="text-center">Planos abaixo do Business</div>
-            <div className="text-center">Business ou superior</div>
+              </article>
+            ))}
           </div>
-          {addOns.map(([title, description, standard, business]) => (
-            <div key={title} className="grid grid-cols-4 border-t border-slate-100 px-5 py-4 text-sm">
-              <div className="font-black text-[#1B2F5B]">{title}</div>
-              <div className="text-slate-600">{description}</div>
-              <div className="text-center font-bold text-slate-700">{standard}</div>
-              <div className="text-center font-bold text-slate-700">{business}</div>
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-8 rounded-[2rem] border border-[#C9952A]/20 bg-[#FFF7E8] p-7 text-sm leading-7 text-[#8A5D12]">
-          <strong>Importante:</strong> gravação de ligações exige configuração, controle de acesso e retenção definida. Transcrição é sob demanda. O Shamar Agent é integração técnica e não substitui o sistema atual.
         </div>
       </section>
 
-      <section className="bg-white py-20">
+      <section id="addons" className="bg-white py-20">
         <div className="mx-auto max-w-7xl px-5 md:px-8">
           <div className="mx-auto max-w-3xl text-center">
-            <p className="text-sm font-black uppercase tracking-[0.25em] text-[#C9952A]">Integrações</p>
-            <h2 className="mt-3 text-3xl font-black tracking-tight text-[#1B2F5B] md:text-5xl">
-              Shamar Agent é conector local, não chatbot
+            <p className="text-sm font-black uppercase tracking-[0.22em] text-[#C9952A]">Add-ons</p>
+            <h2 className="mt-3 text-3xl font-black tracking-tight text-[#132B57] md:text-5xl">
+              Recursos opcionais, sem empurrar pacote desnecessário.
             </h2>
-            <p className="mt-5 text-lg leading-8 text-slate-600">
-              O Agent conecta sistemas internos ao Shamar Connect para trazer dados úteis ao atendimento.
+            <p className="mt-4 text-base leading-7 text-slate-600">
+              Transcrição, gravação, armazenamento e Agent entram conforme o volume e a necessidade real da operação.
             </p>
           </div>
 
-          <div className="mt-12 grid gap-5 md:grid-cols-3">
-            {services.map(([title, price, description]) => (
-              <article key={title} className="rounded-[2rem] border border-slate-200 bg-slate-50 p-7">
-                <h3 className="text-xl font-black text-[#1B2F5B]">{title}</h3>
-                <p className="mt-3 text-2xl font-black text-[#C9952A]">{price}</p>
-                <p className="mt-4 text-sm leading-6 text-slate-600">{description}</p>
+          <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {addOns.map(([title, description, price]) => (
+              <article key={title} className="rounded-[1.6rem] border border-slate-200 bg-[#F8FAFC] p-5 shadow-sm">
+                <p className="font-black text-[#132B57]">{title}</p>
+                <p className="mt-2 min-h-10 text-sm leading-6 text-slate-600">{description}</p>
+                <p className="mt-4 text-lg font-black text-[#13796D]">{price}</p>
               </article>
             ))}
           </div>
 
-          <div className="mt-10 rounded-[2rem] bg-[#1B2F5B] p-8 text-white md:p-10">
-            <h3 className="text-2xl font-black">O que o Shamar Connect organiza — e o que não substitui</h3>
-            <p className="mt-4 text-sm leading-7 text-white/75">
-              O Shamar Connect organiza atendimento, relacionamento e vendas. O Shamar Agent busca informações autorizadas no sistema atual. O sistema atual continua cuidando da gestão interna.
-            </p>
+          <div className="mt-8 rounded-[2rem] border border-[#C9952A]/20 bg-[#FFF7E8] p-7 text-sm leading-7 text-[#8A5D12]">
+            <strong>Importante:</strong> gravação de ligações exige configuração, controle de acesso e retenção definida. Transcrição é sob demanda. O Shamar Agent é integração técnica e não substitui o sistema atual.
           </div>
         </div>
       </section>
 
-      <section id="faq" className="py-20">
+      <section className="bg-[#F6F8FC] py-20">
+        <div className="mx-auto grid max-w-7xl gap-10 px-5 md:px-8 lg:grid-cols-[0.95fr_1.05fr] lg:items-center">
+          <div className="relative overflow-hidden rounded-[2.5rem] bg-[#132B57] p-8 text-white shadow-2xl shadow-[#132B57]/15 md:p-10">
+            <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-[#2ABFAB]/20 blur-3xl" />
+            <div className="relative">
+              <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#2ABFAB]/15 text-[#2ABFAB]">
+                <Zap className="h-7 w-7" />
+              </div>
+              <p className="text-sm font-black uppercase tracking-[0.22em] text-[#86F2E2]">Integrações</p>
+              <h2 className="mt-4 text-3xl font-black leading-tight md:text-5xl">
+                Shamar Agent é conector local, não chatbot.
+              </h2>
+              <p className="mt-5 text-base leading-8 text-white/70">
+                O Agent conecta sistemas internos ao Shamar Connect para buscar dados autorizados e apoiar o atendimento.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid gap-4">
+            {services.map(([title, price, description]) => (
+              <article key={title} className="rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-sm">
+                <div className="flex items-start justify-between gap-5">
+                  <div>
+                    <h3 className="text-xl font-black text-[#132B57]">{title}</h3>
+                    <p className="mt-3 text-sm leading-6 text-slate-600">{description}</p>
+                  </div>
+                  <p className="shrink-0 text-right text-lg font-black text-[#C9952A]">{price}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section id="faq" className="bg-white py-20">
         <div className="mx-auto max-w-4xl px-5 md:px-8">
           <div className="text-center">
-            <p className="text-sm font-black uppercase tracking-[0.25em] text-[#C9952A]">FAQ</p>
-            <h2 className="mt-3 text-3xl font-black tracking-tight text-[#1B2F5B] md:text-5xl">Perguntas frequentes</h2>
+            <p className="text-sm font-black uppercase tracking-[0.22em] text-[#C9952A]">FAQ</p>
+            <h2 className="mt-3 text-3xl font-black tracking-tight text-[#132B57] md:text-5xl">
+              Perguntas frequentes
+            </h2>
           </div>
+
           <div className="mt-12 space-y-4">
             {faqs.map(([question, answer]) => (
-              <details key={question} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                <summary className="cursor-pointer list-none text-base font-black text-[#1B2F5B]">{question}</summary>
+              <details key={question} className="group rounded-3xl border border-slate-200 bg-[#F8FAFC] p-6 shadow-sm">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-base font-black text-[#132B57]">
+                  {question}
+                  <ShieldCheck className="h-5 w-5 shrink-0 text-[#13796D]" />
+                </summary>
                 <p className="mt-4 text-sm leading-7 text-slate-600">{answer}</p>
               </details>
             ))}
@@ -332,21 +420,33 @@ export default async function PlanosPage({ searchParams }: PlanosPageProps) {
       </section>
 
       <section className="px-5 py-20 md:px-8">
-        <div className="mx-auto max-w-6xl overflow-hidden rounded-[2rem] bg-[#1B2F5B] px-6 py-16 text-center text-white shadow-2xl md:px-12">
-          <p className="text-sm font-black uppercase tracking-[0.25em] text-[#2ABFAB]">Shamar Connect</p>
-          <h2 className="mx-auto mt-4 max-w-3xl text-3xl font-black tracking-tight md:text-5xl">
-            Organize o atendimento, escolha um plano e comece com implantação assistida.
-          </h2>
-          <p className="mx-auto mt-5 max-w-2xl text-base leading-8 text-white/70">
-            O Shamar Connect não substitui sua equipe nem seu sistema atual. Ele organiza a entrada do cliente, registra histórico, define responsáveis e dá visibilidade para o gestor.
-          </p>
-          <div className="mt-9 flex flex-col justify-center gap-4 sm:flex-row">
-            <a href="#planos" className="rounded-full bg-[#2ABFAB] px-8 py-4 text-sm font-black text-white shadow-lg shadow-black/10 transition hover:-translate-y-0.5 hover:shadow-xl">
-              Ver planos
-            </a>
-            <Link href="/contato" className="rounded-full border border-white/20 bg-white/10 px-8 py-4 text-sm font-black text-white transition hover:-translate-y-0.5 hover:bg-white/15">
-              Falar com especialista
-            </Link>
+        <div className="relative mx-auto max-w-6xl overflow-hidden rounded-[2.5rem] bg-[#0B1220] px-6 py-16 text-center text-white shadow-2xl shadow-[#132B57]/20 md:px-12">
+          <div className="absolute -left-20 -top-20 h-60 w-60 rounded-full bg-[#2ABFAB]/20 blur-3xl" />
+          <div className="absolute -bottom-24 right-0 h-72 w-72 rounded-full bg-white/10 blur-3xl" />
+          <div className="relative">
+            <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#2ABFAB]/15 text-[#2ABFAB]">
+              <Zap className="h-7 w-7" />
+            </div>
+            <h2 className="mx-auto max-w-3xl text-3xl font-black tracking-tight md:text-5xl">
+              Escolha o plano e comece com implantação assistida.
+            </h2>
+            <p className="mx-auto mt-5 max-w-2xl text-base leading-8 text-white/70">
+              O Shamar Connect organiza a entrada do cliente, registra histórico, define responsáveis e dá visibilidade para o gestor.
+            </p>
+            <div className="mt-9 flex flex-col justify-center gap-4 sm:flex-row">
+              <a
+                href="#planos"
+                className="rounded-full bg-[#2ABFAB] px-8 py-4 text-sm font-black text-white shadow-lg shadow-black/10 transition hover:-translate-y-0.5 hover:bg-[#22A898]"
+              >
+                Ver planos
+              </a>
+              <Link
+                href="/contato"
+                className="rounded-full border border-white/20 bg-white/10 px-8 py-4 text-sm font-black text-white transition hover:-translate-y-0.5 hover:bg-white/15"
+              >
+                Falar com especialista
+              </Link>
+            </div>
           </div>
         </div>
       </section>

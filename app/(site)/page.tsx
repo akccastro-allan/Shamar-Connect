@@ -1,182 +1,200 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import {
+  CheckCircle2,
+  Clock,
+  MessageSquareText,
+  ShieldCheck,
+  UserRound,
+  Zap,
+} from "lucide-react";
 
 import { getCurrentSession } from "@/lib/auth/session";
 
 export const metadata: Metadata = {
-  title: "Shamar Connect — Central de atendimento, relacionamento e vendas",
+  title: "Shamar Connect — Atendimento, CRM e vendas no WhatsApp",
   description:
-    "Organize WhatsApp, Instagram, Facebook, atendentes, setores, histórico e retornos em uma central de atendimento com humano no controle.",
+    "Centralize conversas, responsáveis, histórico, setores e próximos passos em uma central profissional para atendimento e vendas pelo WhatsApp.",
   openGraph: {
-    title: "Shamar Connect — Atendimento organizado para sua equipe",
+    title: "Shamar Connect — Atendimento, CRM e vendas no WhatsApp",
     description:
-      "Centralize canais, organize responsáveis e pare de perder clientes por falta de processo no atendimento.",
+      "Organize a operação comercial e o atendimento com histórico, responsáveis e próximos passos claros.",
     url: "https://shamarconnect.com.br",
     type: "website",
   },
 };
 
-const pains = [
+const quickBenefits = [
+  "Responsável por conversa",
+  "Histórico do cliente",
+  "Setores e filas",
+  "Próxima ação visível",
+];
+
+const operationCards = [
   {
-    icon: "⏳",
-    title: "Cliente esperando resposta",
-    text: "O cliente chama, ninguém assume e a oportunidade esfria antes de virar venda.",
+    icon: MessageSquareText,
+    title: "Atendimento centralizado",
+    text: "Converse com clientes sem perder contexto, histórico ou responsável.",
   },
   {
-    icon: "📱",
-    title: "Conversas espalhadas",
-    text: "WhatsApp, Instagram, Facebook e balcão ficam sem histórico centralizado.",
+    icon: UserRound,
+    title: "Equipe organizada",
+    text: "Defina setores, responsáveis e status para cada atendimento.",
   },
   {
-    icon: "👥",
-    title: "Ninguém sabe quem assumiu",
-    text: "Duas pessoas respondem o mesmo cliente ou ninguém responde porque a fila não está clara.",
+    icon: Clock,
+    title: "Retorno no tempo certo",
+    text: "Controle orçamentos, pendências, follow-up e pós-venda.",
   },
   {
-    icon: "🔥",
-    title: "Dono apagando incêndio",
-    text: "O gestor precisa lembrar de orçamento, retorno, pendência e pós-venda na cabeça.",
-  },
-  {
-    icon: "💸",
-    title: "Orçamento esquecido",
-    text: "O cliente pediu preço, a equipe não acompanhou e a venda foi embora.",
-  },
-  {
-    icon: "🎧",
-    title: "Áudios difíceis de atender",
-    text: "O cliente manda áudio, mas nem sempre o atendente pode ouvir na hora.",
+    icon: ShieldCheck,
+    title: "Humano no controle",
+    text: "Sem robô solto. O processo apoia sua equipe, não substitui sua operação.",
   },
 ];
 
-const connectModules = [
-  {
-    badge: "Atendimento",
-    title: "Fila organizada para sua equipe",
-    text: "Cada conversa pode ter setor, responsável, status e histórico. Sua equipe sabe o que responder e o gestor sabe o que está parado.",
-    bullets: ["Responsável por conversa", "Setores e filas", "Histórico do cliente", "Status e pendências"],
-    color: "#2ABFAB",
-  },
-  {
-    badge: "Relacionamento",
-    title: "Histórico para não começar do zero",
-    text: "Mensagens, mídias, notas internas e contexto ficam no atendimento para a equipe continuar sem depender da memória de alguém.",
-    bullets: ["Notas internas", "Respostas rápidas", "Assinatura do atendente", "Pós-venda e retorno"],
-    color: "#1B2F5B",
-  },
-  {
-    badge: "Vendas",
-    title: "Pré-orçamento e follow-up com controle",
-    text: "Transforme interesse em próximo passo: orçamento, aguardando cliente, aprovado, finalizado ou pós-venda.",
-    bullets: ["Funil comercial", "Etapas por operação", "Acompanhamento de retorno", "Visão de gestor"],
-    color: "#C9952A",
-  },
-  {
-    badge: "Mídias",
-    title: "Texto, imagem, figurinha e áudio no mesmo lugar",
-    text: "O atendimento não pode quebrar quando o cliente manda áudio ou mídia. O Shamar organiza a conversa como ela acontece de verdade.",
-    bullets: ["Áudio na central", "Imagem e documento", "Figurinha", "Transcrição como add-on"],
-    color: "#2ABFAB",
-  },
-  {
-    badge: "Integração",
-    title: "Shamar Agent conecta sistemas internos",
-    text: "O Agent é um conector local para buscar dados autorizados no sistema do cliente e levar informação útil para o atendimento.",
-    bullets: ["Consulta de preços", "Produtos e estoque", "Agenda e serviços", "Escrita futura com auditoria"],
-    color: "#1B2F5B",
-  },
-  {
-    badge: "Gestão",
-    title: "Humano no controle, processo visível",
-    text: "O Shamar não substitui sua equipe nem seu sistema interno. Ele organiza a entrada do cliente e dá controle para quem atende.",
-    bullets: ["Sem robô solto", "Sem trocar ERP", "Implantação assistida", "Operação acompanhada"],
-    color: "#C9952A",
-  },
+const workflow = [
+  "Cliente chama pelo WhatsApp",
+  "Equipe assume com responsável e setor",
+  "Histórico e notas ficam salvos",
+  "Atendimento vira orçamento, retorno ou venda",
 ];
 
 const segments = [
-  {
-    icon: "🔧",
-    title: "Oficinas e autopeças",
-    text: "Organize atendimento, pré-orçamentos, retorno e consultas ao sistema atual sem substituir o ERP da empresa.",
-  },
-  {
-    icon: "🍔",
-    title: "Restaurantes e delivery",
-    text: "Centralize pedidos, dúvidas, reclamações e pós-venda em uma fila clara para a equipe.",
-  },
-  {
-    icon: "🏥",
-    title: "Clínicas",
-    text: "Evite paciente preso em robô, organize setores e acompanhe solicitações com atendimento humano rápido.",
-  },
-  {
-    icon: "⛪",
-    title: "Igrejas e eventos",
-    text: "Organize inscrições, confirmações, dúvidas e comunicação com equipes diferentes.",
-  },
-  {
-    icon: "🏢",
-    title: "Empresas com várias marcas",
-    text: "Separe canais, empresas, históricos e equipes sem misturar atendimentos.",
-  },
-  {
-    icon: "🛒",
-    title: "E-commerce e vendas online",
-    text: "Transforme a loja virtual em porta de entrada para atendimento, orçamento e acompanhamento.",
-  },
+  "Oficinas e autopeças",
+  "Clínicas",
+  "E-commerce",
+  "Prestadores de serviço",
+  "Igrejas e eventos",
+  "Empresas com várias marcas",
 ];
 
-const optionalResources = [
-  {
-    title: "Transcrição de áudios",
-    text: "Áudios podem virar texto sob demanda quando contratado, sem prometer transcrição automática em tempo real.",
-    price: "A partir de R$ 29/mês",
-  },
-  {
-    title: "Gravação de ligações",
-    text: "Recurso opcional para auditoria, treinamento e conferência, com controle de acesso e retenção configurável.",
-    price: "A partir de R$ 79/mês",
-  },
-  {
-    title: "Armazenamento adicional",
-    text: "Espaço extra para guardar mídias, documentos, áudios e gravações conforme o volume da operação.",
-    price: "+10 GB por R$ 29/mês",
-  },
-  {
-    title: "Shamar Agent",
-    text: "Conector local para buscar informações autorizadas em sistemas internos e disponibilizar no atendimento.",
-    price: "A partir de R$ 149/mês por conector",
-  },
-];
-
-const planCards = [
+const plans = [
   {
     name: "Essencial",
-    label: "Para começar organizado",
-    description: "Pequenas operações que precisam centralizar atendimento, histórico e respostas rápidas.",
-    features: ["1 canal inicial", "Até 2 usuários", "Histórico de atendimento", "Mensagens rápidas", "Implantação assistida"],
+    price: "R$149",
+    setup: "Implantação R$297",
+    text: "Para começar organizado.",
+    href: "/checkout?plan=starter",
   },
   {
     name: "Professional",
-    label: "Mais indicado",
-    description: "Equipes que precisam dividir atendimento, acompanhar retornos e parar de perder orçamento.",
-    features: ["Múltiplos atendentes", "Setores e responsáveis", "Status de atendimento", "Funil comercial", "Métricas básicas"],
-    highlight: true,
+    price: "R$297",
+    setup: "Implantação R$497",
+    text: "Para equipes com atendimento e vendas.",
+    href: "/checkout?plan=professional",
+    featured: true,
   },
   {
     name: "Business",
-    label: "Operações maiores",
-    description: "Empresas com mais canais, marcas, integrações e necessidade de recursos avançados.",
-    features: ["Múltiplos canais", "Visão de gestor", "Descontos em add-ons", "Preparação para Agent", "Projetos de integração"],
+    price: "R$597",
+    setup: "Implantação R$997",
+    text: "Para operações com mais canais e integrações.",
+    href: "/checkout?plan=business",
   },
 ];
 
 function CheckMark() {
   return (
-    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#2ABFAB]/15 text-xs font-black text-[#2ABFAB]">
-      ✓
+    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#2ABFAB]/15 text-[#13796D]">
+      <CheckCircle2 className="h-3.5 w-3.5" />
     </span>
+  );
+}
+
+function HeroProductVisual() {
+  return (
+    <div className="relative mx-auto w-full max-w-[590px]">
+      <div className="absolute -right-6 top-8 hidden rounded-2xl bg-white px-4 py-3 shadow-2xl shadow-black/20 md:block">
+        <p className="text-[11px] font-black uppercase tracking-wide text-slate-400">Novo cliente</p>
+        <p className="mt-1 text-sm font-black text-[#132B57]">Orçamento pendente</p>
+      </div>
+
+      <div className="absolute -left-5 bottom-16 hidden rounded-2xl bg-white px-4 py-3 shadow-2xl shadow-black/20 lg:block">
+        <p className="text-[11px] font-black uppercase tracking-wide text-slate-400">Responsável</p>
+        <p className="mt-1 text-sm font-black text-[#132B57]">Ana · Vendas</p>
+      </div>
+
+      <div className="rounded-[2.5rem] bg-white/8 p-4 ring-1 ring-white/10 backdrop-blur">
+        <div className="overflow-hidden rounded-[2rem] bg-white shadow-2xl shadow-black/25">
+          <div className="flex items-center justify-between border-b border-slate-100 bg-[#F7F9FC] px-5 py-4">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.22em] text-[#13796D]">Shamar Connect</p>
+              <p className="mt-1 text-sm font-black text-[#132B57]">Central de atendimento</p>
+            </div>
+            <div className="flex gap-1.5">
+              <span className="h-3 w-3 rounded-full bg-red-300" />
+              <span className="h-3 w-3 rounded-full bg-amber-300" />
+              <span className="h-3 w-3 rounded-full bg-emerald-300" />
+            </div>
+          </div>
+
+          <div className="grid min-h-[410px] grid-cols-[0.9fr_1.35fr]">
+            <div className="border-r border-slate-100 bg-[#F7F9FC] p-4">
+              {[
+                ["Novo lead", "Aguardando", "2 min"],
+                ["Orçamento", "Retorno hoje", "18 min"],
+                ["Agendamento", "Triagem", "42 min"],
+                ["Pós-venda", "Cliente respondeu", "1h"],
+              ].map(([name, status, time], index) => (
+                <div
+                  key={name}
+                  className={`mb-3 rounded-2xl border p-3 ${
+                    index === 1 ? "border-[#2ABFAB]/30 bg-white shadow-sm" : "border-slate-100 bg-white/70"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-black text-[#132B57]">{name}</p>
+                    <p className="text-[11px] font-bold text-slate-400">{time}</p>
+                  </div>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">{status}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="bg-white p-5">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                <div>
+                  <p className="text-sm font-black text-[#132B57]">Maria Oliveira</p>
+                  <p className="text-xs font-semibold text-slate-500">WhatsApp · Vendas</p>
+                </div>
+                <span className="rounded-full bg-[#2ABFAB]/10 px-3 py-1 text-xs font-black text-[#13796D]">
+                  Em atendimento
+                </span>
+              </div>
+
+              <div className="space-y-3 py-5">
+                <div className="max-w-[82%] rounded-2xl bg-slate-100 px-4 py-3 text-sm text-slate-700">
+                  Consigo fechar o orçamento ainda hoje?
+                </div>
+                <div className="ml-auto max-w-[82%] rounded-2xl bg-[#132B57] px-4 py-3 text-sm text-white">
+                  Sim. Já localizei seu atendimento e vou confirmar os detalhes.
+                </div>
+                <div className="max-w-[82%] rounded-2xl bg-slate-100 px-4 py-3 text-sm text-slate-700">
+                  Pode enviar por aqui mesmo.
+                </div>
+              </div>
+
+              <div className="grid gap-3 border-t border-slate-100 pt-4 sm:grid-cols-3">
+                {[
+                  ["Setor", "Vendas"],
+                  ["Status", "Follow-up"],
+                  ["Ação", "Orçamento"],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-2xl bg-[#F7F9FC] p-3">
+                    <p className="text-[11px] font-black uppercase tracking-wide text-slate-400">{label}</p>
+                    <p className="mt-1 text-xs font-black text-[#132B57]">{value}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="absolute -bottom-8 left-1/2 h-16 w-[80%] -translate-x-1/2 rounded-full bg-[#2ABFAB]/20 blur-3xl" />
+    </div>
   );
 }
 
@@ -186,234 +204,191 @@ export default async function HomePage() {
 
   return (
     <>
-      <section className="relative overflow-hidden bg-white">
-        <div className="absolute left-1/4 top-0 h-96 w-96 -translate-x-1/2 rounded-full bg-[#2ABFAB]/15 blur-3xl" />
-        <div className="absolute right-0 top-16 h-80 w-80 rounded-full bg-[#1B2F5B]/10 blur-3xl" />
-        <div className="relative mx-auto max-w-7xl px-5 py-20 md:px-8 md:py-32">
-          <div className="mx-auto max-w-4xl text-center">
-            <div className="mx-auto mb-7 inline-flex rounded-full border border-[#2ABFAB]/25 bg-[#2ABFAB]/10 px-5 py-2 text-sm font-black text-[#13796D]">
-              Atendimento · Relacionamento · Vendas · Integração
+      <section className="relative overflow-hidden bg-[#0B1220] text-white">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(42,191,171,0.22),transparent_32%),radial-gradient(circle_at_88%_12%,rgba(255,255,255,0.10),transparent_28%)]" />
+        <div className="absolute -right-24 bottom-10 h-72 w-72 rotate-12 rounded-[3rem] bg-white/5" />
+        <div className="absolute right-24 top-24 h-52 w-52 rotate-12 rounded-[2.5rem] bg-[#2ABFAB]/10" />
+
+        <div className="relative mx-auto grid max-w-7xl items-center gap-12 px-5 py-16 md:px-8 md:py-24 lg:grid-cols-[0.92fr_1.08fr]">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full bg-white/8 px-4 py-2 text-sm font-black text-[#86F2E2] ring-1 ring-white/10">
+              <ShieldCheck className="h-4 w-4" />
+              Central de atendimento com CRM
             </div>
-            <h1 className="text-4xl font-black leading-tight tracking-tight text-[#1B2F5B] md:text-6xl lg:text-7xl">
-              Pare de perder clientes por falta de organização no atendimento.
+
+            <h1 className="mt-7 max-w-3xl text-4xl font-black leading-[1.04] tracking-tight md:text-6xl">
+              Organize o WhatsApp da empresa sem perder clientes pelo caminho.
             </h1>
-            <p className="mx-auto mt-7 max-w-3xl text-lg leading-8 text-slate-600 md:text-xl">
-              O Shamar Connect transforma mensagens soltas em atendimentos organizados, com responsável, setor, histórico e próximo passo claro.
+
+            <p className="mt-6 max-w-2xl text-lg leading-8 text-white/70">
+              O Shamar Connect centraliza conversas, responsáveis, histórico e próximos passos para sua equipe atender melhor e vender com mais controle.
             </p>
-            <div className="mt-9 flex flex-col justify-center gap-4 sm:flex-row">
+
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <Link
                 href="/planos"
-                className="rounded-full bg-[#2ABFAB] px-8 py-4 text-base font-black text-white shadow-lg shadow-[#2ABFAB]/25 transition hover:-translate-y-0.5 hover:shadow-xl"
+                className="inline-flex items-center justify-center rounded-full bg-[#2ABFAB] px-7 py-4 text-sm font-black text-white shadow-xl shadow-[#2ABFAB]/20 transition hover:-translate-y-0.5 hover:bg-[#22A898]"
               >
-                Ver planos e contratar
+                Ver planos
               </Link>
               <Link
                 href="/contato"
-                className="rounded-full border border-[#1B2F5B] bg-white px-8 py-4 text-base font-black text-[#1B2F5B] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#1B2F5B] hover:text-white hover:shadow-md"
+                className="inline-flex items-center justify-center rounded-full border border-white/18 bg-white/8 px-7 py-4 text-sm font-black text-white transition hover:-translate-y-0.5 hover:bg-white/12"
               >
                 Falar com especialista
               </Link>
               <Link
                 href={isAuthenticated ? "/operations" : "/login"}
-                className="rounded-full border border-slate-300 bg-white px-8 py-4 text-base font-black text-[#1B2F5B] shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                className="inline-flex items-center justify-center rounded-full px-7 py-4 text-sm font-black text-white/80 transition hover:bg-white/8"
               >
-                {isAuthenticated ? "Abrir Plataforma" : "Entrar na Plataforma"}
+                {isAuthenticated ? "Abrir plataforma" : "Entrar"}
               </Link>
             </div>
+
+            <div className="mt-10 grid max-w-xl gap-3 sm:grid-cols-2">
+              {quickBenefits.map((item) => (
+                <div key={item} className="flex items-center gap-3 rounded-2xl bg-white/7 px-4 py-3 ring-1 ring-white/10">
+                  <CheckMark />
+                  <span className="text-sm font-bold text-white/82">{item}</span>
+                </div>
+              ))}
+            </div>
           </div>
 
-          <div className="mx-auto mt-16 grid max-w-4xl gap-5 rounded-[2rem] border border-slate-200 bg-slate-50 px-6 py-6 md:grid-cols-3 md:px-10">
-            <div className="text-center">
-              <p className="text-3xl font-black text-[#1B2F5B]">1</p>
-              <p className="mt-1 text-xs font-semibold text-slate-500">Central para canais e equipe</p>
-            </div>
-            <div className="border-y border-slate-200 py-4 text-center md:border-x md:border-y-0 md:py-0">
-              <p className="text-3xl font-black text-[#1B2F5B]">0</p>
-              <p className="mt-1 text-xs font-semibold text-slate-500">ERP substituído à força</p>
-            </div>
-            <div className="text-center">
-              <p className="text-3xl font-black text-[#1B2F5B]">100%</p>
-              <p className="mt-1 text-xs font-semibold text-slate-500">Humano no controle</p>
-            </div>
-          </div>
+          <HeroProductVisual />
         </div>
       </section>
 
-      <section className="mx-auto max-w-7xl px-5 py-20 md:px-8">
-        <div className="mx-auto max-w-3xl text-center">
-          <p className="text-sm font-black uppercase tracking-[0.25em] text-[#C9952A]">Dores que curamos</p>
-          <h2 className="mt-3 text-3xl font-black tracking-tight text-[#1B2F5B] md:text-5xl">
-            O problema não é falta de mensagem. É falta de processo.
-          </h2>
-        </div>
-        <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {pains.map((pain) => (
-            <article key={pain.title} className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-              <span className="text-3xl">{pain.icon}</span>
-              <h3 className="mt-4 text-base font-black text-[#1B2F5B]">{pain.title}</h3>
-              <p className="mt-3 text-sm leading-6 text-slate-600">{pain.text}</p>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section id="modulos" className="bg-white py-20">
+      <section id="produto" className="bg-[#F6F8FC] py-20">
         <div className="mx-auto max-w-7xl px-5 md:px-8">
-          <div className="mx-auto max-w-3xl text-center">
-            <p className="text-sm font-black uppercase tracking-[0.25em] text-[#C9952A]">Shamar Connect</p>
-            <h2 className="mt-3 text-3xl font-black tracking-tight text-[#1B2F5B] md:text-5xl">
-              Central de atendimento, relacionamento e vendas
-            </h2>
-            <p className="mt-5 text-lg leading-8 text-slate-600">
-              O Shamar organiza a entrada do cliente. O sistema atual da empresa continua cuidando da gestão interna.
+          <div className="grid gap-8 md:grid-cols-[0.8fr_1.2fr] md:items-end">
+            <div>
+              <p className="text-sm font-black uppercase tracking-[0.22em] text-[#C9952A]">Benefícios para a operação</p>
+              <h2 className="mt-3 text-3xl font-black tracking-tight text-[#132B57] md:text-5xl">
+                Uma central simples para o que sua equipe faz todos os dias.
+              </h2>
+            </div>
+            <p className="text-base leading-8 text-slate-600">
+              Sem complicar o ERP, sem colocar robô solto e sem depender da memória do dono. O Shamar deixa a entrada do cliente organizada.
             </p>
           </div>
-          <div className="mt-14 grid gap-7 md:grid-cols-2 lg:grid-cols-3">
-            {connectModules.map((mod) => (
-              <article key={mod.badge} className="rounded-[2rem] border border-slate-200 bg-[#F8FAFC] p-7">
-                <span
-                  className="inline-block rounded-full px-4 py-1.5 text-xs font-black uppercase tracking-wide text-white"
-                  style={{ backgroundColor: mod.color }}
-                >
-                  {mod.badge}
-                </span>
-                <h3 className="mt-5 text-xl font-black text-[#1B2F5B]">{mod.title}</h3>
-                <p className="mt-3 text-sm leading-6 text-slate-600">{mod.text}</p>
-                <ul className="mt-5 space-y-2.5">
-                  {mod.bullets.map((bullet) => (
-                    <li key={bullet} className="flex items-start gap-3 text-sm text-slate-700">
-                      <CheckMark />
-                      <span>{bullet}</span>
-                    </li>
-                  ))}
-                </ul>
-              </article>
-            ))}
+
+          <div className="mt-12 grid gap-5 md:grid-cols-2 lg:grid-cols-4">
+            {operationCards.map((card) => {
+              const Icon = card.icon;
+              return (
+                <article key={card.title} className="rounded-[1.75rem] border border-slate-200 bg-white p-6 shadow-sm">
+                  <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#132B57]/5 text-[#132B57]">
+                    <Icon className="h-6 w-6" />
+                  </span>
+                  <h3 className="mt-5 font-black text-[#132B57]">{card.title}</h3>
+                  <p className="mt-3 text-sm leading-6 text-slate-600">{card.text}</p>
+                </article>
+              );
+            })}
           </div>
         </div>
       </section>
 
-      <section className="mx-auto max-w-7xl px-5 py-20 md:px-8">
-        <div className="overflow-hidden rounded-[2.5rem] bg-[#1B2F5B]">
-          <div className="grid gap-10 px-8 py-14 md:grid-cols-[1fr_1fr] md:px-14 md:py-16 lg:items-center">
-            <div>
-              <div className="inline-flex rounded-full bg-[#2ABFAB]/20 px-4 py-2 text-sm font-black text-[#2ABFAB]">
-                Shamar Agent
-              </div>
-              <h2 className="mt-5 text-3xl font-black leading-tight tracking-tight text-white md:text-5xl">
-                O conector local entre o sistema do cliente e o Shamar Connect.
+      <section className="bg-white py-20">
+        <div className="mx-auto grid max-w-7xl gap-10 px-5 md:px-8 lg:grid-cols-[1fr_1fr] lg:items-center">
+          <div className="relative overflow-hidden rounded-[2.5rem] bg-[#132B57] p-8 text-white shadow-2xl shadow-[#132B57]/15 md:p-10">
+            <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-[#2ABFAB]/20 blur-3xl" />
+            <div className="relative">
+              <p className="text-sm font-black uppercase tracking-[0.22em] text-[#86F2E2]">Como funciona</p>
+              <h2 className="mt-4 text-3xl font-black leading-tight md:text-5xl">
+                Do primeiro contato ao retorno, cada etapa fica visível.
               </h2>
               <p className="mt-5 text-base leading-8 text-white/70">
-                O Agent é um aplicativo/conector instalado no ambiente da empresa para buscar informações autorizadas, como produtos, preços, estoque, veículos, agendamentos ou status de serviços.
+                A equipe sabe quem assumiu, o gestor sabe o que está parado e o cliente não fica perdido no meio da conversa.
               </p>
             </div>
-            <div className="rounded-[2rem] bg-white/10 p-7">
-              <ul className="space-y-5">
-                {[
-                  "Hoje: leitura de dados autorizados para apoiar o atendimento.",
-                  "Amanhã: escrita controlada com permissão, auditoria e registro.",
-                  "Não substitui ERP, sistema fiscal, estoque completo ou financeiro.",
-                  "Não é IA, chatbot ou atendente virtual.",
-                ].map((item) => (
-                  <li key={item} className="flex items-start gap-4 text-sm font-semibold text-white/85">
-                    <span className="text-xl">✓</span>
-                    <span>{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
           </div>
-        </div>
-      </section>
 
-      <section className="bg-white py-20">
-        <div className="mx-auto max-w-7xl px-5 md:px-8">
-          <div className="mx-auto max-w-3xl text-center">
-            <p className="text-sm font-black uppercase tracking-[0.25em] text-[#C9952A]">Segmentos</p>
-            <h2 className="mt-3 text-3xl font-black tracking-tight text-[#1B2F5B] md:text-5xl">
-              Para empresas que atendem, vendem e precisam dar retorno
-            </h2>
-          </div>
-          <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {segments.map((segment) => (
-              <article key={segment.title} className="flex gap-5 rounded-[2rem] border border-slate-200 bg-[#F8FAFC] p-6">
-                <span className="text-3xl">{segment.icon}</span>
+          <div className="space-y-4">
+            {workflow.map((item, index) => (
+              <div key={item} className="flex gap-4 rounded-3xl border border-slate-200 bg-[#F8FAFC] p-5">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#2ABFAB]/12 text-sm font-black text-[#13796D]">
+                  {index + 1}
+                </span>
                 <div>
-                  <h3 className="font-black text-[#1B2F5B]">{segment.title}</h3>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">{segment.text}</p>
+                  <h3 className="font-black text-[#132B57]">{item}</h3>
+                  <p className="mt-1 text-sm leading-6 text-slate-600">
+                    {index === 0
+                      ? "A entrada do cliente é registrada."
+                      : index === 1
+                        ? "A conversa ganha dono e prioridade."
+                        : index === 2
+                          ? "O contexto fica disponível para continuar."
+                          : "A operação avança com clareza."}
+                  </p>
                 </div>
-              </article>
+              </div>
             ))}
           </div>
         </div>
       </section>
 
-      <section className="mx-auto max-w-7xl px-5 py-20 md:px-8">
-        <div className="mx-auto max-w-3xl text-center">
-          <p className="text-sm font-black uppercase tracking-[0.25em] text-[#C9952A]">Recursos opcionais</p>
-          <h2 className="mt-3 text-3xl font-black tracking-tight text-[#1B2F5B] md:text-5xl">
-            Contrate apenas o que sua operação realmente precisa
-          </h2>
-        </div>
-        <div className="mt-12 grid gap-5 md:grid-cols-2 lg:grid-cols-4">
-          {optionalResources.map((resource) => (
-            <article key={resource.title} className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-              <h3 className="text-lg font-black text-[#1B2F5B]">{resource.title}</h3>
-              <p className="mt-3 text-sm leading-6 text-slate-600">{resource.text}</p>
-              <p className="mt-5 rounded-2xl bg-[#2ABFAB]/10 px-4 py-3 text-sm font-black text-[#13796D]">
-                {resource.price}
-              </p>
-            </article>
-          ))}
+      <section id="segmentos" className="bg-[#F6F8FC] py-20">
+        <div className="mx-auto max-w-7xl px-5 md:px-8">
+          <div className="max-w-3xl">
+            <p className="text-sm font-black uppercase tracking-[0.22em] text-[#C9952A]">Quem usa</p>
+            <h2 className="mt-3 text-3xl font-black tracking-tight text-[#132B57] md:text-5xl">
+              Para empresas que atendem, vendem e precisam dar retorno.
+            </h2>
+          </div>
+
+          <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {segments.map((segment) => (
+              <div key={segment} className="rounded-3xl border border-slate-200 bg-white px-5 py-5 text-sm font-black text-[#132B57] shadow-sm">
+                {segment}
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
       <section className="bg-white py-20">
         <div className="mx-auto max-w-7xl px-5 md:px-8">
           <div className="mx-auto max-w-3xl text-center">
-            <p className="text-sm font-black uppercase tracking-[0.25em] text-[#C9952A]">Planos</p>
-            <h2 className="mt-3 text-3xl font-black tracking-tight text-[#1B2F5B] md:text-5xl">
-              Planos base + implantação assistida + add-ons
+            <p className="text-sm font-black uppercase tracking-[0.22em] text-[#C9952A]">Planos</p>
+            <h2 className="mt-3 text-3xl font-black tracking-tight text-[#132B57] md:text-5xl">
+              Comece com implantação assistida.
             </h2>
-            <p className="mt-5 text-lg leading-8 text-slate-600">
-              Você começa organizando o atendimento e adiciona integração, transcrição, gravação ou armazenamento conforme a operação amadurece.
+            <p className="mt-4 text-base leading-7 text-slate-600">
+              Escolha um plano base e evolua com add-ons conforme a operação crescer.
             </p>
           </div>
-          <div className="mt-12 grid gap-7 lg:grid-cols-3">
-            {planCards.map((plan) => (
+
+          <div className="mt-12 grid gap-6 lg:grid-cols-3">
+            {plans.map((plan) => (
               <article
                 key={plan.name}
-                className={
-                  plan.highlight
-                    ? "relative rounded-[2rem] border-2 border-[#2ABFAB] bg-white p-7 shadow-2xl shadow-[#2ABFAB]/10"
-                    : "rounded-[2rem] border border-slate-200 bg-white p-7 shadow-sm"
-                }
+                className={`relative rounded-[2rem] border bg-white p-7 shadow-sm ${
+                  plan.featured ? "border-[#2ABFAB] shadow-xl shadow-[#2ABFAB]/10" : "border-slate-200"
+                }`}
               >
-                {plan.highlight ? (
-                  <div className="absolute -top-4 left-1/2 -translate-x-1/2 rounded-full bg-[#C9952A] px-5 py-2 text-xs font-black uppercase tracking-wide text-white shadow">
+                {plan.featured && (
+                  <div className="absolute -top-4 left-7 rounded-full bg-[#C9952A] px-4 py-2 text-xs font-black uppercase tracking-wide text-white">
                     Mais indicado
                   </div>
-                ) : null}
-                <p className="text-sm font-black uppercase tracking-wide text-[#2ABFAB]">{plan.label}</p>
-                <h3 className="mt-2 text-3xl font-black text-[#1B2F5B]">{plan.name}</h3>
-                <p className="mt-4 min-h-20 text-sm leading-6 text-slate-600">{plan.description}</p>
-                <ul className="mt-6 space-y-2.5">
-                  {plan.features.map((feature) => (
-                    <li key={feature} className="flex items-start gap-3 text-sm text-slate-700">
-                      <CheckMark />
-                      <span>{feature}</span>
-                    </li>
-                  ))}
-                </ul>
+                )}
+                <h3 className="text-2xl font-black text-[#132B57]">{plan.name}</h3>
+                <p className="mt-3 text-sm leading-6 text-slate-600">{plan.text}</p>
+                <div className="mt-7 flex items-end gap-2">
+                  <span className="text-4xl font-black text-[#132B57]">{plan.price}</span>
+                  <span className="pb-1 text-sm font-bold text-slate-500">/mês</span>
+                </div>
+                <p className="mt-2 text-sm font-bold text-slate-500">{plan.setup}</p>
                 <Link
-                  href="/planos"
-                  className={
-                    plan.highlight
-                      ? "mt-7 flex w-full justify-center rounded-2xl bg-[#2ABFAB] px-5 py-3.5 text-sm font-black text-white shadow-lg shadow-[#2ABFAB]/20 transition hover:-translate-y-0.5"
-                      : "mt-7 flex w-full justify-center rounded-2xl bg-[#1B2F5B] px-5 py-3.5 text-sm font-black text-white shadow-md transition hover:-translate-y-0.5"
-                  }
+                  href={plan.href}
+                  className={`mt-7 inline-flex w-full items-center justify-center rounded-2xl px-5 py-3.5 text-sm font-black transition hover:-translate-y-0.5 ${
+                    plan.featured
+                      ? "bg-[#2ABFAB] text-white shadow-lg shadow-[#2ABFAB]/20"
+                      : "bg-[#132B57] text-white shadow-md shadow-[#132B57]/10"
+                  }`}
                 >
-                  Ver plano completo
+                  Escolher plano
                 </Link>
               </article>
             ))}
@@ -422,27 +397,33 @@ export default async function HomePage() {
       </section>
 
       <section className="px-5 py-20 md:px-8">
-        <div className="mx-auto max-w-6xl overflow-hidden rounded-[2rem] bg-[#1B2F5B] px-6 py-16 text-center text-white shadow-2xl md:px-12">
-          <p className="text-sm font-black uppercase tracking-[0.25em] text-[#2ABFAB]">Shamar Connect</p>
-          <h2 className="mx-auto mt-4 max-w-3xl text-3xl font-black tracking-tight md:text-5xl">
-            Organize o atendimento, escolha um plano e comece com implantação assistida.
-          </h2>
-          <p className="mx-auto mt-5 max-w-2xl text-base leading-8 text-white/70">
-            O Shamar Connect não substitui sua equipe nem seu sistema atual. Ele organiza a entrada do cliente, registra histórico, define responsáveis e dá visibilidade para o gestor.
-          </p>
-          <div className="mt-9 flex flex-col justify-center gap-4 sm:flex-row">
-            <Link
-              href="/planos"
-              className="rounded-full bg-[#2ABFAB] px-8 py-4 text-sm font-black text-white shadow-lg shadow-black/10 transition hover:-translate-y-0.5 hover:shadow-xl"
-            >
-              Ver planos
-            </Link>
-            <Link
-              href="/contato"
-              className="rounded-full border border-white/20 bg-white/10 px-8 py-4 text-sm font-black text-white transition hover:-translate-y-0.5 hover:bg-white/15"
-            >
-              Falar com especialista
-            </Link>
+        <div className="relative mx-auto max-w-6xl overflow-hidden rounded-[2.5rem] bg-[#0B1220] px-6 py-16 text-center text-white shadow-2xl shadow-[#132B57]/20 md:px-12">
+          <div className="absolute -left-20 -top-20 h-60 w-60 rounded-full bg-[#2ABFAB]/20 blur-3xl" />
+          <div className="absolute -bottom-24 right-0 h-72 w-72 rounded-full bg-white/10 blur-3xl" />
+          <div className="relative">
+            <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#2ABFAB]/15 text-[#2ABFAB]">
+              <Zap className="h-7 w-7" />
+            </div>
+            <h2 className="mx-auto max-w-3xl text-3xl font-black tracking-tight md:text-5xl">
+              Organize seu atendimento antes de perder mais clientes.
+            </h2>
+            <p className="mx-auto mt-5 max-w-2xl text-base leading-8 text-white/70">
+              Faça o checkout, siga para implantação assistida e comece com uma operação mais clara.
+            </p>
+            <div className="mt-9 flex flex-col justify-center gap-4 sm:flex-row">
+              <Link
+                href="/planos"
+                className="rounded-full bg-[#2ABFAB] px-8 py-4 text-sm font-black text-white shadow-lg shadow-black/10 transition hover:-translate-y-0.5 hover:bg-[#22A898]"
+              >
+                Ver planos
+              </Link>
+              <Link
+                href="/contato"
+                className="rounded-full border border-white/20 bg-white/10 px-8 py-4 text-sm font-black text-white transition hover:-translate-y-0.5 hover:bg-white/15"
+              >
+                Falar com especialista
+              </Link>
+            </div>
           </div>
         </div>
       </section>
