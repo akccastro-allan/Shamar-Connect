@@ -5,81 +5,86 @@ const cases = [
     empresa: "Hall Donous",
     segmento: "Moda masculina",
     status: "Em operação",
-    color: "#1B2F5B",
-    teaser: "Como o Hall Donous organizou o atendimento de clientes pelo WhatsApp e parou de perder oportunidades no caos de mensagens.",
+    accent: "#132B57",
+    teaser:
+      "Organização de atendimento, clientes e oportunidades comerciais que chegam pelo WhatsApp.",
     href: null,
   },
   {
     empresa: "Viciados em Trilhas",
     segmento: "Turismo e experiências",
     status: "Em operação",
-    color: "#2ABFAB",
-    teaser: "Como a Viciados em Trilhas centralizou inscrições, confirmações e comunicados de grupos sem misturar atendimento individual.",
+    accent: "#2ABFAB",
+    teaser:
+      "Centralização de inscrições, confirmações e comunicação de grupos sem misturar atendimento individual.",
     href: null,
   },
   {
     empresa: "MK Shalom",
     segmento: "Comunidade e eventos",
     status: "Em preparação",
-    color: "#8B5CF6",
-    teaser: "Como o MK Shalom vai usar o ShamarConnect para organizar comunicação com membros, confirmações e acompanhamento pastoral.",
+    accent: "#C9952A",
+    teaser:
+      "Organização de comunicação com membros, confirmações e acompanhamento por etapas.",
     href: null,
   },
   {
     empresa: "Oriahfin",
     segmento: "Financeiro",
     status: "Em preparação",
-    color: "#C9952A",
-    teaser: "Como a Oriahfin planeja usar CRM e WhatsApp integrados para acompanhar clientes e processos financeiros.",
+    accent: "#13796D",
+    teaser:
+      "CRM e WhatsApp integrados para acompanhar clientes, solicitações e processos financeiros.",
     href: null,
   },
 ];
 
 export function BlogCasosReais() {
   return (
-    <section className="bg-white py-16">
+    <section className="bg-white py-20">
       <div className="mx-auto max-w-7xl px-5 md:px-8">
-        <div className="mb-10">
-          <p className="text-xs font-black uppercase tracking-[0.25em] text-[#C9952A]">Casos Reais</p>
-          <h2 className="mt-2 text-2xl font-black text-[#1B2F5B]">Empresas usando o ShamarConnect</h2>
-          <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
-            Estudos de caso baseados em uso real. Conteúdo em desenvolvimento — publicamos conforme a operação avança.
+        <div className="mb-10 max-w-3xl">
+          <p className="text-sm font-black uppercase tracking-[0.22em] text-[#C9952A]">Casos reais</p>
+          <h2 className="mt-3 text-3xl font-black tracking-tight text-[#132B57] md:text-5xl">
+            Operações que ajudam a construir o produto.
+          </h2>
+          <p className="mt-4 text-base leading-8 text-slate-600">
+            Estudos de caso baseados em uso real. Os conteúdos completos serão publicados conforme as operações amadurecem.
           </p>
         </div>
 
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          {cases.map((c) => (
-            <div
-              key={c.empresa}
-              className="rounded-[2rem] border bg-white p-6 shadow-sm"
-              style={{ borderLeftColor: c.color, borderLeftWidth: 4 }}
+          {cases.map((item) => (
+            <article
+              key={item.empresa}
+              className="rounded-[2rem] border border-slate-200 bg-[#F8FAFC] p-6 shadow-sm transition hover:-translate-y-0.5 hover:bg-white hover:shadow-xl hover:shadow-slate-200/70"
             >
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="text-xs font-black uppercase tracking-wide text-slate-500">{c.segmento}</p>
-                  <h3 className="mt-1 text-lg font-black text-slate-900">{c.empresa}</h3>
-                </div>
-                <span
-                  className="shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide"
-                  style={{
-                    backgroundColor: c.status === "Em operação" ? "#DCFCE7" : "#F1F5F9",
-                    color: c.status === "Em operação" ? "#166534" : "#64748B",
-                  }}
-                >
-                  {c.status}
-                </span>
+              <div className="h-1.5 w-16 rounded-full" style={{ backgroundColor: item.accent }} />
+              <div className="mt-5">
+                <p className="text-xs font-black uppercase tracking-wide text-slate-500">{item.segmento}</p>
+                <h3 className="mt-2 text-xl font-black text-[#132B57]">{item.empresa}</h3>
               </div>
 
-              <p className="mt-4 text-sm leading-6 text-slate-600">{c.teaser}</p>
+              <span
+                className={`mt-4 inline-flex rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-wide ${
+                  item.status === "Em operação"
+                    ? "bg-emerald-100 text-emerald-700"
+                    : "bg-slate-200 text-slate-600"
+                }`}
+              >
+                {item.status}
+              </span>
 
-              {c.href ? (
-                <a href={c.href} className="mt-5 block text-sm font-black text-[#2ABFAB] hover:underline">
+              <p className="mt-4 text-sm leading-6 text-slate-600">{item.teaser}</p>
+
+              {item.href ? (
+                <Link href={item.href} className="mt-5 inline-flex text-sm font-black text-[#13796D] hover:underline">
                   Ler caso completo →
-                </a>
+                </Link>
               ) : (
                 <p className="mt-5 text-xs font-bold text-slate-400">Publicação em breve</p>
               )}
-            </div>
+            </article>
           ))}
         </div>
       </div>

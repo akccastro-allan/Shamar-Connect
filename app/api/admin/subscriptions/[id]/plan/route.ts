@@ -42,7 +42,7 @@ export async function POST(request: NextRequest, { params }: Params) {
 
     const { data: sub } = await db
       .from("billing_subscriptions")
-      .select("id, plan_slug, billing_cycle, total_amount, tenant_id, organization_id")
+      .select("id, plan_slug, billing_cycle, total_amount, tenant_id, organization_id, metadata")
       .eq("id", id)
       .maybeSingle();
 
@@ -51,6 +51,11 @@ export async function POST(request: NextRequest, { params }: Params) {
     }
 
     const defaults = PLAN_DEFAULTS[planSlug];
+
+    const previousMetadata =
+      sub.metadata && typeof sub.metadata === "object" && !Array.isArray(sub.metadata)
+        ? (sub.metadata as Record<string, unknown>)
+        : {};
 
     const { error } = await db
       .from("billing_subscriptions")
@@ -62,6 +67,7 @@ export async function POST(request: NextRequest, { params }: Params) {
         message_retention_days: defaults.message_retention_days,
         updated_at: now,
         metadata: {
+          ...previousMetadata,
           last_plan_change: {
             from: { plan: sub.plan_slug, cycle: sub.billing_cycle, amount: sub.total_amount },
             to: { plan: planSlug, cycle: billingCycle, amount: totalAmount },

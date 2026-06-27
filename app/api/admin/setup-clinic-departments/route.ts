@@ -17,8 +17,11 @@ const CLINIC_DEPARTMENTS = [
 export async function POST(request: NextRequest) {
   try {
     const ctx = await getRequiredAppContext();
-    if (ctx.role !== "owner" && ctx.role !== "admin") {
-      return NextResponse.json({ ok: false, error: "Acesso restrito a administradores." }, { status: 403 });
+    if ((ctx.role !== "owner" && ctx.role !== "admin") || !ctx.isPlatformTenant) {
+      return NextResponse.json(
+        { ok: false, error: "Acesso restrito a administradores da plataforma." },
+        { status: 403 },
+      );
     }
 
     const body = await request.json().catch(() => ({}));
@@ -30,6 +33,22 @@ export async function POST(request: NextRequest) {
     }
 
     const db = createSupabaseWriteClient();
+
+    const { data: org, error: orgError } = await db
+      .from("organizations")
+      .select("id")
+      .eq("id", organizationId)
+      .eq("tenant_id", tenantId)
+      .maybeSingle();
+
+    if (orgError) throw orgError;
+
+    if (!org) {
+      return NextResponse.json(
+        { ok: false, error: "Organização não encontrada para o tenant informado." },
+        { status: 404 },
+      );
+    }
 
     // Busca departamentos já existentes
     const { data: existing } = await db
