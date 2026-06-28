@@ -151,12 +151,43 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       await db.from("channels").insert(channelRows);
     }
 
-    // 7. Vincular checkout ao tenant e marcar como ativo
+    // 7. Vincular checkout ao tenant/org e ativar assinatura via RPC
     await db
       .from("billing_checkout_sessions")
       .update({
         tenant_id: tenant.id,
         organization_id: org.id,
+        updated_at: now,
+      })
+      .eq("id", checkoutId);
+
+    const { data: rpcResult, error: rpcError } = await db.rpc("activate_paid_checkout_subscription", {
+      p_checkout_id: checkoutId,
+    });
+
+    if (rpcError) throw rpcError;
+
+    const subscriptionResult = rpcResult as Record<string, unknown> | null;
+
+    if (!subscriptionResult?.ok) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            typeof subscriptionResult?.error === "string"
+              ? subscriptionResult.error
+              : "Falha ao ativar assinatura do checkout.",
+          tenantId: tenant.id,
+          organizationId: org.id,
+          authUserId,
+        },
+        { status: 500 },
+      );
+    }
+
+    await db
+      .from("billing_checkout_sessions")
+      .update({
         status: "active",
         updated_at: now,
       })
@@ -170,6 +201,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       email: ownerEmail,
       tempPassword,
       sessions: validSessions,
+      subscription: subscriptionResult,
     });
   } catch (error) {
     if (isUnauthorizedError(error)) {
