@@ -12,12 +12,14 @@ export function SidebarContent({
   user,
   avatarUrl,
   isPlatformAdmin,
+  metaChannelsEnabled = false,
   onNavigate,
 }: {
   active?: string;
   user: SidebarUser;
   avatarUrl?: string | null;
   isPlatformAdmin: boolean;
+  metaChannelsEnabled?: boolean;
   onNavigate?: () => void;
 }) {
   return (
@@ -36,7 +38,7 @@ export function SidebarContent({
         </div>
       </Link>
 
-      <SidebarNav active={active} isPlatformAdmin={isPlatformAdmin} onNavigate={onNavigate} />
+      <SidebarNav active={active} isPlatformAdmin={isPlatformAdmin} metaChannelsEnabled={metaChannelsEnabled} onNavigate={onNavigate} />
 
       {/* User info + logout */}
       <div className="mt-4 border-t border-white/10 pt-4">

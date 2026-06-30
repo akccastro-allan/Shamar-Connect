@@ -34,6 +34,22 @@ async function getActiveSocialProviders(): Promise<Set<string>> {
 }
 
 export default async function SocialInboxPage() {
+  // Guarda de feature flag: redireciona para dashboard se meta_channels não estiver ativo
+  const ctx = await getRequiredAppContext();
+  if (!ctx.isPlatformTenant) {
+    const db = createSupabaseWriteClient();
+    const { data: tenant } = await db.from("tenants").select("metadata").eq("id", ctx.tenantId).maybeSingle();
+    const meta = tenant?.metadata as Record<string, unknown> | null;
+    const enabled =
+      meta?.features !== undefined &&
+      typeof meta.features === "object" &&
+      (meta.features as Record<string, unknown>).meta_channels === true;
+    if (!enabled) {
+      const { redirect } = await import("next/navigation");
+      redirect("/dashboard");
+    }
+  }
+
   const activeProviders = await getActiveSocialProviders();
 
   const channels: Channel[] = [
