@@ -9,8 +9,11 @@ type Params = { params: Promise<{ id: string }> };
 export async function POST(request: NextRequest, { params }: Params) {
   try {
     const ctx = await getRequiredAppContext();
-    if (ctx.role !== "owner" && ctx.role !== "admin") {
-      return NextResponse.json({ ok: false, error: "Acesso restrito a administradores." }, { status: 403 });
+    if ((ctx.role !== "owner" && ctx.role !== "admin") || !ctx.isPlatformTenant) {
+      return NextResponse.json(
+        { ok: false, error: "Acesso restrito a administradores da plataforma." },
+        { status: 403 },
+      );
     }
 
     const { id } = await params;
@@ -27,7 +30,7 @@ export async function POST(request: NextRequest, { params }: Params) {
 
     const { data: sub } = await db
       .from("billing_subscriptions")
-      .select("id, status, tenant_id, organization_id, plan_slug")
+      .select("id, status, tenant_id, organization_id, plan_slug, metadata")
       .eq("id", id)
       .maybeSingle();
 
@@ -35,10 +38,18 @@ export async function POST(request: NextRequest, { params }: Params) {
       return NextResponse.json({ ok: false, error: "Assinatura não encontrada." }, { status: 404 });
     }
 
+    const previousMetadata =
+      sub.metadata && typeof sub.metadata === "object" && !Array.isArray(sub.metadata)
+        ? (sub.metadata as Record<string, unknown>)
+        : {};
+
     const patch: Record<string, unknown> = {
       status: newStatus,
       updated_at: now,
-      metadata: { last_status_change: { from: sub.status, to: newStatus, by: ctx.email, at: now, reason } },
+      metadata: {
+        ...previousMetadata,
+        last_status_change: { from: sub.status, to: newStatus, by: ctx.email, at: now, reason },
+      },
     };
     if (newStatus === "cancelled") patch.cancelled_at = now;
 
@@ -49,8 +60,8 @@ export async function POST(request: NextRequest, { params }: Params) {
 
     if (error) throw error;
 
-    // Reflete no tenant quando cancelado
-    if (newStatus === "cancelled") {
+    // Regra operacional: paused e cancelled suspendem o tenant; active reativa.
+    if (newStatus === "cancelled" || newStatus === "paused") {
       await db.from("tenants").update({ status: "suspended", updated_at: now }).eq("id", sub.tenant_id);
     } else if (newStatus === "active") {
       await db.from("tenants").update({ status: "active", updated_at: now }).eq("id", sub.tenant_id);

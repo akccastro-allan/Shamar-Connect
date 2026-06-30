@@ -13,8 +13,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type NavItem = { href: string; label: string; icon: LucideIcon; platformOnly?: true };
-type NavGroup = { label: string; icon: LucideIcon; flat?: true; platformOnly?: true; items: NavItem[] };
+type NavItem = { href: string; label: string; icon: LucideIcon; platformOnly?: true; metaOnly?: true };
+type NavGroup = { label: string; icon: LucideIcon; flat?: true; platformOnly?: true; metaOnly?: true; items: NavItem[] };
 
 const navigationGroups: NavGroup[] = [
   {
@@ -30,7 +30,7 @@ const navigationGroups: NavGroup[] = [
       { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
       { href: "/whatsapp-messages", label: "WhatsApp", icon: MessageCircle },
       { href: "/inbox", label: "Inbox", icon: Inbox },
-      { href: "/social-inbox", label: "Social Inbox", icon: AtSign },
+      { href: "/social-inbox", label: "Social Inbox", icon: AtSign, metaOnly: true },
       { href: "/operations", label: "Operações", icon: Activity },
       { href: "/reports/team", label: "Relatório da equipe", icon: TrendingUp },
     ],
@@ -76,7 +76,7 @@ const navigationGroups: NavGroup[] = [
       { href: "/settings/team", label: "Equipe", icon: Users },
       { href: "/settings/departments", label: "Setores", icon: Building2 },
       { href: "/settings/whatsapp", label: "Conexão WhatsApp", icon: MessageCircle },
-      { href: "/settings/social", label: "Instagram e Facebook", icon: AtSign },
+      { href: "/settings/social", label: "Instagram e Facebook", icon: AtSign, metaOnly: true },
       { href: "/settings/whatsapp-automation", label: "Config. de automação", icon: SlidersHorizontal },
       { href: "/whatsapp-diagnostics", label: "Diagnóstico WhatsApp", icon: Stethoscope },
       { href: "/settings/whatsapp-cloud", label: "Shamar Kids (Cloud API)", icon: Cloud, platformOnly: true },
@@ -139,10 +139,10 @@ function NavLink({ item, active, onNavigate }: { item: NavItem; active?: string;
   );
 }
 
-export function SidebarNav({ active, isPlatformAdmin, onNavigate }: { active?: string; isPlatformAdmin: boolean; onNavigate?: () => void }) {
+export function SidebarNav({ active, isPlatformAdmin, metaChannelsEnabled = false, onNavigate }: { active?: string; isPlatformAdmin: boolean; metaChannelsEnabled?: boolean; onNavigate?: () => void }) {
   const visibleGroups = navigationGroups
-    .filter((g) => isPlatformAdmin || !g.platformOnly)
-    .map((g) => ({ ...g, items: g.items.filter((i) => isPlatformAdmin || !i.platformOnly) }))
+    .filter((g) => (isPlatformAdmin || !g.platformOnly) && (metaChannelsEnabled || !g.metaOnly))
+    .map((g) => ({ ...g, items: g.items.filter((i) => (isPlatformAdmin || !i.platformOnly) && (metaChannelsEnabled || !i.metaOnly)) }))
     .filter((g) => g.items.length > 0);
 
   const activeGroupLabel = visibleGroups.find(

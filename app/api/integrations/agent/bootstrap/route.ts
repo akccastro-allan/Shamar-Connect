@@ -164,7 +164,7 @@ export async function POST(request: NextRequest) {
         tenant_id: tenantId,
         organization_id: organizationId,
         integration_source_id: source.id,
-        agent_agent_name: agentName,
+        name: agentName,
         machine_name: machineName,
         operating_system: operatingSystem,
         agent_version: agentVersion,
