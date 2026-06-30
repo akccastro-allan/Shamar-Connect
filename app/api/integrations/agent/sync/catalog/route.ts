@@ -10,14 +10,14 @@ const MAX_BATCH_SIZE = 500;
 function normalizeSlug(value: string): string {
   return value
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[̀-ͯ]/g, "")
     .toLowerCase()
     .trim()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 }
 
-function toNumberOrNull(value: any): number | null {
+function toNumberOrNull(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim().length > 0) {
     const normalized = Number(value.replace(",", "."));
@@ -26,7 +26,7 @@ function toNumberOrNull(value: any): number | null {
   return null;
 }
 
-function toStringOrNull(value: any): string | null {
+function toStringOrNull(value: unknown): string | null {
   if (typeof value === "string") {
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : null;
@@ -35,8 +35,23 @@ function toStringOrNull(value: any): string | null {
   return null;
 }
 
+function toBoolOrDefault(value: unknown, fallback: boolean): boolean {
+  if (typeof value === "boolean") return value;
+  if (value === 1 || value === "1" || value === "true") return true;
+  if (value === 0 || value === "0" || value === "false") return false;
+  return fallback;
+}
+
+/** Aceita camelCase OU snake_case — retorna o primeiro que não for nulo/undefined */
+function pick<T>(obj: Record<string, unknown>, ...keys: string[]): T | undefined {
+  for (const key of keys) {
+    if (obj[key] !== undefined && obj[key] !== null) return obj[key] as T;
+  }
+  return undefined;
+}
+
 async function getOrCreateCategory(params: {
-  supabase: any;
+  supabase: ReturnType<typeof createSupabaseWriteClient>;
   tenantId: string;
   organizationId: string;
   externalSource: string;
@@ -76,20 +91,19 @@ async function getOrCreateCategory(params: {
     .single();
 
   if (createError) throw createError;
-
   return createdCategory?.id || null;
 }
 
 export async function POST(request: NextRequest) {
   let syncRunId: string | null = null;
-  let supabase: any = null;
+  let supabase: ReturnType<typeof createSupabaseWriteClient> | null = null;
 
   try {
-    const body = await request.json().catch(() => ({} as any));
+    const body = await request.json().catch(() => ({} as Record<string, unknown>));
     const { agent, source } = await getAuthenticatedAgent(request);
     supabase = createSupabaseWriteClient();
 
-    const items = Array.isArray(body?.items) ? body.items : null;
+    const items = Array.isArray(body?.items) ? (body.items as Record<string, unknown>[]) : null;
 
     if (!items) {
       return NextResponse.json(
@@ -105,14 +119,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const tenantId = (agent as any).tenant_id || (source as any).tenant_id;
-    const organizationId = (agent as any).organization_id || (source as any).organization_id;
-    const integrationSourceId = (source as any).id;
-    const agentId = (agent as any).id;
-    const externalSource = (source as any).source_type || "unknown";
+    const tenantId = (agent as Record<string, unknown>).tenant_id || (source as Record<string, unknown>).tenant_id;
+    const organizationId = (agent as Record<string, unknown>).organization_id || (source as Record<string, unknown>).organization_id;
+    const integrationSourceId = (source as Record<string, unknown>).id;
+    const agentId = (agent as Record<string, unknown>).id;
+    const externalSource = (source as Record<string, unknown>).source_type || "unknown";
     const startedAt = new Date().toISOString();
 
-    await touchAgentSeen(agentId, request);
+    await touchAgentSeen(agentId as string, request);
 
     const { data: syncRun, error: syncRunError } = await supabase
       .from("integration_sync_runs")
@@ -134,7 +148,6 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (syncRunError) throw syncRunError;
-
     syncRunId = syncRun?.id || null;
 
     let created = 0;
@@ -143,45 +156,59 @@ export async function POST(request: NextRequest) {
 
     for (const item of items) {
       try {
-        const externalId = toStringOrNull(item?.externalId);
-        const name = toStringOrNull(item?.name);
+        // Aceita camelCase OU snake_case
+        const externalId = toStringOrNull(pick(item, "externalId", "external_id"));
+        const name = toStringOrNull(pick(item, "name"));
 
-        if (!externalId || !name) {
-          failed += 1;
-          continue;
-        }
+        if (!externalId || !name) { failed += 1; continue; }
 
-        const categoryName = toStringOrNull(item?.category);
+        const categoryName = toStringOrNull(pick(item, "category"));
         const categoryId = categoryName
-          ? await getOrCreateCategory({ supabase, tenantId, organizationId, externalSource, categoryName })
+          ? await getOrCreateCategory({
+              supabase,
+              tenantId: tenantId as string,
+              organizationId: organizationId as string,
+              externalSource: externalSource as string,
+              categoryName,
+            })
           : null;
 
-        const catalogPayload: Record<string, any> = {
+        const isActive   = toBoolOrDefault(pick(item, "isActive", "is_active"), true);
+        const isAvailable = toBoolOrDefault(pick(item, "isAvailable", "is_available"), true);
+        const stockQty   = toNumberOrNull(pick(item, "stockQuantity", "stock_quantity"));
+
+        const catalogPayload: Record<string, unknown> = {
           external_source: externalSource,
           external_id: externalId,
-          sku: toStringOrNull(item?.sku),
-          barcode: toStringOrNull(item?.barcode),
+          sku:               toStringOrNull(pick(item, "sku")),
+          barcode:           toStringOrNull(pick(item, "barcode")),
           name,
-          description: toStringOrNull(item?.description),
-          item_type: "product",
-          status: "active",
-          currency: "BRL",
-          category_id: categoryId,
-          brand: toStringOrNull(item?.brand),
-          price: toNumberOrNull(item?.price),
-          stock_quantity: toNumberOrNull(item?.stockQuantity),
-          image_url: toStringOrNull(item?.imageUrl),
-          source_updated_at: toStringOrNull(item?.sourceUpdatedAt),
-          last_synced_at: new Date().toISOString(),
-          raw_payload: item?.rawPayload || item,
-          metadata: { syncedBy: "shamar_agent", integrationSourceId, agentId },
+          description:       toStringOrNull(pick(item, "description")),
+          unit:              toStringOrNull(pick(item, "unit")),
+          item_type:         "product",
+          status:            isActive ? "active" : "inactive",
+          currency:          "BRL",
+          category_id:       categoryId,
+          brand:             toStringOrNull(pick(item, "brand")),
+          price:             toNumberOrNull(pick(item, "price")),
+          promotional_price: toNumberOrNull(pick(item, "promotionalPrice", "promotional_price")),
+          cost_price:        toNumberOrNull(pick(item, "costPrice", "cost_price")),
+          stock_quantity:    stockQty,
+          stock_available:   isAvailable,
+          is_active:         isActive,
+          is_available:      isAvailable,
+          // Não gravar imagens/BLOB nesta fase
+          source_updated_at: toStringOrNull(pick(item, "sourceUpdatedAt", "source_updated_at")),
+          last_synced_at:    new Date().toISOString(),
+          raw_payload:       (pick(item, "rawPayload", "raw_data", "raw_payload") as Record<string, unknown>) ?? item,
+          metadata:          { syncedBy: "shamar_agent", integrationSourceId, agentId },
         };
 
         const { data: existingItem, error: lookupError } = await supabase
           .from("catalog_items")
           .select("id")
-          .eq("organization_id", organizationId)
-          .eq("external_source", externalSource)
+          .eq("organization_id", organizationId as string)
+          .eq("external_source", externalSource as string)
           .eq("external_id", externalId)
           .limit(1)
           .maybeSingle();
@@ -191,9 +218,8 @@ export async function POST(request: NextRequest) {
         if (existingItem?.id) {
           const { error: updateError } = await supabase
             .from("catalog_items")
-            .update(catalogPayload)
+            .update({ ...catalogPayload, updated_at: new Date().toISOString() })
             .eq("id", existingItem.id);
-
           if (updateError) throw updateError;
           updated += 1;
         } else {
@@ -202,7 +228,6 @@ export async function POST(request: NextRequest) {
             organization_id: organizationId,
             ...catalogPayload,
           });
-
           if (insertError) throw insertError;
           created += 1;
         }
@@ -245,21 +270,12 @@ export async function POST(request: NextRequest) {
     if (supabase && syncRunId) {
       await supabase
         .from("integration_sync_runs")
-        .update({
-          status: "failed",
-          finished_at: new Date().toISOString(),
-          error_message: "Erro interno durante a sincronização de catálogo.",
-        })
+        .update({ status: "failed", finished_at: new Date().toISOString(), error_message: "Erro interno durante a sincronização de catálogo." })
         .eq("id", syncRunId);
     }
-
     if (error instanceof AgentAuthError) {
       return NextResponse.json({ ok: false, error: error.message }, { status: error.status });
     }
-
-    return NextResponse.json(
-      { ok: false, error: "Erro interno ao sincronizar catálogo do Shamar Agent." },
-      { status: 500 },
-    );
+    return NextResponse.json({ ok: false, error: "Erro interno ao sincronizar catálogo do Shamar Agent." }, { status: 500 });
   }
 }

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ContactCreateDialog } from "@/components/contact-create-dialog";
 import { phoneFromChatId, formatPhoneDisplay } from "@/lib/phone";
+import { CatalogAssistPanel } from "@/components/catalog/catalog-assist-panel";
 
 type Conversation = {
   id: string;
@@ -1430,6 +1431,19 @@ export function WhatsappServiceCenter() {
                 )
               )}
               <Button variant="outline" className="w-full justify-start" disabled>Criar tarefa de follow-up</Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">Catálogo inteligente</CardTitle>
+              <CardDescription>Analise a mensagem do cliente e encontre peças ou serviços no catálogo.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <CatalogAssistPanel
+                onUseReply={(text) => setReplyBody((current) => current ? `${current}\n\n${text}` : text)}
+                disabled={!selectedConversation}
+              />
             </CardContent>
           </Card>
 
