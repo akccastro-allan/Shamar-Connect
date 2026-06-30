@@ -88,7 +88,7 @@ const addOns = [
   ["Armazenamento +10 GB", "Mídias, documentos e gravações", "R$ 29/mês"],
   ["Armazenamento +50 GB", "Mais retenção e volume de mídia", "R$ 119/mês"],
   ["Armazenamento +100 GB", "Alto volume e retenção maior", "R$ 199/mês"],
-  ["Shamar Agent Local", "Conector local para dados autorizados", "R$ 149/mês por conector"],
+  // Shamar Agent Local: oculto do checkout público até validação em produção
 ];
 
 const services = [

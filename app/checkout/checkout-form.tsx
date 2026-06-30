@@ -64,7 +64,7 @@ const ADDONS: Addon[] = [
   { slug: "storage_10gb", name: "Armazenamento +10 GB", description: "Espaço adicional para mídias, documentos, áudios e gravações.", price: 29 },
   { slug: "storage_50gb", name: "Armazenamento +50 GB", description: "Mais retenção e maior volume de mídia.", price: 119 },
   { slug: "storage_100gb", name: "Armazenamento +100 GB", description: "Para alto volume, retenção longa e gravações.", price: 199 },
-  { slug: "agent_local", name: "Shamar Agent Local", description: "Conector local para buscar dados autorizados nos sistemas internos do cliente.", price: 149, note: "Instalação/integração pode exigir diagnóstico separado." },
+  // agent_local: oculto do checkout público até validação em produção (slug mantido no tipo para retrocompatibilidade)
 ];
 
 type CheckoutFormProps = {
