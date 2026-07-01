@@ -170,9 +170,11 @@ export function WhatsappDiagnosticsPanel({ sessions }: { sessions: SessionOption
           <Clock className="mr-2 h-4 w-4" />
           {watchdogRunning ? "Verificando..." : "Rodar watchdog"}
         </Button>
-        <Button onClick={runAutomationDryRun} disabled={automationRunning} variant="outline">
-          {automationRunning ? "Simulando..." : "Automação dryRun"}
-        </Button>
+        {session !== "lips-main" && (
+          <Button onClick={runAutomationDryRun} disabled={automationRunning} variant="outline">
+            {automationRunning ? "Simulando..." : "Automação dryRun"}
+          </Button>
+        )}
         <Button asChild variant="outline">
           <Link href="/whatsapp-messages"><MessageCircle className="mr-2 h-4 w-4" />Abrir central</Link>
         </Button>
