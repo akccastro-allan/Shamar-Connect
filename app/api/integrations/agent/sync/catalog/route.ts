@@ -227,20 +227,63 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // ── 3. Batch upsert — uma única chamada ao banco ──
+    // ── 3. Lookup em batch — separa inserts de updates (3 queries totais) ──
     let upserted = 0;
     let upsertError: string | null = null;
 
     if (payloads.length > 0) {
-      const { error } = await supabase
-        .from("catalog_items")
-        .upsert(payloads, { onConflict: "organization_id,external_source,external_id" });
+      const externalIds = payloads.map((p) => p.external_id as string);
 
-      if (error) {
-        upsertError = error.message;
-        console.error("[sync/catalog] Upsert falhou:", error);
+      const { data: existing, error: lookupError } = await supabase
+        .from("catalog_items")
+        .select("id, external_id")
+        .eq("organization_id", organizationId as string)
+        .eq("external_source", externalSource as string)
+        .in("external_id", externalIds);
+
+      if (lookupError) {
+        upsertError = lookupError.message;
+        console.error("[sync/catalog] Lookup falhou:", lookupError);
       } else {
-        upserted = payloads.length;
+        const existingMap = new Map<string, string>(
+          (existing ?? []).map((r) => [r.external_id as string, r.id as string]),
+        );
+
+        // Deduplicar por external_id antes de separar (Firebird pode ter duplicatas no batch)
+        const seenExternalIds = new Set<string>();
+        const dedupedPayloads = payloads.filter((p) => {
+          const eid = p.external_id as string;
+          if (seenExternalIds.has(eid)) return false;
+          seenExternalIds.add(eid);
+          return true;
+        });
+
+        const toInsert = dedupedPayloads.filter((p) => !existingMap.has(p.external_id as string));
+        const toUpdate = dedupedPayloads
+          .filter((p) => existingMap.has(p.external_id as string))
+          .map((p) => ({ ...p, id: existingMap.get(p.external_id as string) }));
+
+        if (toInsert.length > 0) {
+          const { error: insertError } = await supabase.from("catalog_items").insert(toInsert);
+          if (insertError) {
+            upsertError = insertError.message;
+            console.error("[sync/catalog] Insert falhou:", insertError);
+          }
+        }
+
+        if (!upsertError && toUpdate.length > 0) {
+          const { error: updateError } = await supabase
+            .from("catalog_items")
+            .upsert(toUpdate, { onConflict: "id" });
+          if (updateError) {
+            upsertError = updateError.message;
+            console.error("[sync/catalog] Update falhou:", updateError);
+          }
+        }
+
+        if (!upsertError) {
+          upserted = payloads.length;
+        }
       }
     }
 
