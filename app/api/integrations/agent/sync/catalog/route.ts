@@ -84,7 +84,7 @@ async function getOrCreateCategory(params: {
       external_id: externalId,
       name,
       slug: externalId,
-      status: "active",
+      is_active: true,
       metadata: { createdBy: "shamar_agent_sync" },
     })
     .select("id")
@@ -103,11 +103,16 @@ export async function POST(request: NextRequest) {
     const { agent, source } = await getAuthenticatedAgent(request);
     supabase = createSupabaseWriteClient();
 
-    const items = Array.isArray(body?.items) ? (body.items as Record<string, unknown>[]) : null;
+    // Aceita tanto "items" quanto "products" (legado do agente)
+    const items = Array.isArray(body?.items)
+      ? (body.items as Record<string, unknown>[])
+      : Array.isArray(body?.products)
+        ? (body.products as Record<string, unknown>[])
+        : null;
 
     if (!items) {
       return NextResponse.json(
-        { ok: false, error: "Payload inválido. O campo items deve ser um array." },
+        { ok: false, error: "Payload inválido. O campo items ou products deve ser um array." },
         { status: 400 },
       );
     }
@@ -154,6 +159,9 @@ export async function POST(request: NextRequest) {
     let updated = 0;
     let failed = 0;
 
+    // Cache de categorias para evitar N+1 queries por batch
+    const categoryCache = new Map<string, string | null>();
+
     for (const item of items) {
       try {
         // Aceita camelCase OU snake_case
@@ -163,15 +171,21 @@ export async function POST(request: NextRequest) {
         if (!externalId || !name) { failed += 1; continue; }
 
         const categoryName = toStringOrNull(pick(item, "category"));
-        const categoryId = categoryName
-          ? await getOrCreateCategory({
+        let categoryId: string | null = null;
+        if (categoryName) {
+          if (categoryCache.has(categoryName)) {
+            categoryId = categoryCache.get(categoryName) ?? null;
+          } else {
+            categoryId = await getOrCreateCategory({
               supabase,
               tenantId: tenantId as string,
               organizationId: organizationId as string,
               externalSource: externalSource as string,
               categoryName,
-            })
-          : null;
+            });
+            categoryCache.set(categoryName, categoryId);
+          }
+        }
 
         const isActive   = toBoolOrDefault(pick(item, "isActive", "is_active"), true);
         const isAvailable = toBoolOrDefault(pick(item, "isAvailable", "is_available"), true);

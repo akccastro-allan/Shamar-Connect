@@ -164,6 +164,7 @@ export async function POST(request: NextRequest) {
         tenant_id: tenantId,
         organization_id: organizationId,
         integration_source_id: source.id,
+        agent_name: agentName,
         name: agentName,
         machine_name: machineName,
         operating_system: operatingSystem,
@@ -219,10 +220,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    console.error("[bootstrap] Erro interno:", error);
     return NextResponse.json(
       {
         ok: false,
         error: "Erro interno ao fazer bootstrap do Shamar Agent.",
+        detail: process.env.NODE_ENV === "development" ? String(error) : undefined,
       },
       { status: 500 },
     );

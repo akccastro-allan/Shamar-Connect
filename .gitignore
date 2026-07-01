@@ -12,3 +12,4 @@ CRON_SECRET.txt
 # Build/diagnóstico
 tsconfig.tsbuildinfo
 *.log
+.vercel
