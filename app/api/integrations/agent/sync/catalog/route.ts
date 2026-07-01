@@ -208,7 +208,7 @@ export async function POST(request: NextRequest) {
           promotional_price: toNumberOrNull(pick(item, "promotionalPrice", "promotional_price")),
           cost_price:        toNumberOrNull(pick(item, "costPrice", "cost_price")),
           stock_quantity:    stockQty,
-          stock_available:   stockQty,
+          stock_available:   stockQty ?? 0,
           is_active:         isActive,
           is_available:      isAvailable,
           // Não gravar imagens/BLOB nesta fase
@@ -245,7 +245,8 @@ export async function POST(request: NextRequest) {
           if (insertError) throw insertError;
           created += 1;
         }
-      } catch {
+      } catch (itemErr) {
+        if (failed < 3) console.error(`[sync/catalog] Item erro #${failed + 1}:`, itemErr);
         failed += 1;
       }
     }
