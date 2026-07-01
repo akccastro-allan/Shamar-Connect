@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
+import { expandSearchTerms } from "@/lib/catalog/search-synonyms";
 
 export const dynamic = "force-dynamic";
 
@@ -33,23 +34,29 @@ function freshnessStatus(lastSyncedAt: string | null): FreshnessStatus {
 async function searchCatalog(q: string, ctx: Awaited<ReturnType<typeof getRequiredAppContext>>) {
   if (!q || q.length < 2) return null;
   const db = createSupabaseWriteClient();
+
+  // Expande termos para cobrir nomenclatura técnica do CPlus
+  const terms = expandSearchTerms(q);
+
+  // name.ilike para cada sinônimo + description/sku/barcode/brand no termo original
+  const nameConditions = terms.map((t) => `name.ilike.%${t}%`);
+  const otherConditions = [
+    `description.ilike.%${q}%`,
+    `sku.ilike.%${q}%`,
+    `barcode.ilike.%${q}%`,
+    `brand.ilike.%${q}%`,
+  ];
+
   const { data: items, error } = await db
     .from("catalog_items")
     .select("id, name, description, sku, barcode, brand, price, stock_quantity, stock_available, last_synced_at, status, item_type, catalog_categories(name)")
     .eq("tenant_id", ctx.tenantId)
     .eq("organization_id", ctx.organizationId)
     .eq("status", "active")
-    .or(
-      [
-        `name.ilike.%${q}%`,
-        `description.ilike.%${q}%`,
-        `sku.ilike.%${q}%`,
-        `barcode.ilike.%${q}%`,
-        `brand.ilike.%${q}%`,
-      ].join(","),
-    )
+    .or([...nameConditions, ...otherConditions].join(","))
     .order("name")
     .limit(30);
+
   if (error) throw error;
   return (items as unknown as CatalogItem[]).map((item) => ({
     id: item.id,
