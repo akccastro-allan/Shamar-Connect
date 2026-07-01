@@ -13,6 +13,7 @@ type CatalogItem = {
   brand: string | null;
   price: number | null;
   stock_quantity: number | null;
+  stock_available: number | null;
   last_synced_at: string | null;
   status: string;
   item_type: string;
@@ -29,55 +30,71 @@ function freshnessStatus(lastSyncedAt: string | null): FreshnessStatus {
   return "stale";
 }
 
+async function searchCatalog(q: string, ctx: Awaited<ReturnType<typeof getRequiredAppContext>>) {
+  if (!q || q.length < 2) return null;
+  const db = createSupabaseWriteClient();
+  const { data: items, error } = await db
+    .from("catalog_items")
+    .select("id, name, description, sku, barcode, brand, price, stock_quantity, stock_available, last_synced_at, status, item_type, catalog_categories(name)")
+    .eq("tenant_id", ctx.tenantId)
+    .eq("organization_id", ctx.organizationId)
+    .eq("status", "active")
+    .or(
+      [
+        `name.ilike.%${q}%`,
+        `description.ilike.%${q}%`,
+        `sku.ilike.%${q}%`,
+        `barcode.ilike.%${q}%`,
+        `brand.ilike.%${q}%`,
+      ].join(","),
+    )
+    .order("name")
+    .limit(30);
+  if (error) throw error;
+  return (items as unknown as CatalogItem[]).map((item) => ({
+    id: item.id,
+    name: item.name,
+    description: item.description,
+    sku: item.sku,
+    barcode: item.barcode,
+    brand: item.brand,
+    price: item.price,
+    stock_quantity: item.stock_quantity,
+    stock_available: item.stock_available,
+    last_synced_at: item.last_synced_at,
+    freshness: freshnessStatus(item.last_synced_at),
+    category: item.catalog_categories?.name ?? null,
+    item_type: item.item_type,
+  }));
+}
+
+/** GET /api/catalog/search?q=filtro */
 export async function GET(request: NextRequest) {
   try {
     const ctx = await getRequiredAppContext();
-
-    const { searchParams } = new URL(request.url);
-    const q = (searchParams.get("q") || "").trim();
-
+    const q = (new URL(request.url).searchParams.get("q") || "").trim();
     if (!q || q.length < 2) {
       return NextResponse.json({ ok: false, error: "Parâmetro 'q' deve ter ao menos 2 caracteres." }, { status: 400 });
     }
+    const results = await searchCatalog(q, ctx);
+    return NextResponse.json({ ok: true, results, total: results?.length ?? 0 });
+  } catch (error) {
+    if (isUnauthorizedError(error)) return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Falha na busca." }, { status: 500 });
+  }
+}
 
-    const db = createSupabaseWriteClient();
-
-    const { data: items, error } = await db
-      .from("catalog_items")
-      .select("id, name, description, sku, barcode, brand, price, stock_quantity, last_synced_at, status, item_type, catalog_categories(name)")
-      .eq("tenant_id", ctx.tenantId)
-      .eq("organization_id", ctx.organizationId)
-      .eq("status", "active")
-      .or(
-        [
-          `name.ilike.%${q}%`,
-          `description.ilike.%${q}%`,
-          `sku.ilike.%${q}%`,
-          `barcode.ilike.%${q}%`,
-          `brand.ilike.%${q}%`,
-        ].join(","),
-      )
-      .order("name")
-      .limit(30);
-
-    if (error) throw error;
-
-    const results = (items as unknown as CatalogItem[]).map((item) => ({
-      id: item.id,
-      name: item.name,
-      description: item.description,
-      sku: item.sku,
-      barcode: item.barcode,
-      brand: item.brand,
-      price: item.price,
-      stock_quantity: item.stock_quantity,
-      last_synced_at: item.last_synced_at,
-      freshness: freshnessStatus(item.last_synced_at),
-      category: item.catalog_categories?.name ?? null,
-      item_type: item.item_type,
-    }));
-
-    return NextResponse.json({ ok: true, results, total: results.length });
+/** POST /api/catalog/search  body: { "query": "filtro" } */
+export async function POST(request: NextRequest) {
+  try {
+    const ctx = await getRequiredAppContext();
+    const body = await request.json().catch(() => ({}));
+    const q = String(body?.query || body?.q || "").trim();
+    if (!q || q.length < 2) {
+      return NextResponse.json({ ok: false, error: "Campo 'query' deve ter ao menos 2 caracteres." }, { status: 400 });
+    }
+    const results = await searchCatalog(q, ctx);
+    return NextResponse.json({ ok: true, results, total: results?.length ?? 0 });
   } catch (error) {
     if (isUnauthorizedError(error)) return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Falha na busca." }, { status: 500 });

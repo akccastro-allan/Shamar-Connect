@@ -194,7 +194,7 @@ export async function POST(request: NextRequest) {
           promotional_price: toNumberOrNull(pick(item, "promotionalPrice", "promotional_price")),
           cost_price:        toNumberOrNull(pick(item, "costPrice", "cost_price")),
           stock_quantity:    stockQty,
-          stock_available:   isAvailable,
+          stock_available:   stockQty,
           is_active:         isActive,
           is_available:      isAvailable,
           // Não gravar imagens/BLOB nesta fase

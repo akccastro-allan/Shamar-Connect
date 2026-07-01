@@ -17,7 +17,7 @@ type AssistResult = {
     sku: string | null;
     price: number | null;
     brand: string | null;
-    stock_available: boolean | null;
+    stock_available: number | null;
   }[];
 };
 
@@ -148,7 +148,7 @@ export function CatalogAssistPanel({ onUseReply, disabled }: CatalogAssistPanelP
                   </div>
                   <div className="flex flex-col items-end gap-0.5 shrink-0">
                     <span className="font-semibold text-teal-700">{formatPrice(item.price)}</span>
-                    {item.stock_available === false && (
+                    {item.stock_available !== null && item.stock_available <= 0 && (
                       <span className="text-[10px] text-red-600">Sem estoque</span>
                     )}
                   </div>
