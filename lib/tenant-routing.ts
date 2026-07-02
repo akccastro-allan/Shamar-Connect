@@ -66,6 +66,36 @@ export function isWithinBusinessHours(config: RoutingConfig, at?: Date): boolean
   return hhmm >= hours.open && hhmm < hours.close;
 }
 
+export function getNextBusinessHourStart(config: RoutingConfig, at?: Date): string | null {
+  const now = at ?? new Date();
+  const { dayOfWeek, hhmm } = toLocalTime(now, config.timezone);
+  const hours = config.businessHours[dayOfWeek];
+
+  // Se está dentro do horário comercial, retorna agora
+  if (hours && hhmm >= hours.open && hhmm < hours.close) {
+    return now.toISOString();
+  }
+
+  // Se fechado, procura o próximo dia aberto
+  let checkDay = dayOfWeek;
+  for (let i = 0; i < 7; i++) {
+    checkDay = (checkDay + 1) % 7;
+    const nextHours = config.businessHours[checkDay];
+    if (nextHours) {
+      // Encontrou próximo dia aberto
+      // Retorna data do próximo dia + horário de abertura
+      const nextDate = new Date(now);
+      const daysAhead = checkDay > dayOfWeek ? checkDay - dayOfWeek : 7 - dayOfWeek + checkDay;
+      nextDate.setDate(nextDate.getDate() + daysAhead);
+      const [openHour, openMin] = nextHours.open.split(":").map(Number);
+      nextDate.setHours(openHour, openMin, 0, 0);
+      return nextDate.toISOString();
+    }
+  }
+
+  return null;
+}
+
 export type RoutingResult = {
   department: Department;
   slaMinutes: number;

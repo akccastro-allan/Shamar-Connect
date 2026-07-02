@@ -126,33 +126,59 @@ horário de Brasília). Não é necessário nenhum cron externo para a implanta�
 
 ---
 
-## 4. SLA operacional (regra humana, não automática)
+## 4. SLA on-demand (sem Vercel Cron)
 
-O SLA abaixo é uma **regra operacional** exibida no assistente de catálogo da Central de
-Atendimento. **Não há notificação automática** nesta fase — é guia para o atendente.
+**Importante:** SLA é calculado **on-demand na Central**, sem depender de Vercel Cron.
 
-| Departamento | SLA | Escalação |
+### Cálculo de SLA (fase atual)
+- Roda no **cliente** quando a Central carrega uma conversa
+- Usa `lib/sla/sla-calculator.ts` — sem chamada ao servidor
+- Respeita horário comercial (fora de horário: não conta como atraso)
+- Mostra visualmente: ✅ OK / ⚠️ Atenção / 🔴 Atraso
+
+| Departamento | SLA | Dentro do horário comercial |
 |---|---|---|
-| Balcão | 30 min dentro do horário comercial | Supervisor |
-| Oficina | 50 min dentro do horário comercial | Supervisor |
-| Geral | 60 min dentro do horário comercial | Supervisor |
+| Balcão | 30 minutos | Seg-Sex 08:00–18:00, Sáb 08:00–15:00 |
+| Oficina | 50 minutos | Seg-Sex 08:00–18:00, Sáb 08:00–15:00 |
+| Geral | 60 minutos | Seg-Sex 08:00–18:00, Sáb 08:00–15:00 |
 
-**Horário comercial:**
-- Segunda a sexta: 08:00–18:00
-- Sábado: 08:00–15:00
-- Domingo: Fechado
+### Endpoint opcional: Agent-driven maintenance
 
-### `/api/cron/lips-sla` — fase futura
-O endpoint existe e está funcional, mas **não é obrigatório para a implantação inicial**.
-Ele pode ser acionado manualmente ou por um scheduler externo futuro (GitHub Actions, etc.)
-quando houver necessidade de escalação automática com notificação.
+O Shamar Agent (Windows local) pode chamar opcionalmente:
 
 ```
-POST /api/cron/lips-sla
-Authorization: Bearer $CRON_SECRET
+POST /api/agents/maintenance
+Authorization: Bearer $SHAMAR_AGENT_TOKEN
 ```
 
-Sem `CRON_SECRET` configurado, o endpoint retorna 401 e não afeta nada mais no sistema.
+Este endpoint:
+- Usa autenticação do Agent (mesmo Bearer token do sync/heartbeat)
+- Roda apenas para tenant/organization do Agent
+- Recalcula SLA de conversas abertas da Lips
+- Marca prioridade quando SLA estourado
+- **Não** depende de CRON_SECRET
+- **Não** depende de Vercel Cron
+- **Não** envia notificação automática (MVP)
+
+Resposta:
+```json
+{
+  "ok": true,
+  "checkedAt": "2026-07-01T20:50:00.000Z",
+  "total": 42,
+  "escalatedCount": 3,
+  "withinSlaCount": 39,
+  "outOfHoursCount": 0,
+  "withinBusinessHours": true
+}
+```
+
+### `/api/cron/lips-sla` — DESABILITADA PARA MVP
+O endpoint `/api/cron/lips-sla` não é usado na fase atual.
+Fica documentado como **fase futura** quando houver:
+- Scheduler externo confiável (GitHub Actions, etc.)
+- Necessidade de notificação automática para supervisor
+- `CRON_SECRET` configurado
 
 ---
 
@@ -224,10 +250,13 @@ await fetch("/api/admin/setup-lips", {
 
 Quando a Lips estiver estável (>1 semana operando), próximas melhorias:
 
+- [ ] SLA automático com notificação para supervisor (dispatcher via webhook/cron externo)
+- [ ] Escalação automática por notificação WhatsApp (mensagem privada para supervisor)
 - [ ] Automação com supervisão (`/api/whatsapp-web/automation/process` com approval queue)
 - [ ] Fila de outbox confiável (alternativa a Vercel Cron: GitHub Actions ou webhook externo)
-- [ ] SLA automático com notificação para supervisor (vai precisar `CRON_SECRET`)
 - [ ] Conversation flows com trigger automático (agendamento)
 - [ ] Meta API oficial (substituir WhatsApp Web)
+
+**Importante:** Fase 2 depende de scheduler externo (não Vercel Cron).
 
 Fase 2 começa **após feedback real de 7+ dias**.
