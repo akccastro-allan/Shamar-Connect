@@ -41,8 +41,13 @@ export async function POST(request: NextRequest) {
       ok: true,
       message,
       response: result.response,
-      willAutoRespond: result.shouldSend,
+      shouldSend: result.shouldSend,
+      autoSendAllowed: result.autoSendAllowed,
       requiresHandoff: result.requiresHandoff,
+      department: result.department,
+      handoffReason: result.handoffReason,
+      confidence: result.confidence,
+      intent: result.intent,
     });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
