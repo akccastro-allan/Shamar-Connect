@@ -18,11 +18,7 @@ export function resolveSessionClient(sessionId?: string | null) {
   if (!sessionId) return { client: whatsappWebGatewayClient, sessionId: "hall-main" as AllowedSessionId };
   if (!isAllowedSessionId(sessionId)) return null;
 
-  // Lips usa Evolution API; todos os outros usam WhatsApp Web
-  if (sessionId === "lips-main") {
-    return { client: evolutionApiClient, sessionId };
-  }
-
+  // Todos usam WhatsApp Web (Evolution API está em preparação)
   return { client: createWhatsappGatewayClient(sessionId), sessionId };
 }
 
