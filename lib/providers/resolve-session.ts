@@ -1,5 +1,6 @@
 import { ALLOWED_SESSION_IDS, createWhatsappGatewayClient, isAllowedSessionId, type AllowedSessionId } from "./whatsapp-web-gateway-client";
 import { whatsappWebGatewayClient } from "./whatsapp-web-gateway-client";
+import { evolutionApiClient } from "./evolution-api-client";
 import { NextResponse } from "next/server";
 
 export const SESSION_LABELS: Record<AllowedSessionId, string> = {
@@ -16,6 +17,12 @@ export const SESSION_LABELS: Record<AllowedSessionId, string> = {
 export function resolveSessionClient(sessionId?: string | null) {
   if (!sessionId) return { client: whatsappWebGatewayClient, sessionId: "hall-main" as AllowedSessionId };
   if (!isAllowedSessionId(sessionId)) return null;
+
+  // Lips usa Evolution API; todos os outros usam WhatsApp Web
+  if (sessionId === "lips-main") {
+    return { client: evolutionApiClient, sessionId };
+  }
+
   return { client: createWhatsappGatewayClient(sessionId), sessionId };
 }
 

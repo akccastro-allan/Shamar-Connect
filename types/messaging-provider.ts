@@ -1,4 +1,4 @@
-export type MessagingProviderKind = "mock" | "whatsapp_web" | "meta_cloud_api";
+export type MessagingProviderKind = "mock" | "whatsapp_web" | "meta_cloud_api" | "evolution_api";
 
 export type ProviderConnectionStatus = "idle" | "connecting" | "qr" | "authenticated" | "ready" | "disconnected" | "error";
 
