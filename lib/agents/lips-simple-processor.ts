@@ -1,21 +1,41 @@
 /**
- * Processador simples para agente Lips
- * MVP: FAQ + Catálogo + Pré-orçamento com múltiplas peças
+ * Processador inteligente para agente Lips
+ * MVP: Autoenvio controlado com regras de segurança
  *
  * Fluxo:
  * 1. Mensagem → webhook salva
  * 2. Agente processa:
- *    - Se é FAQ → responde
- *    - Se é sobre peça(s) → consulta catálogo
- *    - Se encontra 1+ peças → gera pré-orçamento
- *    - Se não encontra → pede foto/código/detalhes
- * 3. Responde no WhatsApp
- * 4. Salva no histórico
- * 5. Marca conversa para handoff humano (se orçamento gerado)
+ *    - Classifica intenção (saudação, consulta, compra, serviço)
+ *    - Consulta catálogo se peça solicitada
+ *    - Gera sugestão com confidence score
+ * 3. Decide se autoenviar ou requerer handoff humano
+ * 4. Se autoSendAllowed: envia direto
+ * 5. Se requiresHandoff: marca para humano na Central
+ *
+ * Regras:
+ * - Autoenviar: saudações, consultas, orçamentos iniciais
+ * - Nunca autoenviar: venda fechada, pagamento, reserva
+ * - Handoff obrigatório: cliente com intenção de compra/serviço
+ * - Cooldown: máximo 1 resposta automática por conversa em 5min
  */
 
 import { SupabaseClient } from '@supabase/supabase-js';
 import { resolveSessionClient } from '@/lib/providers/resolve-session';
+
+// ============================================================================
+// Types
+// ============================================================================
+
+export type ProcessMessageResult = {
+  response: string;
+  shouldSend: boolean;
+  autoSendAllowed: boolean; // ← pode enviar automático (sem handoff)
+  requiresHandoff: boolean;
+  department?: 'Balcão' | 'Oficina'; // ← onde encaminhar se handoff
+  handoffReason?: string; // ← motivo do handoff (purchase_intent, service_request, etc)
+  confidence: number; // ← 0.0 a 1.0
+  intent: string; // ← saudacao | consulta_preco | consulta_estoque | quote | compra | servico | nao_encontrado
+};
 
 // ============================================================================
 // FAQ Simples — perguntas genéricas
@@ -98,6 +118,29 @@ function detectFaqTopic(text: string): string | null {
   if (/entrega|retirada|frete|quanto tempo|quando chega/.test(lower)) return 'entrega';
 
   return null;
+}
+
+/**
+ * Detecta intenção de compra/fechamento (handoff obrigatório)
+ */
+function detectPurchaseIntent(text: string): boolean {
+  const lower = text.toLowerCase();
+  const purchasePatterns = [
+    /quero comprar|vou querer|separa|reserva|pode separar|vou buscar|fecha|fechar/,
+    /pagamento|pix|cartão|boleto|manda link|entrega|retirar/,
+  ];
+  return purchasePatterns.some(pattern => pattern.test(lower));
+}
+
+/**
+ * Detecta intenção de serviço (handoff para Oficina)
+ */
+function detectServiceIntent(text: string): boolean {
+  const lower = text.toLowerCase();
+  const servicePatterns = [
+    /troca de óleo|revisão|alinhamento|balanceamento|diagnóstico|instalar|manutenção|agendar/,
+  ];
+  return servicePatterns.some(pattern => pattern.test(lower));
 }
 
 /**
@@ -312,7 +355,7 @@ Assim consigo localizar com certeza! 😊`;
 }
 
 // ============================================================================
-// Processador principal
+// Processador principal com lógica de segurança
 // ============================================================================
 
 export async function processLipsMessage(
@@ -321,25 +364,61 @@ export async function processLipsMessage(
   messageBody: string,
   senderId: string,
   conversationId: string
-): Promise<{ response: string; shouldSend: boolean; requiresHandoff?: boolean }> {
+): Promise<ProcessMessageResult> {
   try {
-    // 1. Verificar FAQ
+    // ========================================================================
+    // FASE 1: Detectar intenções críticas (handoff obrigatório)
+    // ========================================================================
+
+    // Se cliente quer comprar → handoff imediato para Balcão
+    if (detectPurchaseIntent(messageBody)) {
+      return {
+        response: "Perfeito. Vou encaminhar para o balcão confirmar aplicação, disponibilidade e forma de pagamento certinha antes de finalizar.",
+        shouldSend: true,
+        autoSendAllowed: true, // Pode autoenviar encaminhamento
+        requiresHandoff: true,
+        department: 'Balcão',
+        handoffReason: 'purchase_intent',
+        confidence: 0.95,
+        intent: 'compra',
+      };
+    }
+
+    // Se cliente quer serviço → handoff para Oficina
+    if (detectServiceIntent(messageBody)) {
+      return {
+        response: "Entendi. Vou encaminhar para a oficina verificar o melhor horário e confirmar os detalhes do serviço.",
+        shouldSend: true,
+        autoSendAllowed: true, // Pode autoenviar encaminhamento
+        requiresHandoff: true,
+        department: 'Oficina',
+        handoffReason: 'service_request',
+        confidence: 0.95,
+        intent: 'servico',
+      };
+    }
+
+    // ========================================================================
+    // FASE 2: Saudações e FAQ simples (autoenvio permitido)
+    // ========================================================================
     const faqTopic = detectFaqTopic(messageBody);
     if (faqTopic && FAQ_RESPONSES[faqTopic]) {
       return {
         response: FAQ_RESPONSES[faqTopic],
         shouldSend: true,
+        autoSendAllowed: true, // Saudações e FAQ simples: autoenvio OK
         requiresHandoff: false,
+        confidence: 0.95,
+        intent: 'saudacao',
       };
     }
 
-    // 2. Detectar peças solicitadas (suporta múltiplas)
+    // ========================================================================
+    // FASE 3: Consultas de peças/preço/estoque (com orçamento inicial)
+    // ========================================================================
     const requestedPieces = detectPiecesRequested(messageBody);
     if (requestedPieces.length > 0) {
-      // Extrair informação do veículo
       const vehicleInfo = extractVehicleInfo(messageBody);
-
-      // Buscar todas as peças
       const { found, notFound } = await findMultipleParts(db, organizationId, requestedPieces);
 
       // Caso A: Encontrou todas as peças
@@ -347,7 +426,12 @@ export async function processLipsMessage(
         return {
           response: formatQuoteResponse(found, vehicleInfo),
           shouldSend: true,
-          requiresHandoff: true, // Marca para handoff humano
+          autoSendAllowed: true, // Orçamento inicial: autoenvio OK
+          requiresHandoff: true, // Mas marca handoff para balcão fechar
+          department: 'Balcão',
+          handoffReason: 'quote_generated',
+          confidence: 0.90,
+          intent: 'quote',
         };
       }
 
@@ -376,7 +460,12 @@ Assim monto o orçamento completo! 😊`;
         return {
           response,
           shouldSend: true,
-          requiresHandoff: true, // Mesmo parcial, handoff
+          autoSendAllowed: true, // Orçamento parcial: autoenvio OK
+          requiresHandoff: true,
+          department: 'Balcão',
+          handoffReason: 'partial_quote',
+          confidence: 0.80,
+          intent: 'quote',
         };
       }
 
@@ -384,22 +473,33 @@ Assim monto o orçamento completo! 😊`;
       return {
         response: getNeedMoreInfoResponse(messageBody),
         shouldSend: true,
+        autoSendAllowed: true, // Pedido de dados: autoenvio OK
         requiresHandoff: false,
+        confidence: 0.70,
+        intent: 'nao_encontrado',
       };
     }
 
-    // 3. Se não é FAQ nem pergunta sobre peça → não responde
+    // ========================================================================
+    // FASE 4: Mensagem não classificada
+    // ========================================================================
     return {
       response: '',
       shouldSend: false,
+      autoSendAllowed: false,
       requiresHandoff: false,
+      confidence: 0.0,
+      intent: 'unknown',
     };
   } catch (error) {
     console.error('[lips-simple-processor] Erro ao processar:', error);
     return {
       response: '',
       shouldSend: false,
+      autoSendAllowed: false,
       requiresHandoff: false,
+      confidence: 0.0,
+      intent: 'error',
     };
   }
 }
@@ -414,7 +514,8 @@ export async function sendAndSaveResponse(
   conversationId: string,
   senderId: string,
   responseText: string,
-  requiresHandoff?: boolean
+  requiresHandoff?: boolean,
+  department?: 'Balcão' | 'Oficina'
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
     // 1. Enviar via Evolution API
@@ -445,7 +546,7 @@ export async function sendAndSaveResponse(
         to_id: senderId,
         raw_payload: {
           sentByAgent: true,
-          agentType: 'lips-auto-simple',
+          agentType: 'lips-auto-intelligent',
         },
       })
       .select('id')
@@ -456,7 +557,7 @@ export async function sendAndSaveResponse(
       await db
         .from('whatsapp_conversations')
         .update({
-          status: 'pending', // Status que indica handoff humano
+          status: 'pending',
           updated_at: new Date().toISOString(),
         })
         .eq('id', conversationId);

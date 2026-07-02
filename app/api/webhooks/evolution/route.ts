@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
               .insert({
                 tenant_id: channel.tenantId,
                 organization_id: channel.organizationId,
-                channel_id: channel.id,
+                channel_id: channel.channelId,
                 conversation_id: msgQuery.data.conversation_id,
                 message_id: msgQuery.data.id,
                 status: "pending",

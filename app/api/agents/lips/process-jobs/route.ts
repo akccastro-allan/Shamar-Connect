@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
           throw new Error("Conversa não encontrada");
         }
 
-        // Processar mensagem (classificar + gerar sugestão)
+        // Processar mensagem com lógica de autoenvio controlado
         const processResult = await processLipsMessage(
           db,
           job.organization_id,
@@ -107,25 +107,61 @@ export async function POST(request: NextRequest) {
           job.conversation_id
         );
 
-        // ⚠️ FASE ATUAL: Gerar sugestão SEM enviar automático
-        // Humano precisa revisar e enviar manualmente na Central
-        if (processResult.shouldSend) {
-          // Salvar sugestão no BD (não enviar via Evolution)
-          // TODO: Criar tabela agent_suggestions para armazenar sugestões
-          // Por enquanto, apenas marcar job como processed com sugestão
+        // ========================================================================
+        // Decidir se autoenviar ou requerer handoff humano
+        // ========================================================================
+        if (processResult.shouldSend && processResult.autoSendAllowed) {
+          // ✅ AUTOENVIO PERMITIDO: enviar direto via Evolution
+          const sendResult = await sendAndSaveResponse(
+            db,
+            job.organization_id,
+            job.conversation_id,
+            inboundMsg.from_id,
+            processResult.response,
+            processResult.requiresHandoff,
+            processResult.department
+          );
+
+          if (!sendResult.success) {
+            throw new Error(sendResult.error || "Falha ao enviar resposta");
+          }
+
+          // Marca job como done
           await db
             .from("agent_automation_jobs")
             .update({
               status: "done",
               completed_at: new Date().toISOString(),
-              response_type: "suggestion", // ← Indica que é sugestão, não resposta enviada
+              response_type: processResult.intent,
               response_text: processResult.response,
-              sent_to_evolution: false, // ← NÃO foi enviado
-              outbound_message_id: null, // ← Sem message ID (humano enviará depois)
+              sent_to_evolution: true,
+              outbound_message_id: sendResult.messageId,
             })
             .eq("id", job.id);
 
-          // Se é quote, marcar conversa para human review
+          results.push({
+            jobId: job.id,
+            status: "done",
+            responded: true, // ← Resposta enviada automaticamente
+            department: processResult.department,
+            handoffReason: processResult.handoffReason,
+            confidence: processResult.confidence,
+          });
+        } else if (processResult.shouldSend) {
+          // ⚠️ SUGESTÃO (não autoenvio): salvar para humano revisar
+          await db
+            .from("agent_automation_jobs")
+            .update({
+              status: "done",
+              completed_at: new Date().toISOString(),
+              response_type: `${processResult.intent}_suggestion`,
+              response_text: processResult.response,
+              sent_to_evolution: false,
+              outbound_message_id: null,
+            })
+            .eq("id", job.id);
+
+          // Marcar conversa para human review se necessário
           if (processResult.requiresHandoff) {
             await db
               .from("whatsapp_conversations")
@@ -139,12 +175,13 @@ export async function POST(request: NextRequest) {
           results.push({
             jobId: job.id,
             status: "done",
-            responded: false, // ← Sugestão gerada, não enviada
+            responded: false,
             suggestion: processResult.response,
             requiresHandoff: processResult.requiresHandoff,
+            department: processResult.department,
           });
         } else {
-          // Não precisa de sugestão (mensagem não é FAQ nem peça)
+          // Não precisa de resposta ou sugestão
           await db
             .from("agent_automation_jobs")
             .update({
