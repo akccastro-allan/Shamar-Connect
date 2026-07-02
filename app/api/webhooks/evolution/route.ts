@@ -12,6 +12,7 @@ import { parseEvolutionWebhook } from "@/lib/providers/evolution-client";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 import { resolveChannelFromWebhook } from "@/lib/inbox/resolve-channel";
 import { ingestInboundMessage, recordUnresolvedEvent } from "@/lib/inbox/persist-inbound";
+import { processLipsMessage, sendAndSaveResponse } from "@/lib/agents/lips-simple-processor";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -81,8 +82,46 @@ export async function POST(request: NextRequest) {
         displayName: m.pushName,
         rawPayload: m.rawPayload,
       });
-      if (result === "processed") processed += 1;
-      else duplicates += 1;
+
+      if (result === "processed") {
+        processed += 1;
+
+        // Automação simples para Lips: FAQ + Catálogo + Pré-orçamento
+        // Apenas para Lips, não para grupos, em background (não bloqueia webhook)
+        if (channel.provider === "evolution" && !m.isGroup) {
+          const convQuery = await db
+            .from("whatsapp_conversations")
+            .select("id")
+            .eq("external_chat_id", m.externalChatId)
+            .maybeSingle();
+
+          if (convQuery.data?.id && m.senderId && m.body && channel.organizationId) {
+            // Fire-and-forget: processa sem bloquear webhook
+            const conversationId = convQuery.data.id;
+            const senderId = m.senderId as string;
+            const organizationId = channel.organizationId as string;
+            const body = m.body as string;
+            processLipsMessage(db, organizationId, body, senderId, conversationId)
+              .then(async (result) => {
+                if (result.shouldSend) {
+                  await sendAndSaveResponse(
+                    db,
+                    organizationId,
+                    conversationId,
+                    senderId,
+                    result.response,
+                    result.requiresHandoff
+                  );
+                }
+              })
+              .catch((err) => {
+                console.error("[lips-automation]", err instanceof Error ? err.message : err);
+              });
+          }
+        }
+      } else {
+        duplicates += 1;
+      }
     } catch (err) {
       errors.push(`${m.messageId}: ${err instanceof Error ? err.message : String(err)}`);
       console.error("[evolution-webhook]", err instanceof Error ? err.message : err);
