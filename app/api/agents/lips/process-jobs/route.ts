@@ -185,7 +185,7 @@ export async function POST(request: NextRequest) {
               job.conversation_id,
               inboundMsg.from_id,
               processResult.response,
-              processResult.requiresHandoff,
+              false, // Não é handoff obrigatório
               processResult.department
             );
 
@@ -200,6 +200,16 @@ export async function POST(request: NextRequest) {
               job.conversation_id,
               processResult.response
             );
+
+            // Atualizar status da conversa baseado no tipo de resposta
+            const nextStatus = processResult.quoteOnly ? 'awaiting_customer' : 'open';
+            await db
+              .from("whatsapp_conversations")
+              .update({
+                status: nextStatus,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", job.conversation_id);
 
             // Marca job como done
             await db
@@ -218,8 +228,8 @@ export async function POST(request: NextRequest) {
               jobId: job.id,
               status: "done",
               responded: true, // ← Resposta enviada automaticamente
-              department: processResult.department,
-              handoffReason: processResult.handoffReason,
+              quoteOnly: processResult.quoteOnly,
+              conversationStatus: nextStatus,
               confidence: processResult.confidence,
             });
           }

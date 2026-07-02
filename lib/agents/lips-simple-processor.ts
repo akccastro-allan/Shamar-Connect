@@ -35,6 +35,9 @@ export type ProcessMessageResult = {
   handoffReason?: string; // ← motivo do handoff (purchase_intent, service_request, etc)
   confidence: number; // ← 0.0 a 1.0
   intent: string; // ← saudacao | consulta_preco | consulta_estoque | quote | compra | servico | nao_encontrado
+  quoteOnly?: boolean; // ← true para consulta simples (não é compra)
+  idleCloseAfterMinutes?: number; // ← 10 para consultas simples (idle timeout)
+  nextStatusSuggestion?: string; // ← "awaiting_customer" ou "auto_quote_idle"
 };
 
 // ============================================================================
@@ -412,6 +415,25 @@ Quer reservar ou falar com alguém? 😊`;
 }
 
 /**
+ * Formata resposta consultiva de preço único (quoteOnly)
+ * Segue padrão: nome, preço, estoque na sincronização
+ */
+function formatSinglePieceQuote(item: any): string {
+  const price = formatPrice(item.price);
+  const stock = item.stock_quantity >= 0 ? item.stock_quantity : 0;
+
+  return `Encontrei no catálogo da Lips:
+
+📦 **Produto:** ${item.name}
+💰 **Valor:** R$ ${price}
+📊 **Estoque na última sincronização:** ${Math.max(stock, 0)} unidade(s)
+
+⚠️ Esses dados são da última atualização do sistema. O balcão confirma aplicação e disponibilidade certinha antes de finalizar.
+
+Posso te ajudar com mais alguma peça? 😊`;
+}
+
+/**
  * Formata pré-orçamento com múltiplas peças
  */
 function formatQuoteResponse(items: any[], vehicleInfo: any): string {
@@ -539,13 +561,15 @@ export async function processLipsMessage(
 
       // Caso A: Encontrou todas as peças
       if (found.length > 0 && notFound.length === 0) {
+        const quoteSingleResponse = formatSinglePieceQuote(found[0]);
         return {
-          response: formatQuoteResponse(found, vehicleInfo),
+          response: quoteSingleResponse,
           shouldSend: true,
-          autoSendAllowed: true, // Orçamento inicial: autoenvio OK
-          requiresHandoff: true, // Mas marca handoff para balcão fechar
-          department: 'Balcão',
-          handoffReason: 'quote_generated',
+          autoSendAllowed: true, // Consulta simples: autoenvio OK
+          requiresHandoff: false, // Consulta simples NÃO escala
+          quoteOnly: true, // É apenas uma cotação consultiva
+          idleCloseAfterMinutes: 10, // Marcar como idle se não responder em 10min
+          nextStatusSuggestion: 'awaiting_customer',
           confidence: 0.90,
           intent: 'quote',
         };
@@ -577,9 +601,10 @@ Assim monto o orçamento completo! 😊`;
           response,
           shouldSend: true,
           autoSendAllowed: true, // Orçamento parcial: autoenvio OK
-          requiresHandoff: true,
-          department: 'Balcão',
-          handoffReason: 'partial_quote',
+          requiresHandoff: false, // Consulta simples NÃO escala
+          quoteOnly: true, // É apenas uma cotação consultiva
+          idleCloseAfterMinutes: 10,
+          nextStatusSuggestion: 'awaiting_customer',
           confidence: 0.80,
           intent: 'quote',
         };
@@ -591,6 +616,9 @@ Assim monto o orçamento completo! 😊`;
         shouldSend: true,
         autoSendAllowed: true, // Pedido de dados: autoenvio OK
         requiresHandoff: false,
+        quoteOnly: true, // Ainda é uma consulta
+        idleCloseAfterMinutes: 10,
+        nextStatusSuggestion: 'awaiting_customer',
         confidence: 0.70,
         intent: 'nao_encontrado',
       };
