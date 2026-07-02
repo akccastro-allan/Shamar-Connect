@@ -17,6 +17,35 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   try {
+    // ========================================================================
+    // SEGURANÇA: Proteger endpoint de teste
+    // ========================================================================
+
+    // Em produção, exigir token válido
+    const isProduction = process.env.NODE_ENV === "production";
+    const processorToken = request.headers.get("x-processor-token");
+    const expectedToken = process.env.LIPS_PROCESSOR_TOKEN;
+
+    // Se não tiver token configurado, retornar 404 (endpoint desabilitado)
+    if (!expectedToken) {
+      if (isProduction) {
+        return NextResponse.json(
+          { ok: false, error: "Endpoint disabled" },
+          { status: 404 }
+        );
+      }
+      // Em dev, aviso mas permite (sem token)
+      console.warn("[test-cooldown] AVISO: LIPS_PROCESSOR_TOKEN não configurado");
+    }
+
+    // Se token estiver configurado, exigir que bata
+    if (expectedToken && processorToken !== expectedToken) {
+      return NextResponse.json(
+        { ok: false, error: "Token inválido ou faltando" },
+        { status: 401 }
+      );
+    }
+
     const { conversationId } = await request.json();
 
     if (!conversationId) {

@@ -26,14 +26,33 @@ export async function POST(request: NextRequest) {
   try {
     const db = createSupabaseWriteClient();
 
-    // Opcional: token simples de segurança
+    // ========================================================================
+    // SEGURANÇA: Validar token de processamento
+    // ========================================================================
+
+    const isProduction = process.env.NODE_ENV === "production";
     const token = request.headers.get("x-processor-token");
     const expectedToken = process.env.LIPS_PROCESSOR_TOKEN;
+
+    // Em produção, token é OBRIGATÓRIO
+    if (isProduction && !expectedToken) {
+      return NextResponse.json(
+        { ok: false, error: "Token não configurado em produção" },
+        { status: 403 }
+      );
+    }
+
+    // Se token estiver configurado, validar
     if (expectedToken && token !== expectedToken) {
       return NextResponse.json(
         { ok: false, error: "Token inválido ou faltando" },
         { status: 401 }
       );
+    }
+
+    // Em dev, aviso se não houver token
+    if (!isProduction && !expectedToken) {
+      console.warn("[lips-processor] AVISO: LIPS_PROCESSOR_TOKEN não configurado (dev mode)");
     }
 
     // Parâmetros
