@@ -12,7 +12,6 @@ import { parseEvolutionWebhook } from "@/lib/providers/evolution-client";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 import { resolveChannelFromWebhook } from "@/lib/inbox/resolve-channel";
 import { ingestInboundMessage, recordUnresolvedEvent } from "@/lib/inbox/persist-inbound";
-import { processLipsMessage, sendAndSaveResponse } from "@/lib/agents/lips-simple-processor";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -86,36 +85,30 @@ export async function POST(request: NextRequest) {
       if (result === "processed") {
         processed += 1;
 
-        // Automação simples para Lips: FAQ + Catálogo + Pré-orçamento
-        // Apenas para Lips, não para grupos, em background (não bloqueia webhook)
-        if (channel.provider === "evolution" && !m.isGroup) {
-          const convQuery = await db
-            .from("whatsapp_conversations")
-            .select("id")
-            .eq("external_chat_id", m.externalChatId)
+        // Criar job na fila para agente Lips
+        // Apenas para Lips, não para grupos
+        if (channel.provider === "evolution" && !m.isGroup && channel.organizationId) {
+          const msgQuery = await db
+            .from("whatsapp_messages")
+            .select("id, conversation_id")
+            .eq("external_message_id", m.messageId)
             .maybeSingle();
 
-          if (convQuery.data?.id && m.senderId && m.body && channel.organizationId) {
-            // Fire-and-forget: processa sem bloquear webhook
-            const conversationId = convQuery.data.id;
-            const senderId = m.senderId as string;
-            const organizationId = channel.organizationId as string;
-            const body = m.body as string;
-            processLipsMessage(db, organizationId, body, senderId, conversationId)
-              .then(async (result) => {
-                if (result.shouldSend) {
-                  await sendAndSaveResponse(
-                    db,
-                    organizationId,
-                    conversationId,
-                    senderId,
-                    result.response,
-                    result.requiresHandoff
-                  );
-                }
+          if (msgQuery.data?.id && msgQuery.data?.conversation_id) {
+            // Criar job pendente na fila
+            await db
+              .from("agent_automation_jobs")
+              .insert({
+                tenant_id: channel.tenantId,
+                organization_id: channel.organizationId,
+                channel_id: channel.id,
+                conversation_id: msgQuery.data.conversation_id,
+                message_id: msgQuery.data.id,
+                status: "pending",
+                agent_type: "lips-auto",
               })
               .catch((err) => {
-                console.error("[lips-automation]", err instanceof Error ? err.message : err);
+                console.error("[lips-webhook] Erro ao criar job:", err);
               });
           }
         }
