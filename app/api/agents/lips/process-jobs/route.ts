@@ -128,8 +128,8 @@ export async function POST(request: NextRequest) {
             .update({
               status: "done",
               completed_at: new Date().toISOString(),
-              response_type: processResult.response?.type,
-              response_text: processResult.response?.text,
+              response_type: "text",
+              response_text: processResult.response,
               sent_to_evolution: true,
               outbound_message_id: sendResult.messageId,
             })
