@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
 
           if (msgQuery.data?.id && msgQuery.data?.conversation_id) {
             // Criar job pendente na fila
-            await db
+            const { error: jobError } = await db
               .from("agent_automation_jobs")
               .insert({
                 tenant_id: channel.tenantId,
@@ -106,10 +106,13 @@ export async function POST(request: NextRequest) {
                 message_id: msgQuery.data.id,
                 status: "pending",
                 agent_type: "lips-auto",
-              })
-              .catch((err) => {
-                console.error("[lips-webhook] Erro ao criar job:", err);
               });
+
+            // ⚠️ Propagar erro claro (não silenciar)
+            if (jobError) {
+              console.error("[lips-webhook] Erro ao criar job:", jobError.message);
+              errors.push(`Job creation failed for msg ${m.messageId}: ${jobError.message}`);
+            }
           }
         }
       } else {

@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
           throw new Error("Conversa não encontrada");
         }
 
-        // Processar mensagem
+        // Processar mensagem (classificar + gerar sugestão)
         const processResult = await processLipsMessage(
           db,
           job.organization_id,
@@ -107,41 +107,44 @@ export async function POST(request: NextRequest) {
           job.conversation_id
         );
 
-        // Se deve responder, envia
+        // ⚠️ FASE ATUAL: Gerar sugestão SEM enviar automático
+        // Humano precisa revisar e enviar manualmente na Central
         if (processResult.shouldSend) {
-          const sendResult = await sendAndSaveResponse(
-            db,
-            job.organization_id,
-            job.conversation_id,
-            inboundMsg.from_id,
-            processResult.response,
-            processResult.requiresHandoff
-          );
-
-          if (!sendResult.success) {
-            throw new Error(sendResult.error || "Falha ao enviar resposta");
-          }
-
-          // Atualiza job como done
+          // Salvar sugestão no BD (não enviar via Evolution)
+          // TODO: Criar tabela agent_suggestions para armazenar sugestões
+          // Por enquanto, apenas marcar job como processed com sugestão
           await db
             .from("agent_automation_jobs")
             .update({
               status: "done",
               completed_at: new Date().toISOString(),
-              response_type: "text",
+              response_type: "suggestion", // ← Indica que é sugestão, não resposta enviada
               response_text: processResult.response,
-              sent_to_evolution: true,
-              outbound_message_id: sendResult.messageId,
+              sent_to_evolution: false, // ← NÃO foi enviado
+              outbound_message_id: null, // ← Sem message ID (humano enviará depois)
             })
             .eq("id", job.id);
+
+          // Se é quote, marcar conversa para human review
+          if (processResult.requiresHandoff) {
+            await db
+              .from("whatsapp_conversations")
+              .update({
+                status: "pending",
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", job.conversation_id);
+          }
 
           results.push({
             jobId: job.id,
             status: "done",
-            responded: true,
+            responded: false, // ← Sugestão gerada, não enviada
+            suggestion: processResult.response,
+            requiresHandoff: processResult.requiresHandoff,
           });
         } else {
-          // Não precisa responder (FAQ não matched, etc)
+          // Não precisa de sugestão (mensagem não é FAQ nem peça)
           await db
             .from("agent_automation_jobs")
             .update({
