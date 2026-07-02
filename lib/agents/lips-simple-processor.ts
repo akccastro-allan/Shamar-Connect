@@ -111,8 +111,10 @@ const PIECE_KEYWORDS: Record<string, string[]> = {
 function detectFaqTopic(text: string): string | null {
   const lower = text.toLowerCase();
 
-  if (/horá|abre|funciona|qual horá/.test(lower)) return 'horario';
-  if (/onde fica|endereço|localização|aonde|morada/.test(lower)) return 'endereco';
+  // Saudações e cumprimentos
+  if (/bom dia|boa tarde|boa noite|olá|oi|e aí|tudo bem/.test(lower)) return 'horario';
+  if (/horá|abre|funciona|qual horá|que horas/.test(lower)) return 'horario';
+  if (/onde fica|endereço|localização|aonde|morada|qual o endereço/.test(lower)) return 'endereco';
   if (/pagamento|pago|parcel|crédito|dinheiro|pix|débito/.test(lower)) return 'pagamento';
   if (/como compra|como faço|como funciona|como pedir/.test(lower)) return 'compra';
   if (/entrega|retirada|frete|quanto tempo|quando chega/.test(lower)) return 'entrega';
@@ -153,7 +155,7 @@ function detectPiecesRequested(text: string): string[] {
 
   // Padrão de pergunta sobre peça
   const isPieceQuery =
-    /qual.*valor|quanto custa|preço|tem.*estoque|disponível|peça.*modelo|orçamento|quanto (fica|dá|sai)/i.test(
+    /qual.*valor|quanto custa|preço|tem|estoque|disponível|peça|modelo|orçamento|quanto (fica|dá|sai)|preciso de/i.test(
       text
     );
 
