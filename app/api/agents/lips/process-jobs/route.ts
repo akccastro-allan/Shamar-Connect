@@ -13,7 +13,12 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
-import { processLipsMessage, sendAndSaveResponse } from "@/lib/agents/lips-simple-processor";
+import {
+  processLipsMessage,
+  sendAndSaveResponse,
+  checkCooldown,
+  recordAutoReply,
+} from "@/lib/agents/lips-simple-processor";
 
 export const dynamic = "force-dynamic";
 
@@ -110,43 +115,95 @@ export async function POST(request: NextRequest) {
         // ========================================================================
         // Decidir se autoenviar ou requerer handoff humano
         // ========================================================================
-        if (processResult.shouldSend && processResult.autoSendAllowed) {
-          // ✅ AUTOENVIO PERMITIDO: enviar direto via Evolution
-          const sendResult = await sendAndSaveResponse(
+
+        // Autoenvio SEGURO: sem handoff obrigatório + permitido + dentro do cooldown
+        const canAutoSend =
+          processResult.shouldSend &&
+          processResult.autoSendAllowed &&
+          !processResult.requiresHandoff;
+
+        if (canAutoSend) {
+          // ========================================================================
+          // Verificar cooldown antes de autoenviar
+          // ========================================================================
+          const cooldownCheck = await checkCooldown(
             db,
-            job.organization_id,
             job.conversation_id,
-            inboundMsg.from_id,
-            processResult.response,
-            processResult.requiresHandoff,
-            processResult.department
+            processResult.response
           );
 
-          if (!sendResult.success) {
-            throw new Error(sendResult.error || "Falha ao enviar resposta");
-          }
+          if (!cooldownCheck.allowed) {
+            // ❌ Bloqueado por cooldown: salvar sugestão para humano
+            console.log(
+              `[lips-processor] Job ${job.id} bloqueado por cooldown: ${cooldownCheck.reason}`
+            );
 
-          // Marca job como done
-          await db
-            .from("agent_automation_jobs")
-            .update({
+            await db
+              .from("agent_automation_jobs")
+              .update({
+                status: "done",
+                completed_at: new Date().toISOString(),
+                response_type: `${processResult.intent}_blocked_cooldown`,
+                response_text: processResult.response,
+                sent_to_evolution: false,
+                outbound_message_id: null,
+              })
+              .eq("id", job.id);
+
+            results.push({
+              jobId: job.id,
               status: "done",
-              completed_at: new Date().toISOString(),
-              response_type: processResult.intent,
-              response_text: processResult.response,
-              sent_to_evolution: true,
-              outbound_message_id: sendResult.messageId,
-            })
-            .eq("id", job.id);
+              responded: false,
+              blockedBy: cooldownCheck.reason,
+              suggestion: processResult.response,
+              confidence: processResult.confidence,
+            });
+          } else {
+            // ✅ AUTOENVIO PERMITIDO: enviar direto via Evolution
+            const sendResult = await sendAndSaveResponse(
+              db,
+              job.organization_id,
+              job.conversation_id,
+              inboundMsg.from_id,
+              processResult.response,
+              processResult.requiresHandoff,
+              processResult.department
+            );
 
-          results.push({
-            jobId: job.id,
-            status: "done",
-            responded: true, // ← Resposta enviada automaticamente
-            department: processResult.department,
-            handoffReason: processResult.handoffReason,
-            confidence: processResult.confidence,
-          });
+            if (!sendResult.success) {
+              throw new Error(sendResult.error || "Falha ao enviar resposta");
+            }
+
+            // Registrar no cooldown
+            await recordAutoReply(
+              db,
+              job.organization_id,
+              job.conversation_id,
+              processResult.response
+            );
+
+            // Marca job como done
+            await db
+              .from("agent_automation_jobs")
+              .update({
+                status: "done",
+                completed_at: new Date().toISOString(),
+                response_type: processResult.intent,
+                response_text: processResult.response,
+                sent_to_evolution: true,
+                outbound_message_id: sendResult.messageId,
+              })
+              .eq("id", job.id);
+
+            results.push({
+              jobId: job.id,
+              status: "done",
+              responded: true, // ← Resposta enviada automaticamente
+              department: processResult.department,
+              handoffReason: processResult.handoffReason,
+              confidence: processResult.confidence,
+            });
+          }
         } else if (processResult.shouldSend) {
           // ⚠️ SUGESTÃO (não autoenvio): salvar para humano revisar
           await db

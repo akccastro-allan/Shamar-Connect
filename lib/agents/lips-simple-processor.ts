@@ -279,6 +279,120 @@ async function findMultipleParts(
 }
 
 // ============================================================================
+// Cooldown para autoenvio
+// ============================================================================
+
+export type CooldownCheckResult = {
+  allowed: boolean;
+  reason?: string;
+  lastAutoReplyAt?: Date;
+};
+
+/**
+ * Verifica se é permitido enviar resposta automática
+ * Regras:
+ * 1. Máximo 1 resposta automática por conversa em 5 minutos
+ * 2. Não repetir mesma resposta automática em sequência
+ * 3. Não autoenviar se última mensagem foi outbound do sistema
+ */
+export async function checkCooldown(
+  db: SupabaseClient,
+  conversationId: string,
+  responseText: string
+): Promise<CooldownCheckResult> {
+  try {
+    // Configuração do cooldown (padrão 5 minutos)
+    const cooldownMinutes = parseInt(process.env.AUTO_REPLY_COOLDOWN_MINUTES || '5', 10);
+    const cooldownMs = cooldownMinutes * 60 * 1000;
+    const now = new Date();
+
+    // 1. Verificar último autoenvio desta conversa
+    const { data: lastReply } = await db
+      .from('agent_automation_cooldown')
+      .select('*')
+      .eq('conversation_id', conversationId)
+      .single();
+
+    if (lastReply) {
+      const lastReplyTime = new Date(lastReply.last_automated_response_at);
+      const timeSinceLastReply = now.getTime() - lastReplyTime.getTime();
+
+      // Regra 1: Dentro do cooldown?
+      if (timeSinceLastReply < cooldownMs) {
+        return {
+          allowed: false,
+          reason: `cooldown_active (${Math.ceil((cooldownMs - timeSinceLastReply) / 1000)}s restantes)`,
+          lastAutoReplyAt: lastReplyTime,
+        };
+      }
+
+      // Regra 2: Mesma resposta?
+      if (lastReply.last_response_text === responseText) {
+        return {
+          allowed: false,
+          reason: 'duplicate_response',
+          lastAutoReplyAt: lastReplyTime,
+        };
+      }
+    }
+
+    // 3. Verificar se última mensagem foi outbound do sistema
+    const { data: lastMessage } = await db
+      .from('whatsapp_messages')
+      .select('direction')
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (lastMessage && lastMessage.direction === 'outbound') {
+      return {
+        allowed: false,
+        reason: 'last_message_was_outbound',
+      };
+    }
+
+    return { allowed: true };
+  } catch (error) {
+    console.error('[lips-simple-processor] Erro ao verificar cooldown:', error);
+    // Em caso de erro, permitir (fail-open, mas log o erro)
+    return { allowed: true };
+  }
+}
+
+/**
+ * Registra um autoenvio no cooldown
+ */
+export async function recordAutoReply(
+  db: SupabaseClient,
+  organizationId: string,
+  conversationId: string,
+  responseText: string
+): Promise<void> {
+  try {
+    // Upsert: se existe, atualiza; caso contrário, cria
+    const { error } = await db
+      .from('agent_automation_cooldown')
+      .upsert(
+        {
+          organization_id: organizationId,
+          conversation_id: conversationId,
+          last_automated_response_at: new Date().toISOString(),
+          last_response_text: responseText,
+          response_hash: Buffer.from(responseText).toString('base64').substring(0, 32),
+        },
+        { onConflict: 'conversation_id' }
+      );
+
+    if (error) {
+      console.error('[lips-simple-processor] Erro ao registrar autoenvio:', error);
+    }
+  } catch (error) {
+    console.error('[lips-simple-processor] Erro ao registrar autoenvio:', error);
+  }
+}
+
+// ============================================================================
 // Gerar respostas
 // ============================================================================
 
