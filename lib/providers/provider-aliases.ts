@@ -16,6 +16,9 @@ export const CANONICAL_PROVIDERS = [
 
 export type CanonicalProvider = (typeof CANONICAL_PROVIDERS)[number];
 
+export const PROVIDER_TYPES = ["official_api", "web_gateway"] as const;
+export type ProviderType = (typeof PROVIDER_TYPES)[number];
+
 const ALIASES: Record<string, CanonicalProvider> = {
   // legado -> canônico
   whatsapp_web: "whatsapp_web_legacy",
@@ -38,4 +41,12 @@ export function normalizeProvider(value: string | null | undefined): CanonicalPr
 /** True se a string (após normalização) é um provider conhecido. */
 export function isKnownProvider(value: string | null | undefined): boolean {
   return normalizeProvider(value) !== null;
+}
+
+/** Mapeia provider canônico para seu tipo (official_api | web_gateway). */
+export function providerTypeOf(provider: CanonicalProvider): ProviderType {
+  if (provider === "meta_whatsapp" || provider === "meta_instagram" || provider === "meta_messenger") {
+    return "official_api";
+  }
+  return "web_gateway";
 }
