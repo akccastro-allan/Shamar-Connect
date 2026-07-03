@@ -87,7 +87,8 @@ export async function POST(request: NextRequest) {
 
         // Criar job na fila para agente Lips
         // Apenas para Lips, não para grupos
-        if (channel.provider === "evolution" && !m.isGroup && channel.organizationId) {
+        // Funciona independente do provider do canal (evolution recebendo, canal pode ser whatsapp_web)
+        if (!m.isGroup && channel.organizationId) {
           const msgQuery = await db
             .from("whatsapp_messages")
             .select("id, conversation_id")
