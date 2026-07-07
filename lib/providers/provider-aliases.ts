@@ -20,7 +20,7 @@ export const PROVIDER_TYPES = ["official_api", "web_gateway"] as const;
 export type ProviderType = (typeof PROVIDER_TYPES)[number];
 
 const ALIASES: Record<string, CanonicalProvider> = {
-  // legado -> canônico
+  // legado -> canônico (Marco 1)
   whatsapp_web: "whatsapp_web_legacy",
   whatsapp_web_legacy: "whatsapp_web_legacy",
   openwa: "whatsapp_web_legacy",
