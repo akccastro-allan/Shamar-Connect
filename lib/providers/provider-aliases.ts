@@ -23,6 +23,7 @@ const ALIASES: Record<string, CanonicalProvider> = {
   // legado -> canônico
   whatsapp_web: "whatsapp_web_legacy",
   whatsapp_web_legacy: "whatsapp_web_legacy",
+  openwa: "whatsapp_web_legacy",
   whatsapp_cloud: "meta_whatsapp",
   meta_whatsapp: "meta_whatsapp",
   instagram: "meta_instagram",
