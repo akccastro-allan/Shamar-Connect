@@ -105,14 +105,17 @@ async function bySocialAccount(
 }
 
 async function bySessionId(db: Db, sessionId: string): Promise<ChannelResolution | null> {
+  console.log("[resolve-channel] bySessionId searching for:", sessionId);
   const { data } = await db
     .from("channels")
     .select("id, tenant_id, organization_id")
     .eq("session_id", sessionId)
     .limit(2);
 
+  console.log("[resolve-channel] bySessionId found rows:", data?.length ?? 0);
   if (!data || data.length !== 1) return null; // ambíguo (duplicado entre orgs) = não resolve
   const ch = data[0];
   if (!ch.tenant_id || !ch.organization_id) return null;
+  console.log("[resolve-channel] bySessionId resolved to channelId:", ch.id);
   return { channelId: ch.id, tenantId: ch.tenant_id, organizationId: ch.organization_id, provider: "whatsapp_web_legacy" };
 }
