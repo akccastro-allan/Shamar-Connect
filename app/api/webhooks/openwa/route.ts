@@ -27,9 +27,15 @@ export async function POST(request: NextRequest) {
       }
 
       const db = createSupabaseWriteClient();
-      const channel = await resolveChannelFromWebhook(db, "openwa", { sessionId: body.sessionId as string });
+      const sessionId = body.sessionId as string;
+      console.log("[openwa-webhook] Resolving channel for sessionId:", sessionId);
+      const channel = await resolveChannelFromWebhook(db, "openwa", { sessionId });
 
-      if (!channel) return NextResponse.json({ ok: true });
+      if (!channel) {
+        console.log("[openwa-webhook] Channel not resolved for sessionId:", sessionId);
+        return NextResponse.json({ ok: true });
+      }
+      console.log("[openwa-webhook] Channel resolved:", channel.channelId);
 
       const result = await ingestInboundMessage(db, channel, {
         externalEventId: key.id as string || "",
