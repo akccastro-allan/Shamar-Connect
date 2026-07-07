@@ -36,7 +36,10 @@ const ALIASES: Record<string, CanonicalProvider> = {
 /** Normaliza qualquer string de provider para a forma canônica (ou null se desconhecida). */
 export function normalizeProvider(value: string | null | undefined): CanonicalProvider | null {
   if (!value) return null;
-  return ALIASES[value.trim().toLowerCase()] ?? null;
+  const normalized = value.trim().toLowerCase();
+  const result = ALIASES[normalized] ?? null;
+  console.log("[normalizeProvider] input:", value, "normalized:", normalized, "result:", result);
+  return result;
 }
 
 /** True se a string (após normalização) é um provider conhecido. */
