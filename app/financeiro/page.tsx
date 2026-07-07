@@ -2,6 +2,8 @@ import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/page-header";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 
+export const dynamic = "force-dynamic";
+
 const PLAN_PRICES = {
   starter: 149,
   professional: 297,
