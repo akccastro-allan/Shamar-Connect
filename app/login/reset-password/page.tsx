@@ -15,6 +15,7 @@ function ResetPasswordInner() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [done, setDone] = useState(false);
   const [ready, setReady] = useState(false);
+  const [recoveryAccessToken, setRecoveryAccessToken] = useState("");
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
@@ -43,6 +44,7 @@ function ResetPasswordInner() {
         }
 
         window.history.replaceState(null, "", "/login/reset-password");
+        setRecoveryAccessToken(accessToken);
         setReady(true);
       });
       return;
@@ -55,13 +57,14 @@ function ResetPasswordInner() {
         return;
       }
 
-      supabase.auth.verifyOtp({ token_hash: tokenHash, type: "recovery" }).then(({ error: verifyError }) => {
+      supabase.auth.verifyOtp({ token_hash: tokenHash, type: "recovery" }).then(({ data, error: verifyError }) => {
         if (verifyError) {
           setError(verifyError.message || "Link inválido ou expirado. Solicite uma nova recuperação de senha.");
           setReady(true);
           return;
         }
 
+        setRecoveryAccessToken(data.session?.access_token || "");
         setReady(true);
       });
       return;
@@ -88,10 +91,16 @@ function ResetPasswordInner() {
 
     try {
       const supabase = createSupabaseBrowserClient();
-      const { error: updateError } = await supabase.auth.updateUser({ password });
+      const token = recoveryAccessToken || (await supabase.auth.getSession()).data.session?.access_token || "";
+      const response = await fetch("/api/auth/reset-password", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ password, accessToken: token }),
+      });
+      const payload = await response.json().catch(() => ({}));
 
-      if (updateError) {
-        setError(updateError.message);
+      if (!response.ok || !payload?.ok) {
+        setError(payload?.error || "Falha ao atualizar senha. Tente novamente.");
         return;
       }
 
