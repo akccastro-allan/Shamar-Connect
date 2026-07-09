@@ -171,14 +171,6 @@ function detectPiecesRequested(text: string): string[] {
   const lower = normalizeText(text);
   const foundPieces = new Set<string>();
 
-  // Padrão de pergunta sobre peça
-  const isPieceQuery =
-    /qual.*valor|quanto custa|preco|valor|tem|estoque|disponivel|peca|produto|modelo|orcamento|quanto (fica|da|sai)|preciso de/i.test(lower);
-
-  if (!isPieceQuery) {
-    return [];
-  }
-
   // Procurar todas as peças mencionadas
   Object.entries(PIECE_KEYWORDS).forEach(([pieceType, keywords]) => {
     keywords.forEach(kw => {
@@ -187,6 +179,15 @@ function detectPiecesRequested(text: string): string[] {
       }
     });
   });
+
+  // Padrão explícito de pergunta sobre peça ou menção direta a uma peça conhecida.
+  const isPieceQuery =
+    /qual.*valor|quanto custa|preco|valor|tem|estoque|disponivel|peca|produto|modelo|orcamento|quanto (fica|da|sai)|preciso de/i.test(lower) ||
+    foundPieces.size > 0;
+
+  if (!isPieceQuery) {
+    return [];
+  }
 
   return Array.from(foundPieces);
 }

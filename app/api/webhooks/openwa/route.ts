@@ -133,6 +133,32 @@ function hasPriceInResponse(response: string) {
   return /\bValor:\s*R\$/i.test(normalized);
 }
 
+async function routeNonTextToHuman(
+  db: ReturnType<typeof createSupabaseWriteClient>,
+  conversationId: string,
+  messageType: string,
+  transcriptionEnabled: boolean,
+) {
+  const normalizedType = messageType.toLowerCase();
+  const isAudio = normalizedType === "audio" || normalizedType === "ptt";
+  const pendingReason = isAudio && !transcriptionEnabled
+    ? "audio_requires_human"
+    : normalizedType === "sticker"
+      ? "sticker_requires_human"
+      : "media_requires_human";
+
+  await db
+    .from("whatsapp_conversations")
+    .update({
+      status: "pending",
+      requires_human: true,
+      pending_reason: pendingReason,
+      sla_status: "pending",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", conversationId);
+}
+
 export async function POST(request: NextRequest) {
   try {
     const rawBody = await request.text();
@@ -199,6 +225,7 @@ export async function POST(request: NextRequest) {
           const text = (msgQuery.data.body || "").trim();
           const isLipsChannel = channel.channelId === LIPS_CHANNEL_ID;
           const isTextMessage = !msgQuery.data.message_type || ["text", "chat"].includes(msgQuery.data.message_type);
+          const messageType = msgQuery.data.message_type || "text";
 
           if (!isLipsChannel) {
             return NextResponse.json({ ok: true });
@@ -300,12 +327,25 @@ export async function POST(request: NextRequest) {
                 .eq("id", job.id);
             }
           } else if (job?.id) {
+            const { data: channelSettings } = await db
+              .from("channels")
+              .select("transcription_enabled")
+              .eq("id", channel.channelId)
+              .maybeSingle();
+
+            await routeNonTextToHuman(
+              db,
+              msgQuery.data.conversation_id,
+              messageType,
+              Boolean(channelSettings?.transcription_enabled),
+            );
+
             await db
               .from("agent_automation_jobs")
               .update({
                 status: "done",
                 completed_at: new Date().toISOString(),
-                response_type: "not_auto_replied",
+                response_type: `${messageType}_requires_human`,
                 sent_to_evolution: false,
               })
               .eq("id", job.id);
