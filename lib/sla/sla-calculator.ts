@@ -20,8 +20,8 @@ export type SlaInfo = {
 };
 
 const SLA_BY_DEPT: Record<string, number> = {
-  Balcão: 30,
-  Oficina: 50,
+  Balcão: 20,
+  Oficina: 10,
   Geral: 60,
 };
 const DEFAULT_SLA = 60;

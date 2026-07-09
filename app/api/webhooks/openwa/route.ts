@@ -5,6 +5,7 @@ import { resolveChannelFromWebhook } from "@/lib/inbox/resolve-channel";
 import { ingestInboundMessage } from "@/lib/inbox/persist-inbound";
 import type { IdentityType } from "@/lib/inbox/contacts";
 import {
+  applyLipsConversationState,
   checkCooldown,
   processLipsMessage,
   recordAutoReply,
@@ -90,14 +91,32 @@ function normalizeIncomingMessage(data: Record<string, unknown>): NormalizedInco
   };
 }
 
-function isSafeAutoQuote(result: Awaited<ReturnType<typeof processLipsMessage>>) {
-  return Boolean(
-    result.shouldSend &&
-      result.autoSendAllowed &&
-      result.quoteOnly &&
-      result.intent === "quote" &&
+function isOfficialAutoReply(result: Awaited<ReturnType<typeof processLipsMessage>>) {
+  if (!result.shouldSend || !result.autoSendAllowed) return false;
+
+  if (result.quoteOnly) {
+    return (
       !result.requiresHandoff &&
-      hasPriceInResponse(result.response),
+      (
+        (result.intent === "quote" && hasPriceInResponse(result.response)) ||
+        (result.intent === "quote_options" && /R\$\s*\d/i.test(result.response))
+      )
+    );
+  }
+
+  if (result.intent === "menu") {
+    return !result.requiresHandoff;
+  }
+
+  if (result.intent === "nao_encontrado") {
+    return !result.requiresHandoff && result.response.includes("Não encontrei essa peça com segurança");
+  }
+
+  return Boolean(
+    result.requiresHandoff &&
+      result.department &&
+      ["Balcão", "Oficina", "Supervisor"].includes(result.department) &&
+      result.handoffReason,
   );
 }
 
@@ -140,6 +159,27 @@ export async function POST(request: NextRequest) {
       }
       console.log("[openwa-webhook] Channel resolved:", channel.channelId);
 
+      const { data: existingConversation } = await db
+        .from("whatsapp_conversations")
+        .select("id, requires_human")
+        .eq("channel_id", channel.channelId)
+        .eq("external_chat_id", incoming.chatId)
+        .maybeSingle();
+      const wasAwaitingHuman = Boolean(existingConversation?.requires_human);
+      let lastMessageWasAutoOutbound = false;
+
+      if (existingConversation?.id) {
+        const { data: lastMessage } = await db
+          .from("whatsapp_messages")
+          .select("direction, raw_payload")
+          .eq("conversation_id", existingConversation.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const rawPayload = lastMessage?.raw_payload as Record<string, unknown> | null;
+        lastMessageWasAutoOutbound = lastMessage?.direction === "outbound" && rawPayload?.sentByAgent === true;
+      }
+
       const result = await ingestInboundMessage(db, channel, {
         externalEventId: incoming.id,
         externalChatId: incoming.chatId,
@@ -165,7 +205,7 @@ export async function POST(request: NextRequest) {
         if (msgQuery.data?.id && msgQuery.data?.conversation_id) {
           const text = (msgQuery.data.body || "").trim();
           const isLipsChannel = channel.channelId === LIPS_CHANNEL_ID && sessionId === LIPS_SESSION_ID;
-          const isTextMessage = !msgQuery.data.message_type || msgQuery.data.message_type === "text";
+          const isTextMessage = !msgQuery.data.message_type || ["text", "chat"].includes(msgQuery.data.message_type);
 
           if (!isLipsChannel) {
             return NextResponse.json({ ok: true });
@@ -190,7 +230,22 @@ export async function POST(request: NextRequest) {
               msgQuery.data.conversation_id,
             );
 
-            if (isSafeAutoQuote(processResult)) {
+            if ((wasAwaitingHuman || lastMessageWasAutoOutbound) && job?.id) {
+              if (!wasAwaitingHuman && processResult.requiresHandoff) {
+                await applyLipsConversationState(db, channel.organizationId, msgQuery.data.conversation_id, processResult);
+              }
+
+              await db
+                .from("agent_automation_jobs")
+                .update({
+                  status: "done",
+                  completed_at: new Date().toISOString(),
+                  response_type: wasAwaitingHuman ? "already_requires_human" : "last_auto_outbound",
+                  response_text: processResult.response || null,
+                  sent_to_evolution: false,
+                })
+                .eq("id", job.id);
+            } else if (isOfficialAutoReply(processResult)) {
               const cooldown = await checkCooldown(db, msgQuery.data.conversation_id, processResult.response);
 
               if (cooldown.allowed) {
@@ -206,10 +261,7 @@ export async function POST(request: NextRequest) {
 
                 if (sendResult.success) {
                   await recordAutoReply(db, channel.organizationId, msgQuery.data.conversation_id, processResult.response);
-                  await db
-                    .from("whatsapp_conversations")
-                    .update({ status: processResult.nextStatusSuggestion || "awaiting_customer", updated_at: new Date().toISOString() })
-                    .eq("id", msgQuery.data.conversation_id);
+                  await applyLipsConversationState(db, channel.organizationId, msgQuery.data.conversation_id, processResult);
                   if (job?.id) {
                     await db
                       .from("agent_automation_jobs")

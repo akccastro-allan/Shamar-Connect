@@ -23,8 +23,8 @@ export const dynamic = "force-dynamic";
 const LIPS_TENANT_ID    = "e6abeaae-29fc-4186-b56a-361a69cb846d";
 const LIPS_ORG_ID       = "8f074193-bf58-4537-9842-720619a9f259";
 const SLA_BY_DEPT: Record<string, number> = {
-  Balcão:  30,
-  Oficina: 50,
+  Balcão:  20,
+  Oficina: 10,
   Geral:   60,
 };
 const DEFAULT_SLA = 60;
@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
   // Busca conversas abertas/pendentes da Lips que precisam de atenção
   const { data: conversations, error } = await db
     .from("whatsapp_conversations")
-    .select("id, status, last_inbound_at, department_id, sla_status, departments:department_id(name)")
+    .select("id, status, last_inbound_at, department_id, sla_status, metadata, departments:department_id(name)")
     .eq("tenant_id", LIPS_TENANT_ID)
     .eq("organization_id", LIPS_ORG_ID)
     .in("status", ["open", "pending"])
@@ -78,18 +78,30 @@ export async function POST(request: NextRequest) {
     const slaMins = slaMinutes(deptName);
     const overdue = elapsedMin > slaMins;
     const currentSla = conv.sla_status as string | null;
+    const currentMetadata =
+      conv.metadata && typeof conv.metadata === "object" && !Array.isArray(conv.metadata)
+        ? conv.metadata as Record<string, unknown>
+        : {};
+    const escalationReason = deptName === "Oficina" ? "sla_oficina_timeout" : "sla_balcao_timeout";
 
-    if (overdue && currentSla !== "overdue") {
+    if (overdue && currentSla !== "overdue" && currentSla !== "breached") {
       const { error: updErr } = await db
         .from("whatsapp_conversations")
         .update({
-          sla_status: "overdue",
+          sla_status: "breached",
+          requires_human: true,
+          pending_reason: escalationReason,
           updated_at: nowIso,
           metadata: {
+            ...currentMetadata,
             sla_escalated_at: nowIso,
+            escalated_at: nowIso,
             sla_elapsed_min: Math.round(elapsedMin),
             sla_limit_min: slaMins,
             escalate_to_role: "supervisor",
+            escalated_to_role: "supervisor",
+            assigned_role: "supervisor",
+            escalation_reason: escalationReason,
           },
         })
         .eq("id", conv.id as string);

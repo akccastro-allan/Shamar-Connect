@@ -21,6 +21,7 @@
 
 import { SupabaseClient } from '@supabase/supabase-js';
 import { resolveSessionClient } from '@/lib/providers/resolve-session';
+import { getAutoReplyConfig, LIPS_AUTO_REPLY_CONFIG } from '@/lib/agents/auto-reply-config';
 
 // ============================================================================
 // Types
@@ -31,8 +32,9 @@ export type ProcessMessageResult = {
   shouldSend: boolean;
   autoSendAllowed: boolean; // ← pode enviar automático (sem handoff)
   requiresHandoff: boolean;
-  department?: 'Balcão' | 'Oficina'; // ← onde encaminhar se handoff
+  department?: 'Balcão' | 'Oficina' | 'Supervisor'; // ← onde encaminhar se handoff
   handoffReason?: string; // ← motivo do handoff (purchase_intent, service_request, etc)
+  slaMinutes?: number;
   confidence: number; // ← 0.0 a 1.0
   intent: string; // ← saudacao | consulta_preco | consulta_estoque | quote | compra | servico | nao_encontrado
   quoteOnly?: boolean; // ← true para consulta simples (não é compra)
@@ -41,111 +43,122 @@ export type ProcessMessageResult = {
 };
 
 // ============================================================================
-// FAQ Simples — perguntas genéricas
+// Fluxo oficial Lips — Gabi
 // ============================================================================
 
-const FAQ_RESPONSES: Record<string, string> = {
-  horario: `⏰ **Horário de funcionamento:**
-📅 Segunda a Sexta: 8h às 18h
-📅 Sábado: 8h às 15h
-📅 Domingo: Fechado
+const GABI_MENU = `Olá! Sou a Gabi, atendente virtual da Lips. Como posso te ajudar?
 
-Nos envie a dúvida que responderemos assim que abrir! 😊`,
+1. Cotação de peças
+2. Oficina / serviços
+3. Compras / pagamento / reserva
+4. Outros assuntos`;
 
-  endereco:
-    `📍 **Endereço:**
-Rua [...], nº [...]
-Rio de Janeiro - RJ
+const BALCAO_HANDOFF_RESPONSE =
+  'Perfeito. Vou direcionar seu atendimento para o balcão confirmar aplicação, disponibilidade e forma de pagamento certinha antes de finalizar.';
 
-Quer agendar uma visita ou precisa de algo? 😊`,
+const OFICINA_HANDOFF_RESPONSE =
+  'Entendi. Vou direcionar seu atendimento para a oficina verificar o melhor horário e confirmar os detalhes do serviço.';
 
-  pagamento: `💳 **Formas de pagamento:**
-✅ Dinheiro
-✅ Débito
-✅ Crédito (até 12x)
-✅ PIX
-✅ Boleto
+const SUPERVISOR_PURCHASE_RESPONSE =
+  'Perfeito. Vou direcionar para o responsável confirmar disponibilidade, aplicação e forma de pagamento antes de finalizar.';
 
-Qual você prefere? 😊`,
+const SUPERVISOR_GENERAL_RESPONSE =
+  'Entendi. Vou direcionar sua mensagem para o responsável da Lips te atender certinho.';
 
-  compra: `🛒 **Como comprar:**
-1️⃣ Me envia a foto, código ou nome da peça
-2️⃣ Eu confirmo o valor e disponibilidade
-3️⃣ Você escolhe a forma de pagamento
-4️⃣ Agendamos a retirada ou entrega
-
-Qual peça você procura? 😊`,
-
-  entrega: `🚗 **Informações de entrega:**
-Temos opções de:
-✅ Retirada na loja
-✅ Entrega em Rio de Janeiro
-✅ Entrega para outras cidades
-
-Confirma a peça que você quer? 😊`,
-};
+const SLA_MINUTES = {
+  Balcão: LIPS_AUTO_REPLY_CONFIG.quoteSlaMinutes,
+  Oficina: LIPS_AUTO_REPLY_CONFIG.serviceSlaMinutes,
+  Supervisor: 0,
+} as const;
 
 // ============================================================================
 // Banco de peças (com sinônimos e variações)
 // ============================================================================
 
 const PIECE_KEYWORDS: Record<string, string[]> = {
-  freio: ['freio', 'disco', 'pastilha', 'tambor'],
-  oleo: ['óleo', 'oleo', 'lubrificante'],
-  filtro: ['filtro', 'ar', 'óleo', 'combustivel'],
-  bateria: ['bateria', 'bateria'],
-  pneu: ['pneu', 'pneus', 'pneu'],
-  amortecedor: ['amortecedor', 'amort', 'mola'],
+  pastilha: ['pastilha', 'pastilhas', 'plaqueta', 'plaquetas', 'kit pastilha', 'freio'],
+  disco_freio: ['disco freio', 'disco de freio', 'discos de freio', 'disco'],
+  oleo: ['oleo', 'óleo', 'lubrificante'],
+  filtro_oleo: ['filtro oleo', 'filtro de oleo', 'filtro óleo', 'filtro de óleo', 'filtro lubrificante'],
+  filtro: ['filtro', 'filtros', 'filtro ar', 'filtro de ar', 'filtro combustivel', 'filtro combustível'],
+  bateria: ['bateria', 'baterias', 'bat'],
+  pneu: ['pneu', 'pneus'],
+  amortecedor: ['amortecedor', 'amortecedores', 'amort', 'amort diant', 'amort dianteiro', 'amort tras', 'amort traseiro'],
   vela: ['vela', 'velas'],
   alternador: ['alternador'],
-  radiador: ['radiador', 'radiador'],
-  termostato: ['termostato', 'termostato'],
-  bomba: ['bomba', 'agua'],
+  radiador: ['radiador'],
+  termostato: ['termostato'],
+  bomba: ['bomba', 'bomba agua', 'bomba d agua', 'bomba de agua'],
   bucha: ['bucha', 'buchas'],
-  corrente: ['corrente', 'correia'],
+  corrente: ['corrente'],
+  correia: ['correia', 'correia dentada', 'correia alternador'],
   sensor: ['sensor', 'sensores'],
-  correia: ['correia', 'correia'],
 };
+
+const VEHICLE_MODELS = [
+  'gol', 'corolla', 'civic', 'uno', 'prisma', 'onix', 'hb20', 'i30', 'cerato',
+  'tucson', 'sportage', 'creta', 'kwid', 'sandero', 'fox', 'palio', 'fiesta',
+  'ka', 'sentra', 'hilux', 'ranger', 's10', 'saveiro', 'strada', 'voyage',
+];
 
 // ============================================================================
 // Funções de detecção
 // ============================================================================
 
-function detectFaqTopic(text: string): string | null {
-  const lower = text.toLowerCase();
+function normalizeText(text: string): string {
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
-  // Saudações e cumprimentos
-  if (/bom dia|boa tarde|boa noite|olá|oi|e aí|tudo bem/.test(lower)) return 'horario';
-  if (/horá|abre|funciona|qual horá|que horas/.test(lower)) return 'horario';
-  if (/onde fica|endereço|localização|aonde|morada|qual o endereço/.test(lower)) return 'endereco';
-  if (/pagamento|pago|parcel|crédito|dinheiro|pix|débito/.test(lower)) return 'pagamento';
-  if (/como compra|como faço|como funciona|como pedir/.test(lower)) return 'compra';
-  if (/entrega|retirada|frete|quanto tempo|quando chega/.test(lower)) return 'entrega';
+function tokenVariants(value: string): string[] {
+  const normalized = normalizeText(value);
+  const tokens = normalized.split(' ').filter(Boolean);
+  const singular = tokens.map(token => token.endsWith('s') && token.length > 3 ? token.slice(0, -1) : token);
+  return Array.from(new Set([normalized, singular.join(' ')]));
+}
 
-  return null;
+function detectGreeting(text: string): boolean {
+  const lower = normalizeText(text);
+  return /^(bom dia|boa tarde|boa noite|olá|ola|oi|e aí|e ai|tudo bem)\b/.test(lower.trim());
 }
 
 /**
  * Detecta intenção de compra/fechamento (handoff obrigatório)
  */
 function detectPurchaseIntent(text: string): boolean {
-  const lower = text.toLowerCase();
+  const lower = normalizeText(text);
   const purchasePatterns = [
-    /quero comprar|vou querer|separa|reserva|pode separar|vou buscar|fecha|fechar/,
-    /pagamento|pix|cartão|boleto|manda link|entrega|retirar/,
+    /quero comprar|vou querer|separa|reserva|pode separar|vou buscar|fecha|fechar|fecha pra mim/,
+    /pagamento|pix|cartão|cartao|boleto|manda link|entrega|retirar|vou pagar/,
   ];
   return purchasePatterns.some(pattern => pattern.test(lower));
+}
+
+function detectProductHandoffIntent(text: string): boolean {
+  const lower = normalizeText(text);
+  return /quero esse produto|quero essa peça|quero essa peca|tenho interesse nesse produto/.test(lower);
 }
 
 /**
  * Detecta intenção de serviço (handoff para Oficina)
  */
 function detectServiceIntent(text: string): boolean {
-  const lower = text.toLowerCase();
+  const lower = normalizeText(text);
   const servicePatterns = [
-    /troca de óleo|revisão|alinhamento|balanceamento|diagnóstico|instalar|manutenção|agendar/,
+    /oficina|troca de óleo|troca de oleo|revisão|revisao|alinhamento|balanceamento|diagnóstico|diagnostico/,
+    /instalação|instalacao|instalar|manutenção|manutencao|agendar|marcar horário|marcar horario|serviço|servico/,
   ];
   return servicePatterns.some(pattern => pattern.test(lower));
+}
+
+function detectGeneralSupervisorIntent(text: string): boolean {
+  const lower = normalizeText(text);
+  return /responsavel|reclamacao|parceria|fornecedor|administrativo|gerente|dono|falar com/.test(lower);
 }
 
 /**
@@ -153,14 +166,12 @@ function detectServiceIntent(text: string): boolean {
  * Retorna lista de nomes de peças encontradas
  */
 function detectPiecesRequested(text: string): string[] {
-  const lower = text.toLowerCase();
+  const lower = normalizeText(text);
   const foundPieces = new Set<string>();
 
   // Padrão de pergunta sobre peça
   const isPieceQuery =
-    /qual.*valor|quanto custa|preço|tem|estoque|disponível|peça|modelo|orçamento|quanto (fica|dá|sai)|preciso de/i.test(
-      text
-    );
+    /qual.*valor|quanto custa|preco|valor|tem|estoque|disponivel|peca|produto|modelo|orcamento|quanto (fica|da|sai)|preciso de/i.test(lower);
 
   if (!isPieceQuery) {
     return [];
@@ -169,7 +180,7 @@ function detectPiecesRequested(text: string): string[] {
   // Procurar todas as peças mencionadas
   Object.entries(PIECE_KEYWORDS).forEach(([pieceType, keywords]) => {
     keywords.forEach(kw => {
-      if (lower.includes(kw)) {
+      if (tokenVariants(kw).some(variant => lower.includes(variant))) {
         foundPieces.add(pieceType);
       }
     });
@@ -186,28 +197,10 @@ function extractVehicleInfo(text: string): {
   model?: string;
   year?: number;
 } {
-  const lower = text.toLowerCase();
+  const lower = normalizeText(text);
   const result: any = {};
 
-  // Modelos comuns
-  const models = [
-    'gol',
-    'corolla',
-    'civic',
-    'uno',
-    'prisma',
-    'onix',
-    'hb20',
-    'i30',
-    'cerato',
-    'tucson',
-    'sportage',
-    'creta',
-    'kwid',
-    'sandero',
-  ];
-
-  models.forEach(model => {
+  VEHICLE_MODELS.forEach(model => {
     if (lower.includes(model)) {
       result.model = model;
     }
@@ -229,33 +222,66 @@ function extractVehicleInfo(text: string): {
 async function findPartInCatalog(
   db: SupabaseClient,
   organizationId: string,
-  partName: string
-): Promise<any | null> {
+  partName: string,
+  vehicleInfo?: { model?: string; year?: number }
+): Promise<any[]> {
   try {
-    const { data } = await db
-      .from('catalog_items')
-      .select('id, name, sku, price, stock_quantity, brand')
-      .eq('organization_id', organizationId)
-      .eq('status', 'active')
-      .ilike('name', `%${partName}%`)
-      .limit(1);
+    const synonyms = PIECE_KEYWORDS[partName] ?? [partName];
+    const searchTerms = Array.from(new Set([partName, ...synonyms].flatMap(tokenVariants))).slice(0, 8);
+    const results: any[] = [];
 
-    if (!data || data.length === 0) {
-      return null;
+    for (const term of searchTerms) {
+      const { data } = await db
+        .from('catalog_items')
+        .select('id, name, sku, price, stock_quantity, brand')
+        .eq('organization_id', organizationId)
+        .eq('status', 'active')
+        .ilike('name', `%${term}%`)
+        .limit(8);
+
+      if (data) results.push(...data);
     }
 
-    const item = data[0];
+    const byId = new Map<string, any>();
+    results.forEach(item => {
+      if (item?.id) byId.set(item.id, item);
+    });
 
-    // Preço NUNCA pode ser null ou 0
-    if (!item.price || item.price <= 0) {
-      return null;
-    }
-
-    return item;
+    return Array.from(byId.values())
+      .map(item => ({ ...item, matchScore: scoreCatalogItem(item, partName, vehicleInfo) }))
+      .filter(item => item.price && item.price > 0 && item.matchScore > 0)
+      .sort((a, b) => b.matchScore - a.matchScore)
+      .slice(0, 3);
   } catch (error) {
     console.error('[lips-simple-processor] Erro ao buscar peça:', error);
-    return null;
+    return [];
   }
+}
+
+function scoreCatalogItem(item: any, partName: string, vehicleInfo?: { model?: string; year?: number }): number {
+  const name = normalizeText(item.name || '');
+  const sku = normalizeText(item.sku || '');
+  const brand = normalizeText(item.brand || '');
+  const haystack = `${name} ${sku} ${brand}`;
+  const synonyms = PIECE_KEYWORDS[partName] ?? [partName];
+  let score = 0;
+
+  if (name === normalizeText(partName)) score += 80;
+  if (haystack.includes(normalizeText(partName))) score += 40;
+
+  for (const synonym of synonyms) {
+    const normalizedSynonym = normalizeText(synonym);
+    if (!normalizedSynonym) continue;
+    if (haystack.includes(normalizedSynonym)) score += normalizedSynonym.includes(' ') ? 28 : 18;
+  }
+
+  if (vehicleInfo?.model && haystack.includes(normalizeText(vehicleInfo.model))) score += 25;
+  if (vehicleInfo?.year && haystack.includes(String(vehicleInfo.year))) score += 12;
+  if (item.price && item.price > 0) score += 20;
+  if (typeof item.stock_quantity === 'number' && item.stock_quantity > 0) score += 8;
+  if (typeof item.stock_quantity === 'number' && item.stock_quantity < 0) score -= 6;
+
+  return score;
 }
 
 /**
@@ -264,21 +290,30 @@ async function findPartInCatalog(
 async function findMultipleParts(
   db: SupabaseClient,
   organizationId: string,
-  partNames: string[]
+  partNames: string[],
+  vehicleInfo?: { model?: string; year?: number }
 ): Promise<{ found: any[]; notFound: string[] }> {
   const found: any[] = [];
   const notFound: string[] = [];
 
   for (const partName of partNames) {
-    const item = await findPartInCatalog(db, organizationId, partName);
-    if (item) {
-      found.push(item);
+    const items = await findPartInCatalog(db, organizationId, partName, vehicleInfo);
+    if (items.length > 0) {
+      found.push(...items);
     } else {
       notFound.push(partName);
     }
   }
 
-  return { found, notFound };
+  const byId = new Map<string, any>();
+  found.forEach(item => {
+    if (item?.id) byId.set(item.id, item);
+  });
+
+  return {
+    found: Array.from(byId.values()).sort((a, b) => (b.matchScore ?? 0) - (a.matchScore ?? 0)).slice(0, 3),
+    notFound,
+  };
 }
 
 // ============================================================================
@@ -305,7 +340,7 @@ export async function checkCooldown(
 ): Promise<CooldownCheckResult> {
   try {
     // Configuração do cooldown (padrão 5 minutos)
-    const cooldownMinutes = parseInt(process.env.AUTO_REPLY_COOLDOWN_MINUTES || '5', 10);
+    const cooldownMinutes = parseInt(process.env.AUTO_REPLY_COOLDOWN_MINUTES || String(LIPS_AUTO_REPLY_CONFIG.cooldownMinutes), 10);
     const cooldownMs = cooldownMinutes * 60 * 1000;
     const now = new Date();
 
@@ -395,6 +430,92 @@ export async function recordAutoReply(
   }
 }
 
+async function findDepartmentId(
+  db: SupabaseClient,
+  organizationId: string,
+  department: 'Balcão' | 'Oficina' | 'Supervisor'
+): Promise<string | null> {
+  if (department === 'Supervisor') return null;
+
+  const { data } = await db
+    .from('departments')
+    .select('id')
+    .eq('organization_id', organizationId)
+    .eq('name', department)
+    .eq('is_active', true)
+    .maybeSingle();
+
+  return data?.id ?? null;
+}
+
+export async function applyLipsConversationState(
+  db: SupabaseClient,
+  organizationId: string,
+  conversationId: string,
+  result: ProcessMessageResult
+): Promise<void> {
+  const now = new Date();
+  const nowIso = now.toISOString();
+
+  const { data: current } = await db
+    .from('whatsapp_conversations')
+    .select('metadata')
+    .eq('id', conversationId)
+    .maybeSingle();
+
+  const currentMetadata =
+    current?.metadata && typeof current.metadata === 'object' && !Array.isArray(current.metadata)
+      ? current.metadata as Record<string, unknown>
+      : {};
+
+  if (result.requiresHandoff && result.department) {
+    const departmentId = await findDepartmentId(db, organizationId, result.department);
+    const slaMinutes = result.slaMinutes ?? SLA_MINUTES[result.department];
+    const slaDueAt = slaMinutes > 0 ? new Date(now.getTime() + slaMinutes * 60_000).toISOString() : nowIso;
+    const supervisor = result.department === 'Supervisor';
+
+    await db
+      .from('whatsapp_conversations')
+      .update({
+        status: 'pending',
+        department_id: departmentId,
+        requires_human: true,
+        pending_reason: result.handoffReason || result.intent,
+        sla_due_at: slaDueAt,
+        sla_status: supervisor ? 'breached' : 'pending',
+        metadata: {
+          ...currentMetadata,
+          assigned_role: supervisor ? 'supervisor' : 'attendant',
+          department: result.department,
+          escalated_at: supervisor ? nowIso : currentMetadata.escalated_at ?? null,
+          escalated_to_role: supervisor ? 'supervisor' : currentMetadata.escalated_to_role ?? null,
+          escalation_reason: supervisor ? result.handoffReason || result.intent : currentMetadata.escalation_reason ?? null,
+          sla_limit_min: slaMinutes,
+        },
+        updated_at: nowIso,
+      })
+      .eq('id', conversationId);
+    return;
+  }
+
+  await db
+    .from('whatsapp_conversations')
+    .update({
+      status: 'open',
+      requires_human: false,
+      pending_reason: null,
+      sla_due_at: null,
+      sla_status: 'ok',
+      metadata: {
+        ...currentMetadata,
+        assigned_role: null,
+        department: null,
+      },
+      updated_at: nowIso,
+    })
+    .eq('id', conversationId);
+}
+
 // ============================================================================
 // Gerar respostas
 // ============================================================================
@@ -424,13 +545,26 @@ function formatSinglePieceQuote(item: any): string {
 
   return `Encontrei no catálogo da Lips:
 
-📦 **Produto:** ${item.name}
-💰 **Valor:** R$ ${price}
-📊 **Estoque na última sincronização:** ${Math.max(stock, 0)} unidade(s)
+📦 Produto: ${item.name}
+💰 Valor: R$ ${price}
+📊 Estoque na última sincronização: ${Math.max(stock, 0)} unidade(s)
 
 ⚠️ Esses dados são da última atualização do sistema. O balcão confirma aplicação e disponibilidade certinha antes de finalizar.
 
-Posso te ajudar com mais alguma peça? 😊`;
+Posso te ajudar com mais alguma peça?`;
+}
+
+function formatCatalogOptions(items: any[]): string {
+  const options = items
+    .slice(0, 3)
+    .map((item, index) => `${index + 1}. ${item.name} — R$ ${formatPrice(item.price)}`)
+    .join('\n');
+
+  return `Encontrei algumas opções no catálogo da Lips:
+
+${options}
+
+Para confirmar a aplicação certinha, me envie o modelo completo, ano ou uma foto/código da peça.`;
 }
 
 /**
@@ -480,16 +614,15 @@ function formatPrice(price: number): string {
 }
 
 function getNeedMoreInfoResponse(text: string): string {
-  return `Entendi que você quer saber sobre uma peça! 🔍
+  return `Não encontrei essa peça com segurança no catálogo agora.
 
-Para eu passar o valor certo, me envia:
-1️⃣ **Foto da peça** (melhor!)
-2️⃣ **Código ou referência**
-3️⃣ **Marca e modelo do carro**
-4️⃣ **Nome completo da peça**
-5️⃣ **Quantidade**
+Para localizar certinho, me envie uma dessas informações:
+1. Foto da peça
+2. Código ou referência
+3. Modelo e ano do veículo
+4. Nome completo da peça
 
-Assim consigo localizar com certeza! 😊`;
+Assim o balcão consegue confirmar para você.`;
 }
 
 // ============================================================================
@@ -504,19 +637,47 @@ export async function processLipsMessage(
   conversationId: string
 ): Promise<ProcessMessageResult> {
   try {
+    const config = getAutoReplyConfig(organizationId);
+    if (!config?.enabled || !config.safeAutoReply) {
+      return {
+        response: '',
+        shouldSend: false,
+        autoSendAllowed: false,
+        requiresHandoff: false,
+        confidence: 0.0,
+        intent: 'disabled',
+      };
+    }
+
     // ========================================================================
     // FASE 1: Detectar intenções críticas (handoff obrigatório)
     // ========================================================================
 
-    // Se cliente quer comprar → handoff imediato para Balcão
-    if (detectPurchaseIntent(messageBody)) {
+    // Se cliente quer avançar depois de uma cotação → balcão confirma antes de finalizar.
+    if (detectProductHandoffIntent(messageBody)) {
       return {
-        response: "Perfeito. Vou encaminhar para o balcão confirmar aplicação, disponibilidade e forma de pagamento certinha antes de finalizar.",
+        response: BALCAO_HANDOFF_RESPONSE,
         shouldSend: true,
-        autoSendAllowed: true, // Pode autoenviar encaminhamento
+        autoSendAllowed: true,
         requiresHandoff: true,
         department: 'Balcão',
-        handoffReason: 'purchase_intent',
+        handoffReason: 'quote_followup_product_interest',
+        slaMinutes: SLA_MINUTES.Balcão,
+        confidence: 0.95,
+        intent: 'balcao',
+      };
+    }
+
+    // Se cliente quer comprar/pagar/reservar → supervisor imediato.
+    if (detectPurchaseIntent(messageBody)) {
+      return {
+        response: SUPERVISOR_PURCHASE_RESPONSE,
+        shouldSend: true,
+        autoSendAllowed: true,
+        requiresHandoff: true,
+        department: 'Supervisor',
+        handoffReason: 'purchase_or_payment_intent',
+        slaMinutes: SLA_MINUTES.Supervisor,
         confidence: 0.95,
         intent: 'compra',
       };
@@ -525,29 +686,29 @@ export async function processLipsMessage(
     // Se cliente quer serviço → handoff para Oficina
     if (detectServiceIntent(messageBody)) {
       return {
-        response: "Entendi. Vou encaminhar para a oficina verificar o melhor horário e confirmar os detalhes do serviço.",
+        response: OFICINA_HANDOFF_RESPONSE,
         shouldSend: true,
-        autoSendAllowed: true, // Pode autoenviar encaminhamento
+        autoSendAllowed: true,
         requiresHandoff: true,
         department: 'Oficina',
         handoffReason: 'service_request',
+        slaMinutes: SLA_MINUTES.Oficina,
         confidence: 0.95,
         intent: 'servico',
       };
     }
 
     // ========================================================================
-    // FASE 2: Saudações e FAQ simples (autoenvio permitido)
+    // FASE 2: Saudação/menu oficial da Gabi.
     // ========================================================================
-    const faqTopic = detectFaqTopic(messageBody);
-    if (faqTopic && FAQ_RESPONSES[faqTopic]) {
+    if (detectGreeting(messageBody)) {
       return {
-        response: FAQ_RESPONSES[faqTopic],
+        response: GABI_MENU,
         shouldSend: true,
-        autoSendAllowed: true, // Saudações e FAQ simples: autoenvio OK
+        autoSendAllowed: true,
         requiresHandoff: false,
         confidence: 0.95,
-        intent: 'saudacao',
+        intent: 'menu',
       };
     }
 
@@ -555,12 +716,12 @@ export async function processLipsMessage(
     // FASE 3: Consultas de peças/preço/estoque (com orçamento inicial)
     // ========================================================================
     const requestedPieces = detectPiecesRequested(messageBody);
-    if (requestedPieces.length > 0) {
+    if (config.catalogEnabled && requestedPieces.length > 0) {
       const vehicleInfo = extractVehicleInfo(messageBody);
-      const { found, notFound } = await findMultipleParts(db, organizationId, requestedPieces);
+      const { found, notFound } = await findMultipleParts(db, organizationId, requestedPieces, vehicleInfo);
 
-      // Caso A: Encontrou todas as peças
-      if (found.length > 0 && notFound.length === 0) {
+      // Caso A: confiança alta em um produto com preço seguro.
+      if (found.length === 1 || (found.length > 1 && (found[0].matchScore ?? 0) >= ((found[1].matchScore ?? 0) + 25))) {
         const quoteSingleResponse = formatSinglePieceQuote(found[0]);
         return {
           response: quoteSingleResponse,
@@ -569,58 +730,53 @@ export async function processLipsMessage(
           requiresHandoff: false, // Consulta simples NÃO escala
           quoteOnly: true, // É apenas uma cotação consultiva
           idleCloseAfterMinutes: 10, // Marcar como idle se não responder em 10min
-          nextStatusSuggestion: 'awaiting_customer',
+          nextStatusSuggestion: 'open',
           confidence: 0.90,
           intent: 'quote',
         };
       }
 
-      // Caso B: Encontrou algumas peças
-      if (found.length > 0 && notFound.length > 0) {
-        const partialQuote = found
-          .map(item => `📦 ${item.name}: R$ ${formatPrice(item.price)}`)
-          .join('\n');
-
-        const missingList = notFound.map(p => `• ${p}`).join('\n');
-
-        const response = `Encontrei algumas peças! 📋
-
-${partialQuote}
-
-Mas não consegui localizar com segurança:
-${missingList}
-
-Pode me enviar:
-1️⃣ Foto da peça
-2️⃣ Código ou referência
-3️⃣ Marca completa
-
-Assim monto o orçamento completo! 😊`;
-
+      // Caso B: encontrou opções parecidas; listar até 3 sem escolher aplicação.
+      if (found.length > 1) {
+        const response = formatCatalogOptions(found);
         return {
           response,
           shouldSend: true,
-          autoSendAllowed: true, // Orçamento parcial: autoenvio OK
-          requiresHandoff: false, // Consulta simples NÃO escala
-          quoteOnly: true, // É apenas uma cotação consultiva
+          autoSendAllowed: true,
+          requiresHandoff: false,
+          quoteOnly: true,
           idleCloseAfterMinutes: 10,
-          nextStatusSuggestion: 'awaiting_customer',
+          nextStatusSuggestion: 'open',
           confidence: 0.80,
-          intent: 'quote',
+          intent: 'quote_options',
         };
       }
 
-      // Caso C: Não encontrou nenhuma
+      // Caso C: Não encontrou nenhuma. Resposta segura, sem inventar.
       return {
         response: getNeedMoreInfoResponse(messageBody),
         shouldSend: true,
-        autoSendAllowed: true, // Pedido de dados: autoenvio OK
+        autoSendAllowed: true,
         requiresHandoff: false,
-        quoteOnly: true, // Ainda é uma consulta
+        quoteOnly: false,
         idleCloseAfterMinutes: 10,
-        nextStatusSuggestion: 'awaiting_customer',
+        nextStatusSuggestion: 'open',
         confidence: 0.70,
         intent: 'nao_encontrado',
+      };
+    }
+
+    if (detectGeneralSupervisorIntent(messageBody)) {
+      return {
+        response: SUPERVISOR_GENERAL_RESPONSE,
+        shouldSend: true,
+        autoSendAllowed: true,
+        requiresHandoff: true,
+        department: 'Supervisor',
+        handoffReason: 'general_or_unknown',
+        slaMinutes: SLA_MINUTES.Supervisor,
+        confidence: 0.85,
+        intent: 'general_or_unknown',
       };
     }
 
@@ -628,12 +784,15 @@ Assim monto o orçamento completo! 😊`;
     // FASE 4: Mensagem não classificada
     // ========================================================================
     return {
-      response: '',
-      shouldSend: false,
-      autoSendAllowed: false,
-      requiresHandoff: false,
-      confidence: 0.0,
-      intent: 'unknown',
+      response: SUPERVISOR_GENERAL_RESPONSE,
+      shouldSend: true,
+      autoSendAllowed: true,
+      requiresHandoff: true,
+      department: 'Supervisor',
+      handoffReason: 'general_or_unknown',
+      slaMinutes: SLA_MINUTES.Supervisor,
+      confidence: 0.70,
+      intent: 'general_or_unknown',
     };
   } catch (error) {
     console.error('[lips-simple-processor] Erro ao processar:', error);
@@ -659,7 +818,7 @@ export async function sendAndSaveResponse(
   senderId: string,
   responseText: string,
   requiresHandoff?: boolean,
-  department?: 'Balcão' | 'Oficina'
+  department?: 'Balcão' | 'Oficina' | 'Supervisor'
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
     // 1. Enviar via Evolution API

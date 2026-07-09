@@ -14,6 +14,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 import {
+  applyLipsConversationState,
   processLipsMessage,
   sendAndSaveResponse,
   checkCooldown,
@@ -29,6 +30,35 @@ function hasPriceInResponse(response: string) {
     .trim();
 
   return /\bValor:\s*R\$/i.test(normalized);
+}
+
+function isOfficialAutoReply(result: Awaited<ReturnType<typeof processLipsMessage>>) {
+  if (!result.shouldSend || !result.autoSendAllowed) return false;
+
+  if (result.quoteOnly) {
+    return (
+      !result.requiresHandoff &&
+      (
+        (result.intent === "quote" && hasPriceInResponse(result.response)) ||
+        (result.intent === "quote_options" && /R\$\s*\d/i.test(result.response))
+      )
+    );
+  }
+
+  if (result.intent === "menu") {
+    return !result.requiresHandoff;
+  }
+
+  if (result.intent === "nao_encontrado") {
+    return !result.requiresHandoff && result.response.includes("Não encontrei essa peça com segurança");
+  }
+
+  return Boolean(
+    result.requiresHandoff &&
+      result.department &&
+      ["Balcão", "Oficina", "Supervisor"].includes(result.department) &&
+      result.handoffReason,
+  );
 }
 
 export async function POST(request: NextRequest) {
@@ -131,6 +161,17 @@ export async function POST(request: NextRequest) {
           throw new Error("Conversa não encontrada");
         }
 
+        const { data: previousAutoReply } = await db
+          .from("whatsapp_messages")
+          .select("id")
+          .eq("conversation_id", job.conversation_id)
+          .eq("direction", "outbound")
+          .lt("created_at", inboundMsg.created_at)
+          .eq("raw_payload->>sentByAgent", "true")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
         // Processar mensagem com lógica de autoenvio controlado
         const processResult = await processLipsMessage(
           db,
@@ -144,14 +185,16 @@ export async function POST(request: NextRequest) {
         // Decidir se autoenviar ou requerer handoff humano
         // ========================================================================
 
-        // Autoenvio SEGURO: sem handoff obrigatório + permitido + dentro do cooldown
+        // Autoenvio oficial: menu, cotação segura ou direcionamento humano seguro.
         const canAutoSend =
-          processResult.shouldSend &&
-          processResult.autoSendAllowed &&
-          processResult.quoteOnly &&
-          processResult.intent === "quote" &&
-          !processResult.requiresHandoff &&
-          hasPriceInResponse(processResult.response);
+          !conversation.requires_human &&
+          !previousAutoReply?.id &&
+          (!inboundMsg.message_type || ["text", "chat"].includes(inboundMsg.message_type)) &&
+          isOfficialAutoReply(processResult);
+
+        if (!conversation.requires_human && previousAutoReply?.id && processResult.requiresHandoff) {
+          await applyLipsConversationState(db, job.organization_id, job.conversation_id, processResult);
+        }
 
         if (canAutoSend) {
           // ========================================================================
@@ -195,9 +238,9 @@ export async function POST(request: NextRequest) {
               db,
               job.organization_id,
               job.conversation_id,
-              inboundMsg.from_id,
+              conversation.external_chat_id || inboundMsg.from_id,
               processResult.response,
-              false, // Não é handoff obrigatório
+              processResult.requiresHandoff,
               processResult.department
             );
 
@@ -213,15 +256,7 @@ export async function POST(request: NextRequest) {
               processResult.response
             );
 
-            // Atualizar status da conversa baseado no tipo de resposta
-            const nextStatus = processResult.quoteOnly ? 'awaiting_customer' : 'open';
-            await db
-              .from("whatsapp_conversations")
-              .update({
-                status: nextStatus,
-                updated_at: new Date().toISOString(),
-              })
-              .eq("id", job.conversation_id);
+            await applyLipsConversationState(db, job.organization_id, job.conversation_id, processResult);
 
             // Marca job como done
             await db
@@ -241,7 +276,7 @@ export async function POST(request: NextRequest) {
               status: "done",
               responded: true, // ← Resposta enviada automaticamente
               quoteOnly: processResult.quoteOnly,
-              conversationStatus: nextStatus,
+              conversationStatus: processResult.requiresHandoff ? "pending" : "open",
               confidence: processResult.confidence,
             });
           }

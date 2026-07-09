@@ -27,8 +27,8 @@ export const LIPS_ROUTING: RoutingConfig = {
     6: { open: "08:00", close: "15:00" }, // Sábado
   },
   sla: {
-    Balcão: 30,
-    Oficina: 50,
+    Balcão: 20,
+    Oficina: 10,
     Geral: 60,
   },
   escalateTo: "supervisor",
