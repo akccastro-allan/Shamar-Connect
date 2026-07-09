@@ -190,6 +190,32 @@ function detectPiecesRequested(text: string): string[] {
   return Array.from(foundPieces);
 }
 
+function requestedBrakePosition(text: string): 'dianteiro' | 'traseiro' | null {
+  const lower = normalizeText(text);
+  if (/diant|dianteir|frente/.test(lower)) return 'dianteiro';
+  if (/tras|traseir|traz|trazeir/.test(lower)) return 'traseiro';
+  return null;
+}
+
+function itemBrakePosition(item: any): 'dianteiro' | 'traseiro' | null {
+  const name = normalizeText(item.name || '');
+  if (/diant|dianteir/.test(name)) return 'dianteiro';
+  if (/tras|traseir/.test(name)) return 'traseiro';
+  return null;
+}
+
+function needsVehicleYear(partNames: string[], vehicleInfo: { model?: string; year?: number }): boolean {
+  return Boolean(vehicleInfo.model && !vehicleInfo.year && partNames.length > 0);
+}
+
+function needsBrakePosition(partNames: string[], items: any[], messageBody: string): boolean {
+  if (!partNames.some(part => ['pastilha', 'disco_freio'].includes(part))) return false;
+  if (requestedBrakePosition(messageBody)) return false;
+
+  const positions = new Set(items.map(itemBrakePosition).filter(Boolean));
+  return positions.size > 1;
+}
+
 /**
  * Extrai veículo da mensagem (marca + modelo + ano)
  */
@@ -612,6 +638,14 @@ Para localizar certinho, me envie uma dessas informações:
 Assim o balcão consegue confirmar para você.`;
 }
 
+function getNeedYearResponse(vehicleModel: string): string {
+  return `Para localizar a peça certa para ${vehicleModel.toUpperCase()}, me informe o ano do veículo, por favor.`;
+}
+
+function getNeedBrakePositionResponse(): string {
+  return `Você precisa da peça dianteira ou traseira?`;
+}
+
 // ============================================================================
 // Processador principal com lógica de segurança
 // ============================================================================
@@ -705,7 +739,36 @@ export async function processLipsMessage(
     const requestedPieces = detectPiecesRequested(messageBody);
     if (config.catalogEnabled && requestedPieces.length > 0) {
       const vehicleInfo = extractVehicleInfo(messageBody);
+
+      if (needsVehicleYear(requestedPieces, vehicleInfo)) {
+        return {
+          response: getNeedYearResponse(vehicleInfo.model || 'o veículo'),
+          shouldSend: true,
+          autoSendAllowed: true,
+          requiresHandoff: false,
+          quoteOnly: false,
+          idleCloseAfterMinutes: 10,
+          nextStatusSuggestion: 'open',
+          confidence: 0.85,
+          intent: 'need_vehicle_year',
+        };
+      }
+
       const { found, notFound } = await findMultipleParts(db, organizationId, requestedPieces, vehicleInfo);
+
+      if (found.length > 0 && needsBrakePosition(requestedPieces, found, messageBody)) {
+        return {
+          response: getNeedBrakePositionResponse(),
+          shouldSend: true,
+          autoSendAllowed: true,
+          requiresHandoff: false,
+          quoteOnly: false,
+          idleCloseAfterMinutes: 10,
+          nextStatusSuggestion: 'open',
+          confidence: 0.85,
+          intent: 'need_brake_position',
+        };
+      }
 
       // Caso A: confiança alta em um produto com preço seguro.
       if (found.length === 1 || (found.length > 1 && (found[0].matchScore ?? 0) >= ((found[1].matchScore ?? 0) + 25))) {

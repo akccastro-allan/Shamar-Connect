@@ -112,6 +112,10 @@ function isOfficialAutoReply(result: Awaited<ReturnType<typeof processLipsMessag
     return !result.requiresHandoff && result.response.includes("Não encontrei essa peça com segurança");
   }
 
+  if (["need_vehicle_year", "need_brake_position"].includes(result.intent)) {
+    return !result.requiresHandoff;
+  }
+
   return Boolean(
     result.requiresHandoff &&
       result.department &&
