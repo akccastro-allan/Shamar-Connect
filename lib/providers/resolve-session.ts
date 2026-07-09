@@ -15,7 +15,11 @@ export const SESSION_LABELS: Record<AllowedSessionId, string> = {
 };
 
 export function resolveSessionClient(sessionId?: string | null) {
-  if (!sessionId) return { client: whatsappWebGatewayClient, sessionId: "hall-main" as AllowedSessionId };
+  if (!sessionId) {
+    const defaultSessionId = process.env.WHATSAPP_WEB_GATEWAY_SESSION_ID || "hall-main";
+    const resolvedSessionId = isAllowedSessionId(defaultSessionId) ? defaultSessionId : "hall-main";
+    return { client: createWhatsappGatewayClient(resolvedSessionId), sessionId: resolvedSessionId };
+  }
   if (!isAllowedSessionId(sessionId)) return null;
 
   // Todos usam WhatsApp Web (Evolution API está em preparação)
