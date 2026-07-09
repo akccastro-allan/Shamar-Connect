@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
     // Recalculate SLA for open/pending conversations
     const { data: conversations, error } = await db
       .from("whatsapp_conversations")
-      .select("id, status, last_inbound_at, department_id, sla_status, metadata, departments:department_id(name)")
+      .select("id, status, last_inbound_at, department_id, sla_status, departments:department_id(name)")
       .eq("tenant_id", tenantId)
       .eq("organization_id", organizationId)
       .in("status", ["open", "pending"])
@@ -67,10 +67,6 @@ export async function POST(request: NextRequest) {
       const deptName = (conv.departments as unknown as { name: string } | null)?.name ?? null;
       const slaMins = slaMinutes(deptName);
       const currentSla = conv.sla_status as string | null;
-      const currentMetadata =
-        conv.metadata && typeof conv.metadata === "object" && !Array.isArray(conv.metadata)
-          ? conv.metadata as Record<string, unknown>
-          : {};
       const escalationReason = deptName === "Oficina" ? "sla_oficina_timeout" : "sla_balcao_timeout";
 
       // Check if within business hours
@@ -103,17 +99,6 @@ export async function POST(request: NextRequest) {
               requires_human: true,
               pending_reason: escalationReason,
               updated_at: nowIso,
-              metadata: {
-                ...currentMetadata,
-                sla_escalated_at: nowIso,
-                escalated_at: nowIso,
-                sla_elapsed_min: Math.round(elapsedMin),
-                sla_limit_min: slaMins,
-                escalate_to_role: "supervisor",
-                escalated_to_role: "supervisor",
-                assigned_role: "supervisor",
-                escalation_reason: escalationReason,
-              },
             })
           .eq("id", conv.id as string);
 

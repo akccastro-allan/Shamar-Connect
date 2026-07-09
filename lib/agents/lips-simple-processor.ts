@@ -76,7 +76,7 @@ const SLA_MINUTES = {
 // ============================================================================
 
 const PIECE_KEYWORDS: Record<string, string[]> = {
-  pastilha: ['pastilha', 'pastilhas', 'plaqueta', 'plaquetas', 'kit pastilha', 'freio'],
+  pastilha: ['pastilha', 'pastilhas', 'past', 'past freio', 'pastilha freio', 'pastilha de freio', 'plaqueta', 'plaquetas', 'kit pastilha', 'freio'],
   disco_freio: ['disco freio', 'disco de freio', 'discos de freio', 'disco'],
   oleo: ['oleo', 'óleo', 'lubrificante'],
   filtro_oleo: ['filtro oleo', 'filtro de oleo', 'filtro óleo', 'filtro de óleo', 'filtro lubrificante'],
@@ -457,17 +457,6 @@ export async function applyLipsConversationState(
   const now = new Date();
   const nowIso = now.toISOString();
 
-  const { data: current } = await db
-    .from('whatsapp_conversations')
-    .select('metadata')
-    .eq('id', conversationId)
-    .maybeSingle();
-
-  const currentMetadata =
-    current?.metadata && typeof current.metadata === 'object' && !Array.isArray(current.metadata)
-      ? current.metadata as Record<string, unknown>
-      : {};
-
   if (result.requiresHandoff && result.department) {
     const departmentId = await findDepartmentId(db, organizationId, result.department);
     const slaMinutes = result.slaMinutes ?? SLA_MINUTES[result.department];
@@ -483,15 +472,6 @@ export async function applyLipsConversationState(
         pending_reason: result.handoffReason || result.intent,
         sla_due_at: slaDueAt,
         sla_status: supervisor ? 'breached' : 'pending',
-        metadata: {
-          ...currentMetadata,
-          assigned_role: supervisor ? 'supervisor' : 'attendant',
-          department: result.department,
-          escalated_at: supervisor ? nowIso : currentMetadata.escalated_at ?? null,
-          escalated_to_role: supervisor ? 'supervisor' : currentMetadata.escalated_to_role ?? null,
-          escalation_reason: supervisor ? result.handoffReason || result.intent : currentMetadata.escalation_reason ?? null,
-          sla_limit_min: slaMinutes,
-        },
         updated_at: nowIso,
       })
       .eq('id', conversationId);
@@ -506,11 +486,6 @@ export async function applyLipsConversationState(
       pending_reason: null,
       sla_due_at: null,
       sla_status: 'ok',
-      metadata: {
-        ...currentMetadata,
-        assigned_role: null,
-        department: null,
-      },
       updated_at: nowIso,
     })
     .eq('id', conversationId);

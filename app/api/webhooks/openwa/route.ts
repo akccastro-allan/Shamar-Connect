@@ -161,11 +161,13 @@ export async function POST(request: NextRequest) {
 
       const { data: existingConversation } = await db
         .from("whatsapp_conversations")
-        .select("id, requires_human")
+        .select("id, requires_human, pending_reason")
         .eq("channel_id", channel.channelId)
         .eq("external_chat_id", incoming.chatId)
         .maybeSingle();
-      const wasAwaitingHuman = Boolean(existingConversation?.requires_human);
+      const wasAwaitingHuman = Boolean(
+        existingConversation?.requires_human && existingConversation.pending_reason !== "new_inbound_message",
+      );
       let lastMessageWasAutoOutbound = false;
 
       if (existingConversation?.id) {
@@ -211,7 +213,7 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ ok: true });
           }
 
-          const { data: job } = await db.from("agent_automation_jobs").insert({
+          const { data: job, error: jobError } = await db.from("agent_automation_jobs").insert({
             tenant_id: channel.tenantId,
             organization_id: channel.organizationId,
             channel_id: channel.channelId,
@@ -220,6 +222,11 @@ export async function POST(request: NextRequest) {
             status: "pending",
             agent_type: "lips-auto",
           }).select("id").single();
+
+          if (jobError) {
+            console.error("[openwa-webhook] Failed to create Lips automation job:", jobError.message);
+            return NextResponse.json({ ok: true });
+          }
 
           if (text && isTextMessage) {
             const processResult = await processLipsMessage(

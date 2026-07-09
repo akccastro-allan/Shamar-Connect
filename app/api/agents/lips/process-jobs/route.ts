@@ -186,13 +186,17 @@ export async function POST(request: NextRequest) {
         // ========================================================================
 
         // Autoenvio oficial: menu, cotação segura ou direcionamento humano seguro.
+        const isAwaitingHuman = Boolean(
+          conversation.requires_human && conversation.pending_reason !== "new_inbound_message",
+        );
+
         const canAutoSend =
-          !conversation.requires_human &&
+          !isAwaitingHuman &&
           !previousAutoReply?.id &&
           (!inboundMsg.message_type || ["text", "chat"].includes(inboundMsg.message_type)) &&
           isOfficialAutoReply(processResult);
 
-        if (!conversation.requires_human && previousAutoReply?.id && processResult.requiresHandoff) {
+        if (!isAwaitingHuman && previousAutoReply?.id && processResult.requiresHandoff) {
           await applyLipsConversationState(db, job.organization_id, job.conversation_id, processResult);
         }
 
