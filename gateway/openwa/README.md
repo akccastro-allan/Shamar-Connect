@@ -1,35 +1,44 @@
-# Shamar OpenWA Gateway
+# Shamar OpenWA Gateway Legacy
 
-Gateway WhatsApp Web real para o Shamar Connect usando `@open-wa/wa-automate`.
+Este diretório contém o wrapper legado que usava `@open-wa/wa-automate`.
+
+O gateway real da operação Lips agora deve ser o OpenWA oficial em repositório separado:
+
+```text
+https://github.com/akccastro-allan/OpenWA
+```
+
+O Shamar Connect consome esse gateway via HTTP usando `WHATSAPP_WEB_GATEWAY_URL` e `WHATSAPP_WEB_GATEWAY_TOKEN`.
+Não use este diretório como fonte do serviço Railway novo.
 
 ## Railway
 
-Configuração do serviço:
+Configuração recomendada do serviço oficial:
 
 ```text
-Root Directory: /gateway/openwa
+Repository: akccastro-allan/OpenWA
 Builder: Dockerfile
-Volume mount: /data
 Domain: gateway.shamarconnect.com.br
 ```
 
 Variáveis mínimas:
 
 ```env
-PORT=8787
-OPENWA_API_KEY=troque-por-token-grande
-OPENWA_SESSION_ID=lips-main
-OPENWA_SESSIONS=lips-main
-SESSION_DATA_PATH=/data/openwa
-SHAMARCONNECT_WEBHOOK_URL=https://www.shamarconnect.com.br/api/webhooks/openwa
+PORT=2785
+API_MASTER_KEY=troque-por-token-grande
+SESSION_DATA_PATH=/app/data/sessions
+STORAGE_LOCAL_PATH=/app/data/media
+ENGINE_TYPE=whatsapp-web.js
 OPENWA_WEBHOOK_SECRET=troque-por-token-grande
-AUTO_START=true
 ```
 
-Para múltiplos clientes:
+No app Shamar Connect:
 
 ```env
-OPENWA_SESSIONS=lips-main,hall-main,viciados-main
+WHATSAPP_WEB_GATEWAY_URL=https://gateway.shamarconnect.com.br
+WHATSAPP_WEB_GATEWAY_TOKEN=<API_MASTER_KEY ou API key operator do OpenWA>
+WHATSAPP_WEB_GATEWAY_SESSION_ID=lips-main
+OPENWA_WEBHOOK_SECRET=<mesmo secret configurado no webhook do OpenWA>
 ```
 
 ## Endpoints
@@ -47,36 +56,36 @@ Health público:
 curl https://gateway.shamarconnect.com.br/api/health
 ```
 
-Conectar sessão:
+Criar sessão oficial:
 
 ```bash
-curl -X POST https://gateway.shamarconnect.com.br/api/sessions/lips-main/connect \
+curl -X POST https://gateway.shamarconnect.com.br/api/sessions \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $OPENWA_API_KEY" \
+  -d '{"name":"lips-main"}'
+```
+
+Iniciar sessão:
+
+```bash
+curl -X POST https://gateway.shamarconnect.com.br/api/sessions/$SESSION_ID/start \
   -H "X-API-Key: $OPENWA_API_KEY"
 ```
 
 QR:
 
 ```bash
-curl https://gateway.shamarconnect.com.br/api/sessions/lips-main/qr \
+curl https://gateway.shamarconnect.com.br/api/sessions/$SESSION_ID/qr \
   -H "X-API-Key: $OPENWA_API_KEY"
 ```
 
 Enviar texto:
 
 ```bash
-curl -X POST https://gateway.shamarconnect.com.br/api/sessions/lips-main/messages/send-text \
+curl -X POST https://gateway.shamarconnect.com.br/api/sessions/$SESSION_ID/messages/send-text \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $OPENWA_API_KEY" \
   -d '{"chatId":"5521982411499@c.us","text":"Teste real OpenWA Lips"}'
-```
-
-Endpoint legado compatível com o Shamar Connect atual:
-
-```bash
-curl -X POST https://gateway.shamarconnect.com.br/api/sessions/lips-main/send-message \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $OPENWA_API_KEY" \
-  -d '{"to":"5521982411499@c.us","body":"Teste real OpenWA Lips"}'
 ```
 
 ## Webhook
@@ -94,4 +103,15 @@ URL padrão:
 https://www.shamarconnect.com.br/api/webhooks/openwa
 ```
 
-Grupos são ignorados no gateway antes do webhook.
+No OpenWA oficial, registre o webhook na sessão `lips-main` com:
+
+```json
+{
+  "url": "https://www.shamarconnect.com.br/api/webhooks/openwa",
+  "events": ["message.received", "session.status"],
+  "secret": "mesmo-valor-de-OPENWA_WEBHOOK_SECRET",
+  "retryCount": 3
+}
+```
+
+Grupos continuam sendo ignorados pelo Shamar Connect antes de persistir qualquer mensagem.

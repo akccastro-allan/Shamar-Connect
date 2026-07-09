@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: error?.message ?? "Falha ao gerar link." }, { status: 400 });
     }
 
-    const confirmUrl = `${siteUrl}/auth/confirm?token_hash=${data.properties.hashed_token}&type=recovery`;
+    const confirmUrl = `${siteUrl}/login/reset-password?token_hash=${data.properties.hashed_token}&type=recovery`;
     await sendPasswordRecoveryEmail(email, confirmUrl);
 
     // Always return ok=true to avoid user enumeration

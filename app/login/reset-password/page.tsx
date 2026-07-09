@@ -1,13 +1,14 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
-export default function ResetPasswordPage() {
+function ResetPasswordInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
@@ -17,14 +18,49 @@ export default function ResetPasswordPage() {
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
-    supabase.auth.getSession().then(({ data }) => {
-      if (!data.session) {
-        router.replace("/login");
-      } else {
+
+    const tokenHash = searchParams.get("token_hash");
+    const type = searchParams.get("type");
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    const hashType = hashParams.get("type");
+    const accessToken = hashParams.get("access_token");
+    const refreshToken = hashParams.get("refresh_token");
+
+    if (hashType === "recovery" && accessToken && refreshToken) {
+      supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken }).then(({ error: sessionError }) => {
+        if (sessionError) {
+          router.replace("/login");
+          return;
+        }
+
+        window.history.replaceState(null, "", "/login/reset-password");
         setReady(true);
+      });
+      return;
+    }
+
+    if (tokenHash || type) {
+      if (!tokenHash || type !== "recovery") {
+        router.replace("/login");
+        return;
       }
+
+      supabase.auth.verifyOtp({ token_hash: tokenHash, type: "recovery" }).then(({ error: verifyError }) => {
+        if (verifyError) {
+          router.replace("/login");
+          return;
+        }
+
+        setReady(true);
+      });
+      return;
+    }
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (!data.session) router.replace("/login");
+      else setReady(true);
     });
-  }, [router]);
+  }, [router, searchParams]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -147,5 +183,13 @@ export default function ResetPasswordPage() {
         </div>
       </section>
     </main>
+  );
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense>
+      <ResetPasswordInner />
+    </Suspense>
   );
 }

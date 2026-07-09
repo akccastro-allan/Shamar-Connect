@@ -19,10 +19,9 @@ async function testSupabase() {
 }
 
 function getGatewayBaseUrl() {
-  return (process.env.WHATSAPP_WEB_GATEWAY_URL || "")
-    .trim()
-    .replace(/\/+$/, "")
-    .replace(/\/api$/, "");
+  const raw = (process.env.WHATSAPP_WEB_GATEWAY_URL || "").trim().replace(/\/+$/, "");
+  if (!raw) return "";
+  return raw.endsWith("/api") ? raw : `${raw}/api`;
 }
 
 async function testGateway() {
@@ -34,16 +33,18 @@ async function testGateway() {
   if (!token) return { ok: false, label: "Railway Gateway", detail: "WHATSAPP_WEB_GATEWAY_TOKEN não configurado" };
 
   try {
-    const response = await fetch(`${baseUrl}/sessions/${encodeURIComponent(sessionId)}/status`, {
-      headers: { authorization: `Bearer ${token}` },
+    const response = await fetch(`${baseUrl}/sessions`, {
+      headers: { "x-api-key": token, authorization: `Bearer ${token}` },
       cache: "no-store",
     });
-    const data = await response.json().catch(() => ({}));
+    const data = await response.json().catch(() => []);
+    const sessions = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : Array.isArray(data?.sessions) ? data.sessions : [];
+    const session = sessions.find((item: Record<string, unknown>) => item.name === sessionId || item.id === sessionId);
     return {
       ok: response.ok,
       label: "Railway Gateway",
       detail: response.ok
-        ? `Sessão ${data.sessionId || sessionId}: ${data.status || "indefinido"}${data.phone ? ` | telefone: ${data.phone}` : ""}`
+        ? `Sessão ${session?.name || sessionId}: ${session?.status || "não criada"}${session?.phone ? ` | telefone: ${session.phone}` : ""}`
         : `HTTP ${response.status}${data?.error ? ` | ${data.error}` : ""}`,
     };
   } catch (error) {

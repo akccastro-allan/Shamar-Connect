@@ -9,6 +9,7 @@ import {
   Zap,
 } from "lucide-react";
 
+import { RecoveryHashRedirect } from "@/components/auth/recovery-hash-redirect";
 import { getCurrentSession } from "@/lib/auth/session";
 
 export const metadata: Metadata = {
@@ -204,6 +205,7 @@ export default async function HomePage() {
 
   return (
     <>
+      <RecoveryHashRedirect />
       <section className="relative overflow-hidden bg-[#0B1220] text-white">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(42,191,171,0.22),transparent_32%),radial-gradient(circle_at_88%_12%,rgba(255,255,255,0.10),transparent_28%)]" />
         <div className="absolute -right-24 bottom-10 h-72 w-72 rotate-12 rounded-[3rem] bg-white/5" />

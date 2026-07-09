@@ -11,10 +11,8 @@ import type {
 function getGatewayBaseUrl() {
   const rawBaseUrl = process.env.WHATSAPP_WEB_GATEWAY_URL?.replace(/\/$/, "") || "";
 
-  // The Railway WhatsApp gateway exposes session routes at the root, e.g.
-  // /sessions/:sessionId/status. Older ShamarConnect deployments sometimes
-  // configured the base URL with a trailing /api, so normalize that here.
-  return rawBaseUrl.replace(/\/api$/, "");
+  if (!rawBaseUrl) return "";
+  return rawBaseUrl.endsWith("/api") ? rawBaseUrl : `${rawBaseUrl}/api`;
 }
 
 function getGatewayToken() {
@@ -25,42 +23,167 @@ function getDefaultSessionId() {
   return process.env.WHATSAPP_WEB_GATEWAY_SESSION_ID || "hall-main";
 }
 
-function withDefaultSession(path: string) {
-  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+type OpenWaSession = {
+  id?: string;
+  name?: string;
+  status?: string;
+  phone?: string | null;
+  pushName?: string | null;
+  lastError?: string | null;
+};
 
-  if (normalizedPath.startsWith("/sessions/")) {
-    return normalizedPath;
+type OpenWaQrResponse = OpenWaSession & {
+  qrCode?: string;
+  qr?: string;
+  pairingCode?: string;
+};
+
+type OpenWaMessageResponse = {
+  messageId?: string;
+  id?: string;
+  timestamp?: number;
+};
+
+const sessionIdCache = new Map<string, string>();
+
+function asArray<T>(value: unknown): T[] {
+  if (Array.isArray(value)) return value as T[];
+  if (value && typeof value === "object" && Array.isArray((value as { data?: unknown }).data)) return (value as { data: T[] }).data;
+  if (value && typeof value === "object" && Array.isArray((value as { sessions?: unknown }).sessions)) {
+    return (value as { sessions: T[] }).sessions;
   }
-
-  const sessionId = encodeURIComponent(getDefaultSessionId());
-  return `/sessions/${sessionId}${normalizedPath}`;
+  if (value && typeof value === "object" && Array.isArray((value as { chats?: unknown }).chats)) return (value as { chats: T[] }).chats;
+  if (value && typeof value === "object" && Array.isArray((value as { groups?: unknown }).groups)) return (value as { groups: T[] }).groups;
+  if (value && typeof value === "object" && Array.isArray((value as { messages?: unknown }).messages)) {
+    return (value as { messages: T[] }).messages;
+  }
+  return [];
 }
 
-async function gatewayFetch<T>(path: string, init?: RequestInit): Promise<T> {
+function normalizeStatus(session: OpenWaSession, qrCode?: string): ProviderStatus {
+  const status = String(session.status || "idle");
+  const mapped: ProviderStatus["status"] =
+    status === "created"
+      ? "idle"
+      : status === "initializing"
+        ? "connecting"
+        : status === "qr_ready"
+          ? "qr"
+          : status === "authenticating"
+            ? "authenticated"
+            : status === "ready"
+              ? "ready"
+              : status === "failed"
+                ? "error"
+                : status === "disconnected"
+                  ? "disconnected"
+                  : "idle";
+
+  return {
+    provider: "whatsapp_web",
+    status: mapped,
+    phone: session.phone || undefined,
+    qrCode,
+    error: session.lastError || undefined,
+  };
+}
+
+function normalizeChatId(value: string) {
+  const trimmed = value.trim();
+  if (trimmed.includes("@")) return trimmed;
+  return `${trimmed.replace(/\D/g, "")}@c.us`;
+}
+
+async function openWaFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const baseUrl = getGatewayBaseUrl();
-  if (!baseUrl) {
-    throw new Error("WHATSAPP_WEB_GATEWAY_URL is not configured.");
-  }
+  if (!baseUrl) throw new Error("WHATSAPP_WEB_GATEWAY_URL is not configured.");
 
-  const sessionPath = withDefaultSession(path);
-  const url = `${baseUrl}${sessionPath}`;
-
-  const response = await fetch(url, {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const response = await fetch(`${baseUrl}${normalizedPath}`, {
     ...init,
     headers: {
       "content-type": "application/json",
-      ...(getGatewayToken() ? { authorization: `Bearer ${getGatewayToken()}` } : {}),
+      ...(getGatewayToken() ? { "x-api-key": getGatewayToken(), authorization: `Bearer ${getGatewayToken()}` } : {}),
       ...(init?.headers || {}),
     },
     cache: "no-store",
   });
 
-  if (response.ok) {
-    return response.json() as Promise<T>;
+  if (response.status === 204) return undefined as T;
+  if (response.ok) return response.json() as Promise<T>;
+  const errorBody = await response.text();
+  throw new Error(`OpenWA error ${response.status}: ${errorBody}`);
+}
+
+async function resolveOpenWaSessionId(sessionName: string) {
+  const cached = sessionIdCache.get(sessionName);
+  if (cached) return cached;
+
+  const sessions = asArray<OpenWaSession>(await openWaFetch<unknown>("/sessions"));
+  const existing = sessions.find((session) => session.name === sessionName || session.id === sessionName);
+  if (existing?.id) {
+    sessionIdCache.set(sessionName, existing.id);
+    return existing.id;
   }
 
-  const errorBody = await response.text();
-  throw new Error(`WhatsApp Web Gateway error ${response.status}: ${errorBody}`);
+  try {
+    const created = await openWaFetch<OpenWaSession>("/sessions", {
+      method: "POST",
+      body: JSON.stringify({ name: sessionName }),
+    });
+    const id = created.id || created.name || sessionName;
+    sessionIdCache.set(sessionName, id);
+    return id;
+  } catch (error) {
+    if (!(error instanceof Error) || !error.message.includes("409")) throw error;
+    const refreshed = asArray<OpenWaSession>(await openWaFetch<unknown>("/sessions"));
+    const session = refreshed.find((item) => item.name === sessionName || item.id === sessionName);
+    if (session?.id) {
+      sessionIdCache.set(sessionName, session.id);
+      return session.id;
+    }
+    throw error;
+  }
+}
+
+async function openWaSessionFetch<T>(sessionName: string, path: string, init?: RequestInit): Promise<T> {
+  const sessionId = await resolveOpenWaSessionId(sessionName);
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return openWaFetch<T>(`/sessions/${encodeURIComponent(sessionId)}${normalizedPath}`, init);
+}
+
+async function getSessionStatus(sessionName: string) {
+  const session = await openWaSessionFetch<OpenWaSession>(sessionName, "");
+  return normalizeStatus(session);
+}
+
+async function startSession(sessionName: string) {
+  try {
+    const session = await openWaSessionFetch<OpenWaSession>(sessionName, "/start", { method: "POST" });
+    return normalizeStatus(session);
+  } catch (error) {
+    if (!(error instanceof Error) || !error.message.includes("400")) throw error;
+    return getSessionStatus(sessionName);
+  }
+}
+
+async function getSessionQr(sessionName: string) {
+  const qr = await openWaSessionFetch<OpenWaQrResponse>(sessionName, "/qr");
+  return normalizeStatus(qr, qr.qrCode || qr.qr);
+}
+
+async function sendSessionMessage(sessionName: string, payload: ProviderMessagePayload) {
+  const response = await openWaSessionFetch<OpenWaMessageResponse>(sessionName, "/messages/send-text", {
+    method: "POST",
+    body: JSON.stringify({ chatId: normalizeChatId(payload.to), text: payload.body }),
+  });
+
+  return { id: String(response.messageId || response.id || `openwa_${Date.now()}`), status: "sent" as const };
+}
+
+async function stopSession(sessionName: string) {
+  const session = await openWaSessionFetch<OpenWaSession>(sessionName, "/stop", { method: "POST" });
+  return normalizeStatus(session);
 }
 
 export const ALLOWED_SESSION_IDS = [
@@ -82,84 +205,57 @@ export function isAllowedSessionId(value: unknown): value is AllowedSessionId {
 // Factory: creates a gateway client scoped to a specific session.
 // The default export (whatsappWebGatewayClient) uses the env-configured session.
 export function createWhatsappGatewayClient(sessionId: AllowedSessionId): MessagingProviderClient {
-  function sessionFetch<T>(path: string, init?: RequestInit): Promise<T> {
-    const baseUrl = getGatewayBaseUrl();
-    if (!baseUrl) throw new Error("WHATSAPP_WEB_GATEWAY_URL is not configured.");
-
-    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-    const sessionPath = normalizedPath.startsWith("/sessions/")
-      ? normalizedPath
-      : `/sessions/${encodeURIComponent(sessionId)}${normalizedPath}`;
-
-    const url = `${baseUrl}${sessionPath}`;
-    return fetch(url, {
-      ...init,
-      headers: {
-        "content-type": "application/json",
-        ...(getGatewayToken() ? { authorization: `Bearer ${getGatewayToken()}` } : {}),
-        ...(init?.headers || {}),
-      },
-      cache: "no-store",
-    }).then(async (response) => {
-      if (response.ok) return response.json() as Promise<T>;
-      const errorBody = await response.text();
-      throw new Error(`WhatsApp Web Gateway error ${response.status}: ${errorBody}`);
-    });
-  }
-
   return {
-    getStatus: () => sessionFetch<ProviderStatus>("/status"),
-    connect: () => sessionFetch<ProviderStatus>("/connect", { method: "POST" }),
-    getQr: () => sessionFetch<ProviderStatus>("/qr"),
-    sendMessage: (payload: ProviderMessagePayload) =>
-      sessionFetch<{ id: string; status: "queued" | "sent" }>("/send-message", { method: "POST", body: JSON.stringify(payload) }),
-    listChats: () => sessionFetch<ProviderChatSummary[]>("/chats"),
-    listGroups: () => sessionFetch<ProviderGroupSummary[]>("/groups"),
+    getStatus: () => getSessionStatus(sessionId),
+    connect: () => startSession(sessionId),
+    getQr: () => getSessionQr(sessionId),
+    sendMessage: (payload: ProviderMessagePayload) => sendSessionMessage(sessionId, payload),
+    listChats: async () => asArray<ProviderChatSummary>(await openWaSessionFetch<unknown>(sessionId, "/chats")),
+    listGroups: async () => asArray<ProviderGroupSummary>(await openWaSessionFetch<unknown>(sessionId, "/groups")),
     listGroupParticipants: (groupId: string) =>
-      sessionFetch<ProviderGroupParticipant[]>(`/groups/${encodeURIComponent(groupId)}/participants`),
+      openWaSessionFetch<ProviderGroupParticipant[]>(sessionId, `/groups/${encodeURIComponent(groupId)}/participants`),
     listChatMessages: (chatId: string, limit = 50) =>
-      sessionFetch<ProviderSyncedMessage[]>(`/chats/${encodeURIComponent(chatId)}/messages?limit=${limit}`),
-    logout: () => sessionFetch<ProviderStatus>("/logout", { method: "POST" }),
+      openWaSessionFetch<ProviderSyncedMessage[]>(sessionId, `/messages?chatId=${encodeURIComponent(chatId)}&limit=${limit}`),
+    logout: () => stopSession(sessionId),
   };
 }
 
+const defaultClient = createWhatsappGatewayClient(getDefaultSessionId() as AllowedSessionId);
+
 export const whatsappWebGatewayClient: MessagingProviderClient = {
   getStatus() {
-    return gatewayFetch<ProviderStatus>("/status");
+    return defaultClient.getStatus();
   },
 
   connect() {
-    return gatewayFetch<ProviderStatus>("/connect", { method: "POST" });
+    return defaultClient.connect();
   },
 
   getQr() {
-    return gatewayFetch<ProviderStatus>("/qr");
+    return defaultClient.getQr();
   },
 
   sendMessage(payload: ProviderMessagePayload) {
-    return gatewayFetch<{ id: string; status: "queued" | "sent" }>("/send-message", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
+    return defaultClient.sendMessage(payload);
   },
 
   listChats() {
-    return gatewayFetch<ProviderChatSummary[]>("/chats");
+    return defaultClient.listChats();
   },
 
   listGroups() {
-    return gatewayFetch<ProviderGroupSummary[]>("/groups");
+    return defaultClient.listGroups();
   },
 
   listGroupParticipants(groupId: string) {
-    return gatewayFetch<ProviderGroupParticipant[]>(`/groups/${encodeURIComponent(groupId)}/participants`);
+    return defaultClient.listGroupParticipants(groupId);
   },
 
   listChatMessages(chatId: string, limit = 50) {
-    return gatewayFetch<ProviderSyncedMessage[]>(`/chats/${encodeURIComponent(chatId)}/messages?limit=${limit}`);
+    return defaultClient.listChatMessages(chatId, limit);
   },
 
   logout() {
-    return gatewayFetch<ProviderStatus>("/logout", { method: "POST" });
+    return defaultClient.logout();
   },
 };
