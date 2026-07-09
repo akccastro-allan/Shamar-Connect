@@ -139,7 +139,10 @@ export async function POST(request: NextRequest) {
         const canAutoSend =
           processResult.shouldSend &&
           processResult.autoSendAllowed &&
-          !processResult.requiresHandoff;
+          processResult.quoteOnly &&
+          processResult.intent === "quote" &&
+          !processResult.requiresHandoff &&
+          /\bValor:\s*R\$/i.test(processResult.response);
 
         if (canAutoSend) {
           // ========================================================================

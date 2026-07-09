@@ -4,6 +4,12 @@ import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 import { resolveChannelFromWebhook } from "@/lib/inbox/resolve-channel";
 import { ingestInboundMessage } from "@/lib/inbox/persist-inbound";
 import type { IdentityType } from "@/lib/inbox/contacts";
+import {
+  checkCooldown,
+  processLipsMessage,
+  recordAutoReply,
+  sendAndSaveResponse,
+} from "@/lib/agents/lips-simple-processor";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +28,9 @@ type NormalizedIncomingMessage = {
   identityType: IdentityType;
   displayName: string;
 };
+
+const LIPS_SESSION_ID = "lips-main";
+const LIPS_CHANNEL_ID = "1f65f8d2-2609-42d9-ae57-709aecdb43da";
 
 function verifyOpenWaSignature(rawBody: string, signature: string | null) {
   const secret = process.env.OPENWA_WEBHOOK_SECRET || process.env.SHAMARCONNECT_WEBHOOK_TOKEN || "";
@@ -81,6 +90,17 @@ function normalizeIncomingMessage(data: Record<string, unknown>): NormalizedInco
   };
 }
 
+function isSafeAutoQuote(result: Awaited<ReturnType<typeof processLipsMessage>>) {
+  return Boolean(
+    result.shouldSend &&
+      result.autoSendAllowed &&
+      result.quoteOnly &&
+      result.intent === "quote" &&
+      !result.requiresHandoff &&
+      /\bValor:\s*R\$/i.test(result.response),
+  );
+}
+
 export async function POST(request: NextRequest) {
   try {
     const rawBody = await request.text();
@@ -129,12 +149,12 @@ export async function POST(request: NextRequest) {
       if (result === "processed" && channel.organizationId) {
         const msgQuery = await db
           .from("whatsapp_messages")
-          .select("id, conversation_id")
+          .select("id, conversation_id, body, from_id, message_type")
           .eq("external_message_id", incoming.id)
           .maybeSingle();
 
         if (msgQuery.data?.id && msgQuery.data?.conversation_id) {
-          await db.from("agent_automation_jobs").insert({
+          const { data: job } = await db.from("agent_automation_jobs").insert({
             tenant_id: channel.tenantId,
             organization_id: channel.organizationId,
             channel_id: channel.channelId,
@@ -142,7 +162,74 @@ export async function POST(request: NextRequest) {
             message_id: msgQuery.data.id,
             status: "pending",
             agent_type: "lips-auto",
-          });
+          }).select("id").single();
+
+          const text = (msgQuery.data.body || "").trim();
+          const isLipsChannel = channel.channelId === LIPS_CHANNEL_ID && sessionId === LIPS_SESSION_ID;
+          const isTextMessage = !msgQuery.data.message_type || msgQuery.data.message_type === "text";
+
+          if (isLipsChannel && text && isTextMessage) {
+            const processResult = await processLipsMessage(
+              db,
+              channel.organizationId,
+              text,
+              msgQuery.data.from_id || incoming.senderExternalId || incoming.chatId,
+              msgQuery.data.conversation_id,
+            );
+
+            if (isSafeAutoQuote(processResult)) {
+              const cooldown = await checkCooldown(db, msgQuery.data.conversation_id, processResult.response);
+
+              if (cooldown.allowed) {
+                const sendResult = await sendAndSaveResponse(
+                  db,
+                  channel.organizationId,
+                  msgQuery.data.conversation_id,
+                  incoming.chatId,
+                  processResult.response,
+                  false,
+                  processResult.department,
+                );
+
+                if (sendResult.success) {
+                  await recordAutoReply(db, channel.organizationId, msgQuery.data.conversation_id, processResult.response);
+                  await db
+                    .from("whatsapp_conversations")
+                    .update({ status: processResult.nextStatusSuggestion || "awaiting_customer", updated_at: new Date().toISOString() })
+                    .eq("id", msgQuery.data.conversation_id);
+                  if (job?.id) {
+                    await db
+                      .from("agent_automation_jobs")
+                      .update({
+                        status: "done",
+                        completed_at: new Date().toISOString(),
+                        response_type: processResult.intent,
+                        response_text: processResult.response,
+                        sent_to_evolution: true,
+                        outbound_message_id: sendResult.messageId,
+                      })
+                      .eq("id", job.id);
+                  }
+                } else if (job?.id) {
+                  await db
+                    .from("agent_automation_jobs")
+                    .update({ status: "error", error_message: sendResult.error || "Falha ao enviar resposta automática" })
+                    .eq("id", job.id);
+                }
+              } else if (job?.id) {
+                await db
+                  .from("agent_automation_jobs")
+                  .update({
+                    status: "done",
+                    completed_at: new Date().toISOString(),
+                    response_type: `${processResult.intent}_blocked_cooldown`,
+                    response_text: processResult.response,
+                    sent_to_evolution: false,
+                  })
+                  .eq("id", job.id);
+              }
+            }
+          }
         }
       }
     }

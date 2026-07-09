@@ -677,15 +677,25 @@ export async function sendAndSaveResponse(
       return { success: false, error: `Falha ao enviar: ${sendResult.status}` };
     }
 
+    const { data: conversation } = await db
+      .from('whatsapp_conversations')
+      .select('tenant_id, organization_id, channel_id, provider')
+      .eq('id', conversationId)
+      .single();
+
     // 2. Salvar no histórico da Central
     const { data: saved } = await db
       .from('whatsapp_messages')
       .insert({
+        tenant_id: conversation?.tenant_id,
+        organization_id: conversation?.organization_id || organizationId,
+        channel_id: conversation?.channel_id,
         conversation_id: conversationId,
         direction: 'outbound',
         body: responseText,
         message_type: 'text',
-        provider: 'evolution',
+        provider: conversation?.provider || 'whatsapp_web_legacy',
+        delivery_status: sendResult.status,
         external_message_id: sendResult.id,
         to_id: senderId,
         raw_payload: {
