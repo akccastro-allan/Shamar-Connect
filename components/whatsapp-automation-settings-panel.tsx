@@ -11,7 +11,7 @@ type TemplateRow = { key: string; label: string; body: string };
 const STATUS_ROWS: StatusRow[] = [
   { label: "Automação segura", value: "Ativa", status: "active" },
   { label: "Responder grupos automaticamente", value: "Desativado — grupos são somente leitura e captação de leads", status: "inactive" },
-  { label: "Resposta fora do horário comercial", value: "Ativa (dom. e fora de seg–sáb 08h–18h)", status: "active" },
+  { label: "Resposta fora do horário comercial", value: "Ativa fora de seg-sex 08h-18h e sáb 08h-14h", status: "active" },
   { label: "SLA padrão", value: "30 minutos para grupos / definido pelo watchdog para individuais", status: "info" },
   { label: "Idempotência", value: "Ativa — não reenvía para a mesma última mensagem entrada", status: "active" },
   { label: "Disparo em massa", value: "Não implementado nesta versão", status: "inactive" },
@@ -26,7 +26,7 @@ const TEMPLATES: TemplateRow[] = [
   {
     key: "after_hours",
     label: "Fora do horário",
-    body: "Olá! No momento estamos fora do horário de atendimento.\n\nSeu contato foi registrado e será atendido por ordem de chegada no próximo horário comercial.\n\nPara adiantar, envie nome, serviço desejado e detalhes do pedido.",
+    body: "Olá! No momento estamos fora do horário de atendimento.\nAtendemos de segunda a sexta das 8h às 18h e aos sábados das 8h às 14h.\n\nSeu contato foi registrado e será atendido por ordem de chegada no próximo horário comercial.\n\nPara adiantar, envie nome, serviço desejado e detalhes do pedido.",
   },
   {
     key: "human_requested",

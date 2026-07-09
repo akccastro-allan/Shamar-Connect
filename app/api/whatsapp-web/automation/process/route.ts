@@ -196,6 +196,7 @@ function decideAutomation(latestInbound: MessageRow, inboundCount: number): Auto
       intent: "after_hours",
       replyBody: [
         "Olá! No momento estamos fora do horário de atendimento.",
+        "Atendemos de segunda a sexta das 8h às 18h e aos sábados das 8h às 14h.",
         "",
         "Seu contato foi registrado e será atendido por ordem de chegada no próximo horário comercial.",
         "",
