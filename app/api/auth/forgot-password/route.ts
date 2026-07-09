@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "E-mail obrigatório." }, { status: 400 });
     }
 
-    const siteUrl = process.env.NEXT_PUBLIC_APP_URL || "https://shamarconnect.com.br";
+    const siteUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "https://www.shamarconnect.com.br";
     const supabase = createSupabaseWriteClient();
 
     const { data, error } = await supabase.auth.admin.generateLink({

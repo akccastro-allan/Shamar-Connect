@@ -19,6 +19,14 @@ function ResetPasswordInner() {
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
 
+    async function allowPasswordReset() {
+      const { data } = await supabase.auth.getSession();
+      if (!data.session) {
+        setError("Link inválido ou expirado. Solicite uma nova recuperação de senha.");
+      }
+      setReady(true);
+    }
+
     const tokenHash = searchParams.get("token_hash");
     const type = searchParams.get("type");
     const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
@@ -29,7 +37,8 @@ function ResetPasswordInner() {
     if (hashType === "recovery" && accessToken && refreshToken) {
       supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken }).then(({ error: sessionError }) => {
         if (sessionError) {
-          router.replace("/login");
+          setError(sessionError.message || "Link inválido ou expirado. Solicite uma nova recuperação de senha.");
+          setReady(true);
           return;
         }
 
@@ -41,13 +50,15 @@ function ResetPasswordInner() {
 
     if (tokenHash || type) {
       if (!tokenHash || type !== "recovery") {
-        router.replace("/login");
+        setError("Link inválido ou expirado. Solicite uma nova recuperação de senha.");
+        setReady(true);
         return;
       }
 
       supabase.auth.verifyOtp({ token_hash: tokenHash, type: "recovery" }).then(({ error: verifyError }) => {
         if (verifyError) {
-          router.replace("/login");
+          setError(verifyError.message || "Link inválido ou expirado. Solicite uma nova recuperação de senha.");
+          setReady(true);
           return;
         }
 
@@ -56,11 +67,8 @@ function ResetPasswordInner() {
       return;
     }
 
-    supabase.auth.getSession().then(({ data }) => {
-      if (!data.session) router.replace("/login");
-      else setReady(true);
-    });
-  }, [router, searchParams]);
+    allowPasswordReset();
+  }, [searchParams]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
