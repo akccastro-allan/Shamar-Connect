@@ -312,9 +312,21 @@ async function findMultipleParts(
   });
 
   return {
-    found: Array.from(byId.values()).sort((a, b) => (b.matchScore ?? 0) - (a.matchScore ?? 0)).slice(0, 3),
+    found: filterRankedCatalogResults(
+      Array.from(byId.values()).sort((a, b) => (b.matchScore ?? 0) - (a.matchScore ?? 0)),
+      vehicleInfo,
+    ).slice(0, 3),
     notFound,
   };
+}
+
+function filterRankedCatalogResults(items: any[], vehicleInfo?: { model?: string; year?: number }): any[] {
+  if (!vehicleInfo?.model) return items;
+
+  const model = normalizeText(vehicleInfo.model);
+  const modelMatches = items.filter(item => normalizeText(item.name || '').includes(model));
+
+  return modelMatches.length > 0 ? modelMatches : items;
 }
 
 // ============================================================================
