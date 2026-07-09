@@ -3,12 +3,25 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 import { resolveChannelFromWebhook } from "@/lib/inbox/resolve-channel";
 import { ingestInboundMessage } from "@/lib/inbox/persist-inbound";
+import type { IdentityType } from "@/lib/inbox/contacts";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   return NextResponse.json({ ok: true });
 }
+
+type NormalizedIncomingMessage = {
+  id: string;
+  chatId: string;
+  body: string;
+  timestamp?: number;
+  fromMe: boolean;
+  isGroup: boolean;
+  senderExternalId: string;
+  identityType: IdentityType;
+  displayName: string;
+};
 
 function verifyOpenWaSignature(rawBody: string, signature: string | null) {
   const secret = process.env.OPENWA_WEBHOOK_SECRET || process.env.SHAMARCONNECT_WEBHOOK_TOKEN || "";
@@ -21,8 +34,17 @@ function verifyOpenWaSignature(rawBody: string, signature: string | null) {
   return receivedBuffer.length === expectedBuffer.length && timingSafeEqual(receivedBuffer, expectedBuffer);
 }
 
-function normalizeIncomingMessage(data: Record<string, unknown>) {
+function normalizeIncomingMessage(data: Record<string, unknown>): NormalizedIncomingMessage {
   const contact = data.contact as Record<string, unknown> | undefined;
+  const chatId = data.chatId as string || data.from as string || "";
+  const senderPhone = String(
+    data.senderPhone ||
+    data.phone ||
+    contact?.phone ||
+    contact?.number ||
+    contact?.waId ||
+    "",
+  ).replace(/\D/g, "");
 
   if (data.key && data.message) {
     const key = data.key as Record<string, unknown>;
@@ -34,17 +56,21 @@ function normalizeIncomingMessage(data: Record<string, unknown>) {
       timestamp: data.messageTimestamp as number | undefined,
       fromMe: Boolean(key.fromMe),
       isGroup: String(key.remoteJid || "").endsWith("@g.us"),
+      senderExternalId: key.remoteJid as string || "",
+      identityType: String(key.remoteJid || "").endsWith("@lid") ? "lid" : "phone",
       displayName: data.pushName as string || "OpenWA User",
     };
   }
 
   return {
     id: data.id as string || "",
-    chatId: data.chatId as string || data.from as string || "",
+    chatId,
     body: data.body as string || "",
     timestamp: data.timestamp as number | undefined,
     fromMe: Boolean(data.fromMe),
-    isGroup: Boolean(data.isGroup) || String(data.chatId || data.from || "").endsWith("@g.us"),
+    isGroup: Boolean(data.isGroup) || String(chatId).endsWith("@g.us"),
+    senderExternalId: senderPhone || chatId,
+    identityType: senderPhone ? "phone" : chatId.endsWith("@lid") ? "lid" : "phone",
     displayName:
       contact?.pushName as string ||
       contact?.name as string ||
@@ -94,8 +120,8 @@ export async function POST(request: NextRequest) {
         media: null,
         timestampMs: (incoming.timestamp || Math.floor(Date.now() / 1000)) * 1000,
         isGroup: false,
-        senderExternalId: incoming.chatId,
-        identityType: "phone",
+        senderExternalId: incoming.senderExternalId || incoming.chatId,
+        identityType: incoming.identityType || "phone",
         displayName: incoming.displayName,
         rawPayload: data,
       });

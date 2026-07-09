@@ -91,6 +91,12 @@ function getConversationName(conversation: Conversation) {
   return conversation.crm_contacts?.name || conversation.name || conversation.external_chat_id;
 }
 
+function getConversationPhone(conversation: Conversation | null) {
+  if (!conversation) return "";
+  if (conversation.crm_contacts?.phone) return conversation.crm_contacts.phone;
+  return conversation.external_chat_id || "";
+}
+
 function tagsToInput(tags?: string[] | null) {
   return (tags || []).join(", ");
 }
@@ -455,7 +461,7 @@ export function InboxPanel() {
               {!selectedConversation ? <p className="text-sm text-muted-foreground">Selecione uma conversa.</p> : (
                 <>
                   <input value={contactName} onChange={(event) => setContactName(event.target.value)} className="w-full rounded-xl border px-3 py-2 text-sm" placeholder="Nome" />
-                  <input value={selectedConversation.crm_contacts?.phone || ""} disabled className="w-full rounded-xl border bg-slate-50 px-3 py-2 text-sm" placeholder="Telefone" />
+                  <input value={getConversationPhone(selectedConversation)} disabled className="w-full rounded-xl border bg-slate-50 px-3 py-2 text-sm" placeholder="Telefone ou ID WhatsApp" />
                   <input value={contactEmail} onChange={(event) => setContactEmail(event.target.value)} className="w-full rounded-xl border px-3 py-2 text-sm" placeholder="E-mail" />
                   <input value={contactCompany} onChange={(event) => setContactCompany(event.target.value)} className="w-full rounded-xl border px-3 py-2 text-sm" placeholder="Empresa" />
                   <select value={contactConsent} onChange={(event) => setContactConsent(event.target.value)} className="w-full rounded-xl border bg-white px-3 py-2 text-sm">
