@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 import { createSupabaseServerClient, createSupabaseWriteClient } from "@/lib/supabase/server";
+import { supabaseAnonKey, supabaseUrl } from "@/lib/supabase/env";
 
 export async function POST(request: NextRequest) {
   try {
@@ -20,6 +22,24 @@ export async function POST(request: NextRequest) {
 
     if (userError || !userData.user) {
       return NextResponse.json({ ok: false, error: "Link inválido ou expirado. Solicite uma nova recuperação de senha." }, { status: 400 });
+    }
+
+    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+      global: {
+        headers: {
+          authorization: `Bearer ${accessToken}`,
+        },
+      },
+    });
+
+    const { error: updateWithTokenError } = await userClient.auth.updateUser({ password });
+
+    if (!updateWithTokenError) {
+      return NextResponse.json({ ok: true });
     }
 
     const adminClient = createSupabaseWriteClient();
