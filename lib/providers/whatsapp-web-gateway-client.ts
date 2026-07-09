@@ -44,6 +44,38 @@ type OpenWaMessageResponse = {
   timestamp?: number;
 };
 
+type OpenWaChat = {
+  id?: string;
+  chatId?: string;
+  name?: string;
+  formattedTitle?: string;
+  title?: string;
+  isGroup?: boolean;
+  unreadCount?: number;
+  timestamp?: number;
+  lastMessageAt?: string;
+};
+
+type OpenWaMessage = {
+  id?: string;
+  messageId?: string;
+  chatId?: string;
+  from?: string;
+  to?: string;
+  body?: string;
+  caption?: string;
+  type?: string;
+  timestamp?: number;
+  t?: number;
+  fromMe?: boolean;
+  isGroup?: boolean;
+  contactName?: string;
+  pushName?: string;
+  sender?: { name?: string; pushname?: string };
+  hasMedia?: boolean;
+  mimetype?: string;
+};
+
 const sessionIdCache = new Map<string, string>();
 
 function asArray<T>(value: unknown): T[] {
@@ -92,6 +124,44 @@ function normalizeChatId(value: string) {
   const trimmed = value.trim();
   if (trimmed.includes("@")) return trimmed;
   return `${trimmed.replace(/\D/g, "")}@c.us`;
+}
+
+function normalizeChat(chat: OpenWaChat): ProviderChatSummary {
+  const id = String(chat.id || chat.chatId || "");
+  return {
+    id,
+    name: String(chat.name || chat.formattedTitle || chat.title || id),
+    isGroup: Boolean(chat.isGroup) || id.endsWith("@g.us"),
+    unreadCount: Number(chat.unreadCount || 0),
+    lastMessageAt: chat.lastMessageAt || (chat.timestamp ? new Date(Number(chat.timestamp) * 1000).toISOString() : undefined),
+  };
+}
+
+function normalizeMessage(message: OpenWaMessage, fallbackChatId: string): ProviderSyncedMessage {
+  const chatId = String(message.chatId || fallbackChatId);
+  const from = String(message.from || "");
+  const to = String(message.to || "");
+  const timestamp = Number(message.timestamp || message.t || Math.floor(Date.now() / 1000));
+  const contactName = message.contactName || message.pushName || message.sender?.pushname || message.sender?.name;
+  const type = String(message.type || "text");
+
+  return {
+    id: String(message.id || message.messageId || `${chatId}_${timestamp}`),
+    chatId,
+    chatName: contactName || chatId,
+    isGroup: Boolean(message.isGroup) || chatId.endsWith("@g.us"),
+    from,
+    to,
+    body: String(message.body || message.caption || ""),
+    timestamp,
+    direction: message.fromMe ? "outbound" : "inbound",
+    contactName,
+    phone: normalizeChatId(message.fromMe ? to || chatId : from || chatId).replace(/\D/g, ""),
+    type,
+    hasMedia: Boolean(message.hasMedia),
+    mediaType: type,
+    mimeType: message.mimetype,
+  };
 }
 
 async function openWaFetch<T>(path: string, init?: RequestInit): Promise<T> {
@@ -210,12 +280,20 @@ export function createWhatsappGatewayClient(sessionId: AllowedSessionId): Messag
     connect: () => startSession(sessionId),
     getQr: () => getSessionQr(sessionId),
     sendMessage: (payload: ProviderMessagePayload) => sendSessionMessage(sessionId, payload),
-    listChats: async () => asArray<ProviderChatSummary>(await openWaSessionFetch<unknown>(sessionId, "/chats")),
-    listGroups: async () => asArray<ProviderGroupSummary>(await openWaSessionFetch<unknown>(sessionId, "/groups")),
+    listChats: async () => asArray<OpenWaChat>(await openWaSessionFetch<unknown>(sessionId, "/chats")).map(normalizeChat).filter((chat) => chat.id),
+    listGroups: async () =>
+      asArray<OpenWaChat>(await openWaSessionFetch<unknown>(sessionId, "/groups"))
+        .map((group) => {
+          const chat = normalizeChat(group);
+          return { id: chat.id, name: chat.name, participantCount: undefined };
+        })
+        .filter((group) => group.id),
     listGroupParticipants: (groupId: string) =>
       openWaSessionFetch<ProviderGroupParticipant[]>(sessionId, `/groups/${encodeURIComponent(groupId)}/participants`),
     listChatMessages: (chatId: string, limit = 50) =>
-      openWaSessionFetch<ProviderSyncedMessage[]>(sessionId, `/messages?chatId=${encodeURIComponent(chatId)}&limit=${limit}`),
+      openWaSessionFetch<unknown>(sessionId, `/messages/${encodeURIComponent(chatId)}/history?limit=${limit}`).then((payload) =>
+        asArray<OpenWaMessage>(payload).map((message) => normalizeMessage(message, chatId)),
+      ),
     logout: () => stopSession(sessionId),
   };
 }
