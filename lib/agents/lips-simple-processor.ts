@@ -91,6 +91,7 @@ const PIECE_KEYWORDS: Record<string, string[]> = {
   bomba: ['bomba', 'bomba agua', 'bomba d agua', 'bomba de agua'],
   bucha: ['bucha', 'buchas'],
   corrente: ['corrente'],
+  correia_dentada: ['correia dentada', 'corr dentada', 'correia den'],
   correia: ['correia', 'correia dentada', 'correia alternador'],
   sensor: ['sensor', 'sensores'],
 };
@@ -321,7 +322,7 @@ async function findPartInCatalog(
 
     return Array.from(byId.values())
       .map(item => ({ ...item, matchScore: scoreCatalogItem(item, partName, vehicleInfo) }))
-      .filter(item => item.price && item.price > 0 && item.matchScore > 0)
+      .filter(item => item.price && item.price > 0 && item.matchScore > 0 && isSafeCatalogItemForPart(item, partName))
       .sort((a, b) => b.matchScore - a.matchScore)
       .slice(0, 3);
   } catch (error) {
@@ -354,6 +355,18 @@ function scoreCatalogItem(item: any, partName: string, vehicleInfo?: { model?: s
   if (typeof item.stock_quantity === 'number' && item.stock_quantity < 0) score -= 6;
 
   return score;
+}
+
+function isSafeCatalogItemForPart(item: any, partName: string): boolean {
+  const name = normalizeText(item.name || '');
+
+  if (partName === 'correia_dentada') {
+    const isTimingBelt = name.includes('correia dentada') || name.includes('correia den') || name.includes('corr dentada');
+    const isAccessory = /\b(capa|protetor|tampa|corr alt|correia alt|alternador)\b/.test(name);
+    return isTimingBelt && !isAccessory;
+  }
+
+  return true;
 }
 
 /**
