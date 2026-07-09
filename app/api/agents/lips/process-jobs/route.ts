@@ -22,6 +22,15 @@ import {
 
 export const dynamic = "force-dynamic";
 
+function hasPriceInResponse(response: string) {
+  const normalized = response
+    .replace(/\*/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return /\bValor:\s*R\$/i.test(normalized);
+}
+
 export async function POST(request: NextRequest) {
   try {
     const db = createSupabaseWriteClient();
@@ -142,7 +151,7 @@ export async function POST(request: NextRequest) {
           processResult.quoteOnly &&
           processResult.intent === "quote" &&
           !processResult.requiresHandoff &&
-          /\bValor:\s*R\$/i.test(processResult.response);
+          hasPriceInResponse(processResult.response);
 
         if (canAutoSend) {
           // ========================================================================

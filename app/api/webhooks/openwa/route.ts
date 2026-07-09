@@ -97,8 +97,17 @@ function isSafeAutoQuote(result: Awaited<ReturnType<typeof processLipsMessage>>)
       result.quoteOnly &&
       result.intent === "quote" &&
       !result.requiresHandoff &&
-      /\bValor:\s*R\$/i.test(result.response),
+      hasPriceInResponse(result.response),
   );
+}
+
+function hasPriceInResponse(response: string) {
+  const normalized = response
+    .replace(/\*/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return /\bValor:\s*R\$/i.test(normalized);
 }
 
 export async function POST(request: NextRequest) {
@@ -154,6 +163,14 @@ export async function POST(request: NextRequest) {
           .maybeSingle();
 
         if (msgQuery.data?.id && msgQuery.data?.conversation_id) {
+          const text = (msgQuery.data.body || "").trim();
+          const isLipsChannel = channel.channelId === LIPS_CHANNEL_ID && sessionId === LIPS_SESSION_ID;
+          const isTextMessage = !msgQuery.data.message_type || msgQuery.data.message_type === "text";
+
+          if (!isLipsChannel) {
+            return NextResponse.json({ ok: true });
+          }
+
           const { data: job } = await db.from("agent_automation_jobs").insert({
             tenant_id: channel.tenantId,
             organization_id: channel.organizationId,
@@ -164,11 +181,7 @@ export async function POST(request: NextRequest) {
             agent_type: "lips-auto",
           }).select("id").single();
 
-          const text = (msgQuery.data.body || "").trim();
-          const isLipsChannel = channel.channelId === LIPS_CHANNEL_ID && sessionId === LIPS_SESSION_ID;
-          const isTextMessage = !msgQuery.data.message_type || msgQuery.data.message_type === "text";
-
-          if (isLipsChannel && text && isTextMessage) {
+          if (text && isTextMessage) {
             const processResult = await processLipsMessage(
               db,
               channel.organizationId,
@@ -228,7 +241,28 @@ export async function POST(request: NextRequest) {
                   })
                   .eq("id", job.id);
               }
+            } else if (job?.id) {
+              await db
+                .from("agent_automation_jobs")
+                .update({
+                  status: "done",
+                  completed_at: new Date().toISOString(),
+                  response_type: "not_auto_replied",
+                  response_text: processResult.response || null,
+                  sent_to_evolution: false,
+                })
+                .eq("id", job.id);
             }
+          } else if (job?.id) {
+            await db
+              .from("agent_automation_jobs")
+              .update({
+                status: "done",
+                completed_at: new Date().toISOString(),
+                response_type: "not_auto_replied",
+                sent_to_evolution: false,
+              })
+              .eq("id", job.id);
           }
         }
       }
