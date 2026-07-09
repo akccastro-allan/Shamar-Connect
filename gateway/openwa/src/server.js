@@ -22,6 +22,8 @@ const WEBHOOK_URL = process.env.SHAMARCONNECT_WEBHOOK_URL || "";
 const WEBHOOK_SECRET = process.env.OPENWA_WEBHOOK_SECRET || process.env.SHAMARCONNECT_WEBHOOK_TOKEN || "";
 const AUTO_START = process.env.AUTO_START !== "false";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "*";
+const OPENWA_AUTH_TIMEOUT_MS = Number(process.env.OPENWA_AUTH_TIMEOUT_MS || 0);
+const OPENWA_QR_TIMEOUT_MS = Number(process.env.OPENWA_QR_TIMEOUT_MS || 0);
 
 const app = express();
 app.use(helmet());
@@ -143,20 +145,42 @@ async function initializeSession(session) {
 
   setStatus(session, "connecting");
   session.startedAt = new Date().toISOString();
+  console.log(`[openwa] initializing session=${session.sessionId} dataPath=${SESSION_DATA_PATH}`);
 
   session.initializing = create({
     sessionId: session.sessionId,
     multiDevice: true,
     headless: true,
     popup: false,
-    qrTimeout: 0,
-    authTimeout: 0,
+    qrTimeout: OPENWA_QR_TIMEOUT_MS,
+    authTimeout: OPENWA_AUTH_TIMEOUT_MS,
     cacheEnabled: false,
     useChrome: true,
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || "/usr/bin/chromium",
     sessionDataPath: SESSION_DATA_PATH,
-    chromiumArgs: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+    disableSpins: true,
+    skipUpdateCheck: true,
+    killProcessOnBrowserClose: true,
+    throwErrorOnTosBlock: false,
+    chromiumArgs: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      "--disable-extensions",
+      "--disable-background-networking",
+      "--disable-default-apps",
+      "--disable-sync",
+      "--disable-translate",
+      "--hide-scrollbars",
+      "--mute-audio",
+      "--no-first-run",
+      "--no-zygote",
+      "--single-process",
+      "--user-data-dir=/tmp/openwa-chromium",
+    ],
     qrCallback: async (qr) => {
+      console.log(`[openwa] qr received session=${session.sessionId}`);
       session.latestQrText = qr;
       session.latestQrDataUrl = await QRCode.toDataURL(qr);
       setStatus(session, "qr");
@@ -164,6 +188,7 @@ async function initializeSession(session) {
     },
   })
     .then(async (client) => {
+      console.log(`[openwa] connected session=${session.sessionId}`);
       session.client = client;
       setStatus(session, "connected", { phone: client?.me?._serialized || client?.me?.user || null });
       session.latestQrText = null;
