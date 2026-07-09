@@ -216,6 +216,51 @@ function needsBrakePosition(partNames: string[], items: any[], messageBody: stri
   return positions.size > 1;
 }
 
+function normalizeYearReply(text: string): string | null {
+  const normalized = normalizeText(text);
+  const match = normalized.match(/^\d{2}$|^\d{4}$/);
+  if (!match) return null;
+
+  if (normalized.length === 4) return normalized;
+
+  const value = Number(normalized);
+  const currentYear = new Date().getFullYear() % 100;
+  return String(value <= currentYear + 1 ? 2000 + value : 1900 + value);
+}
+
+function isBrakePositionOnly(text: string): boolean {
+  const normalized = normalizeText(text);
+  return /^(dianteira|dianteiro|diant|frente|traseira|traseiro|tras|traz|trazeira|trazeiro)$/.test(normalized);
+}
+
+async function expandContextualQuoteReply(
+  db: SupabaseClient,
+  conversationId: string,
+  messageBody: string
+): Promise<string> {
+  const year = normalizeYearReply(messageBody);
+  const positionOnly = isBrakePositionOnly(messageBody);
+
+  if (!year && !positionOnly) return messageBody;
+
+  const { data } = await db
+    .from('whatsapp_messages')
+    .select('body')
+    .eq('conversation_id', conversationId)
+    .eq('direction', 'inbound')
+    .not('body', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(8);
+
+  const previousQuote = (data || [])
+    .map(row => (row.body || '').trim())
+    .find(body => body && body !== messageBody && detectPiecesRequested(body).length > 0);
+
+  if (!previousQuote) return messageBody;
+  if (year) return `${previousQuote} ${year}`;
+  return `${previousQuote} ${messageBody}`;
+}
+
 /**
  * Extrai veículo da mensagem (marca + modelo + ano)
  */
@@ -658,6 +703,7 @@ export async function processLipsMessage(
   conversationId: string
 ): Promise<ProcessMessageResult> {
   try {
+    const effectiveMessageBody = await expandContextualQuoteReply(db, conversationId, messageBody);
     const config = getAutoReplyConfig(organizationId);
     if (!config?.enabled || !config.safeAutoReply) {
       return {
@@ -675,7 +721,7 @@ export async function processLipsMessage(
     // ========================================================================
 
     // Se cliente quer avançar depois de uma cotação → balcão confirma antes de finalizar.
-    if (detectProductHandoffIntent(messageBody)) {
+    if (detectProductHandoffIntent(effectiveMessageBody)) {
       return {
         response: BALCAO_HANDOFF_RESPONSE,
         shouldSend: true,
@@ -690,7 +736,7 @@ export async function processLipsMessage(
     }
 
     // Se cliente quer comprar/pagar/reservar → supervisor imediato.
-    if (detectPurchaseIntent(messageBody)) {
+    if (detectPurchaseIntent(effectiveMessageBody)) {
       return {
         response: SUPERVISOR_PURCHASE_RESPONSE,
         shouldSend: true,
@@ -705,7 +751,7 @@ export async function processLipsMessage(
     }
 
     // Se cliente quer serviço → handoff para Oficina
-    if (detectServiceIntent(messageBody)) {
+    if (detectServiceIntent(effectiveMessageBody)) {
       return {
         response: OFICINA_HANDOFF_RESPONSE,
         shouldSend: true,
@@ -722,7 +768,7 @@ export async function processLipsMessage(
     // ========================================================================
     // FASE 2: Saudação/menu oficial da Gabi.
     // ========================================================================
-    if (detectGreeting(messageBody)) {
+    if (detectGreeting(effectiveMessageBody)) {
       return {
         response: GABI_MENU,
         shouldSend: true,
@@ -736,9 +782,9 @@ export async function processLipsMessage(
     // ========================================================================
     // FASE 3: Consultas de peças/preço/estoque (com orçamento inicial)
     // ========================================================================
-    const requestedPieces = detectPiecesRequested(messageBody);
+    const requestedPieces = detectPiecesRequested(effectiveMessageBody);
     if (config.catalogEnabled && requestedPieces.length > 0) {
-      const vehicleInfo = extractVehicleInfo(messageBody);
+      const vehicleInfo = extractVehicleInfo(effectiveMessageBody);
 
       if (needsVehicleYear(requestedPieces, vehicleInfo)) {
         return {
@@ -756,7 +802,7 @@ export async function processLipsMessage(
 
       const { found, notFound } = await findMultipleParts(db, organizationId, requestedPieces, vehicleInfo);
 
-      if (found.length > 0 && needsBrakePosition(requestedPieces, found, messageBody)) {
+      if (found.length > 0 && needsBrakePosition(requestedPieces, found, effectiveMessageBody)) {
         return {
           response: getNeedBrakePositionResponse(),
           shouldSend: true,
@@ -804,7 +850,7 @@ export async function processLipsMessage(
 
       // Caso C: Não encontrou nenhuma. Resposta segura, sem inventar.
       return {
-        response: getNeedMoreInfoResponse(messageBody),
+        response: getNeedMoreInfoResponse(effectiveMessageBody),
         shouldSend: true,
         autoSendAllowed: true,
         requiresHandoff: false,
@@ -816,7 +862,7 @@ export async function processLipsMessage(
       };
     }
 
-    if (detectGeneralSupervisorIntent(messageBody)) {
+    if (detectGeneralSupervisorIntent(effectiveMessageBody)) {
       return {
         response: SUPERVISOR_GENERAL_RESPONSE,
         shouldSend: true,
