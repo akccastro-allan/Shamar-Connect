@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
+import { createSupabaseServerClient, createSupabaseWriteClient } from "@/lib/supabase/server";
 import { sendPasswordRecoveryEmail } from "@/lib/email/resend";
 
 export async function POST(request: NextRequest) {
@@ -11,19 +11,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "E-mail obrigatório." }, { status: 400 });
     }
 
-    const siteUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "https://www.shamarconnect.com.br";
+    const siteUrl = (process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "https://www.shamarconnect.com.br").replace(/\/$/, "");
+    const redirectTo = `${siteUrl}/login/reset-password`;
     const supabase = createSupabaseWriteClient();
 
     const { data, error } = await supabase.auth.admin.generateLink({
       type: "recovery",
       email,
       options: {
-        redirectTo: `${siteUrl}/auth/confirm`,
+        redirectTo,
       },
     });
 
     if (error || !data?.properties?.hashed_token) {
-      return NextResponse.json({ ok: false, error: error?.message ?? "Falha ao gerar link." }, { status: 400 });
+      const publicSupabase = createSupabaseServerClient();
+      const { error: resetError } = await publicSupabase.auth.resetPasswordForEmail(email, { redirectTo });
+
+      if (resetError) {
+        return NextResponse.json({ ok: false, error: resetError.message }, { status: 400 });
+      }
+
+      return NextResponse.json({ ok: true });
     }
 
     const confirmUrl = `${siteUrl}/login/reset-password?token_hash=${data.properties.hashed_token}&type=recovery`;
