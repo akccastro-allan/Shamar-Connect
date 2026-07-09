@@ -16,6 +16,7 @@ function ResetPasswordInner() {
   const [done, setDone] = useState(false);
   const [ready, setReady] = useState(false);
   const [recoveryAccessToken, setRecoveryAccessToken] = useState("");
+  const [recoveryRefreshToken, setRecoveryRefreshToken] = useState("");
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
@@ -45,6 +46,7 @@ function ResetPasswordInner() {
 
         window.history.replaceState(null, "", "/login/reset-password");
         setRecoveryAccessToken(accessToken);
+        setRecoveryRefreshToken(refreshToken);
         setReady(true);
       });
       return;
@@ -95,7 +97,7 @@ function ResetPasswordInner() {
       const response = await fetch("/api/auth/reset-password", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ password, accessToken: token }),
+        body: JSON.stringify({ password, accessToken: token, refreshToken: recoveryRefreshToken }),
       });
       const payload = await response.json().catch(() => ({}));
 

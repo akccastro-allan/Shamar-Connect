@@ -8,6 +8,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
     const password = String(body?.password || "");
     const accessToken = String(body?.accessToken || "");
+    const refreshToken = String(body?.refreshToken || "");
 
     if (password.length < 8) {
       return NextResponse.json({ ok: false, error: "A senha deve ter no mínimo 8 caracteres." }, { status: 400 });
@@ -29,12 +30,18 @@ export async function POST(request: NextRequest) {
         persistSession: false,
         autoRefreshToken: false,
       },
-      global: {
-        headers: {
-          authorization: `Bearer ${accessToken}`,
-        },
-      },
     });
+
+    if (refreshToken) {
+      const { error: sessionError } = await userClient.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      });
+
+      if (sessionError) {
+        return NextResponse.json({ ok: false, error: sessionError.message }, { status: 400 });
+      }
+    }
 
     const { error: updateWithTokenError } = await userClient.auth.updateUser({ password });
 
@@ -46,7 +53,7 @@ export async function POST(request: NextRequest) {
     const { error: updateError } = await adminClient.auth.admin.updateUserById(userData.user.id, { password });
 
     if (updateError) {
-      return NextResponse.json({ ok: false, error: updateError.message }, { status: 400 });
+      return NextResponse.json({ ok: false, error: updateWithTokenError.message || updateError.message }, { status: 400 });
     }
 
     return NextResponse.json({ ok: true });
