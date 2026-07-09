@@ -161,17 +161,6 @@ export async function POST(request: NextRequest) {
           throw new Error("Conversa não encontrada");
         }
 
-        const { data: previousAutoReply } = await db
-          .from("whatsapp_messages")
-          .select("id")
-          .eq("conversation_id", job.conversation_id)
-          .eq("direction", "outbound")
-          .lt("created_at", inboundMsg.created_at)
-          .eq("raw_payload->>sentByAgent", "true")
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
         // Processar mensagem com lógica de autoenvio controlado
         const processResult = await processLipsMessage(
           db,
@@ -192,13 +181,8 @@ export async function POST(request: NextRequest) {
 
         const canAutoSend =
           !isAwaitingHuman &&
-          !previousAutoReply?.id &&
           (!inboundMsg.message_type || ["text", "chat"].includes(inboundMsg.message_type)) &&
           isOfficialAutoReply(processResult);
-
-        if (!isAwaitingHuman && previousAutoReply?.id && processResult.requiresHandoff) {
-          await applyLipsConversationState(db, job.organization_id, job.conversation_id, processResult);
-        }
 
         if (canAutoSend) {
           // ========================================================================

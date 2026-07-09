@@ -168,19 +168,6 @@ export async function POST(request: NextRequest) {
       const wasAwaitingHuman = Boolean(
         existingConversation?.requires_human && existingConversation.pending_reason !== "new_inbound_message",
       );
-      let lastMessageWasAutoOutbound = false;
-
-      if (existingConversation?.id) {
-        const { data: lastMessage } = await db
-          .from("whatsapp_messages")
-          .select("direction, raw_payload")
-          .eq("conversation_id", existingConversation.id)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        const rawPayload = lastMessage?.raw_payload as Record<string, unknown> | null;
-        lastMessageWasAutoOutbound = lastMessage?.direction === "outbound" && rawPayload?.sentByAgent === true;
-      }
 
       const result = await ingestInboundMessage(db, channel, {
         externalEventId: incoming.id,
@@ -237,17 +224,13 @@ export async function POST(request: NextRequest) {
               msgQuery.data.conversation_id,
             );
 
-            if ((wasAwaitingHuman || lastMessageWasAutoOutbound) && job?.id) {
-              if (!wasAwaitingHuman && processResult.requiresHandoff) {
-                await applyLipsConversationState(db, channel.organizationId, msgQuery.data.conversation_id, processResult);
-              }
-
+            if (wasAwaitingHuman && job?.id) {
               await db
                 .from("agent_automation_jobs")
                 .update({
                   status: "done",
                   completed_at: new Date().toISOString(),
-                  response_type: wasAwaitingHuman ? "already_requires_human" : "last_auto_outbound",
+                  response_type: "already_requires_human",
                   response_text: processResult.response || null,
                   sent_to_evolution: false,
                 })
@@ -262,7 +245,7 @@ export async function POST(request: NextRequest) {
                   msgQuery.data.conversation_id,
                   incoming.chatId,
                   processResult.response,
-                  false,
+                  processResult.requiresHandoff,
                   processResult.department,
                 );
 

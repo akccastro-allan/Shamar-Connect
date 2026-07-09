@@ -141,7 +141,8 @@ function detectPurchaseIntent(text: string): boolean {
 
 function detectProductHandoffIntent(text: string): boolean {
   const lower = normalizeText(text);
-  return /quero esse produto|quero essa peça|quero essa peca|tenho interesse nesse produto/.test(lower);
+  return /^(quero|quero sim|eu quero|pode ser)$/.test(lower) ||
+    /quero esse produto|quero essa peça|quero essa peca|tenho interesse nesse produto/.test(lower);
 }
 
 /**
@@ -326,6 +327,13 @@ export type CooldownCheckResult = {
   lastAutoReplyAt?: Date;
 };
 
+function isCatalogQuoteResponse(responseText: string): boolean {
+  return (
+    responseText.includes('Encontrei no catálogo da Lips:') ||
+    responseText.includes('Encontrei algumas opções no catálogo da Lips:')
+  );
+}
+
 /**
  * Verifica se é permitido enviar resposta automática
  * Regras:
@@ -355,16 +363,7 @@ export async function checkCooldown(
       const lastReplyTime = new Date(lastReply.last_automated_response_at);
       const timeSinceLastReply = now.getTime() - lastReplyTime.getTime();
 
-      // Regra 1: Dentro do cooldown?
-      if (timeSinceLastReply < cooldownMs) {
-        return {
-          allowed: false,
-          reason: `cooldown_active (${Math.ceil((cooldownMs - timeSinceLastReply) / 1000)}s restantes)`,
-          lastAutoReplyAt: lastReplyTime,
-        };
-      }
-
-      // Regra 2: Mesma resposta?
+      // Regra 1: nunca repetir a mesma resposta automática em sequência.
       if (lastReply.last_response_text === responseText) {
         return {
           allowed: false,
@@ -372,22 +371,21 @@ export async function checkCooldown(
           lastAutoReplyAt: lastReplyTime,
         };
       }
-    }
 
-    // 3. Verificar se última mensagem foi outbound do sistema
-    const { data: lastMessage } = await db
-      .from('whatsapp_messages')
-      .select('direction')
-      .eq('conversation_id', conversationId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single();
+      // Autopeças: mecânicos podem cotar várias peças em sequência.
+      // Permitir nova cotação diferente mesmo dentro da janela de cooldown.
+      if (timeSinceLastReply < cooldownMs && isCatalogQuoteResponse(responseText)) {
+        return { allowed: true, lastAutoReplyAt: lastReplyTime };
+      }
 
-    if (lastMessage && lastMessage.direction === 'outbound') {
-      return {
-        allowed: false,
-        reason: 'last_message_was_outbound',
-      };
+      // Regra 2: cooldown para menu, não encontrado e direcionamentos.
+      if (timeSinceLastReply < cooldownMs) {
+        return {
+          allowed: false,
+          reason: `cooldown_active (${Math.ceil((cooldownMs - timeSinceLastReply) / 1000)}s restantes)`,
+          lastAutoReplyAt: lastReplyTime,
+        };
+      }
     }
 
     return { allowed: true };
@@ -526,7 +524,7 @@ function formatSinglePieceQuote(item: any): string {
 
 ⚠️ Esses dados são da última atualização do sistema. O balcão confirma aplicação e disponibilidade certinha antes de finalizar.
 
-Posso te ajudar com mais alguma peça?`;
+Lhe ajudo em algo mais?`;
 }
 
 function formatCatalogOptions(items: any[]): string {
@@ -539,7 +537,9 @@ function formatCatalogOptions(items: any[]): string {
 
 ${options}
 
-Para confirmar a aplicação certinha, me envie o modelo completo, ano ou uma foto/código da peça.`;
+Para confirmar a aplicação certinha, me envie o modelo completo, ano ou uma foto/código da peça.
+
+Lhe ajudo em algo mais?`;
 }
 
 /**
