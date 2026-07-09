@@ -189,6 +189,10 @@ export async function POST(request: NextRequest) {
           isOfficialAutoReply(processResult);
 
         if (canAutoSend) {
+          if (processResult.requiresHandoff) {
+            await applyLipsConversationState(db, job.organization_id, job.conversation_id, processResult);
+          }
+
           // ========================================================================
           // Verificar cooldown antes de autoenviar
           // ========================================================================
@@ -248,7 +252,9 @@ export async function POST(request: NextRequest) {
               processResult.response
             );
 
-            await applyLipsConversationState(db, job.organization_id, job.conversation_id, processResult);
+            if (!processResult.requiresHandoff) {
+              await applyLipsConversationState(db, job.organization_id, job.conversation_id, processResult);
+            }
 
             // Marca job como done
             await db

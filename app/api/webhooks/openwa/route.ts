@@ -267,6 +267,10 @@ export async function POST(request: NextRequest) {
                 })
                 .eq("id", job.id);
             } else if (isOfficialAutoReply(processResult)) {
+              if (processResult.requiresHandoff) {
+                await applyLipsConversationState(db, channel.organizationId, msgQuery.data.conversation_id, processResult);
+              }
+
               const cooldown = await checkCooldown(db, msgQuery.data.conversation_id, processResult.response);
 
               if (cooldown.allowed) {
@@ -282,7 +286,9 @@ export async function POST(request: NextRequest) {
 
                 if (sendResult.success) {
                   await recordAutoReply(db, channel.organizationId, msgQuery.data.conversation_id, processResult.response);
-                  await applyLipsConversationState(db, channel.organizationId, msgQuery.data.conversation_id, processResult);
+                  if (!processResult.requiresHandoff) {
+                    await applyLipsConversationState(db, channel.organizationId, msgQuery.data.conversation_id, processResult);
+                  }
                   if (job?.id) {
                     await db
                       .from("agent_automation_jobs")

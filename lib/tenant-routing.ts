@@ -24,7 +24,7 @@ export const LIPS_ROUTING: RoutingConfig = {
     3: { open: "08:00", close: "18:00" },
     4: { open: "08:00", close: "18:00" },
     5: { open: "08:00", close: "18:00" },
-    6: { open: "08:00", close: "15:00" }, // Sábado
+    6: { open: "08:00", close: "14:00" }, // Sábado
   },
   sla: {
     Balcão: 20,
@@ -109,7 +109,7 @@ export function resolveDepartmentRouting(department: Department, config: Routing
 
   const outOfHoursMessage = withinBusinessHours
     ? null
-    : "Recebemos sua mensagem! Nosso horário de atendimento é de segunda a sexta das 8h às 18h e sábados das 8h às 15h. Responderemos assim que abrirmos.";
+    : "Recebemos sua mensagem! Nosso horário de atendimento é de segunda a sexta das 8h às 18h e sábados das 8h às 14h. Responderemos no próximo horário de atendimento.";
 
   return {
     department,

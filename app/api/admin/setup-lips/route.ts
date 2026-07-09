@@ -65,7 +65,7 @@ const LIPS_QUICK_REPLIES = [
   {
     shortcut: "fora_horario",
     title: "Fora do horário",
-    body: "Olá! No momento estamos fora do horário de atendimento. Atendemos de segunda a sexta das 8h às 18h e sábados das 8h às 15h. Sua mensagem foi registrada e responderemos assim que abrirmos. Obrigado pela compreensão!",
+    body: "Olá! No momento estamos fora do horário de atendimento. Atendemos de segunda a sexta das 8h às 18h e sábados das 8h às 14h. Sua mensagem foi registrada e responderemos no próximo horário de atendimento. Obrigado pela compreensão!",
   },
   {
     shortcut: "preco_estoque",
