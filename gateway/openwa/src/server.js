@@ -3,6 +3,8 @@ import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
 import QRCode from "qrcode";
+import { existsSync, rmSync, readdirSync } from "fs";
+import { join } from "path";
 import { create } from "@open-wa/wa-automate";
 
 process.on("unhandledRejection", (reason) => {
@@ -22,8 +24,9 @@ const WEBHOOK_URL = process.env.SHAMARCONNECT_WEBHOOK_URL || "";
 const WEBHOOK_SECRET = process.env.OPENWA_WEBHOOK_SECRET || process.env.SHAMARCONNECT_WEBHOOK_TOKEN || "";
 const AUTO_START = process.env.AUTO_START !== "false";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "*";
-const OPENWA_AUTH_TIMEOUT_MS = Number(process.env.OPENWA_AUTH_TIMEOUT_MS || 0);
-const OPENWA_QR_TIMEOUT_MS = Number(process.env.OPENWA_QR_TIMEOUT_MS || 0);
+const OPENWA_AUTH_TIMEOUT_MS = Number(process.env.OPENWA_AUTH_TIMEOUT_MS || 120000);
+const OPENWA_QR_TIMEOUT_MS = Number(process.env.OPENWA_QR_TIMEOUT_MS || 120000);
+const CLEAN_OPENWA_IGNORE_FILES = process.env.CLEAN_OPENWA_IGNORE_FILES !== "false";
 
 const app = express();
 app.use(helmet());
@@ -92,6 +95,30 @@ function setStatus(session, status, extra = {}) {
   });
 }
 
+function cleanOpenWaIgnoreFiles(sessionId) {
+  if (!CLEAN_OPENWA_IGNORE_FILES) return;
+
+  try {
+    if (!existsSync(SESSION_DATA_PATH)) return;
+
+    const names = readdirSync(SESSION_DATA_PATH);
+    for (const name of names) {
+      const shouldRemove =
+        name === `_IGNORE_${sessionId}` ||
+        name === `_IGNORE_${sessionId}.data.json` ||
+        name.startsWith(`_IGNORE_${sessionId}_`) ||
+        name.startsWith(`_IGNORE_${sessionId}.`);
+
+      if (shouldRemove) {
+        rmSync(join(SESSION_DATA_PATH, name), { force: true, recursive: true });
+        console.log(`[openwa] removed stale ${name}`);
+      }
+    }
+  } catch (error) {
+    console.error("[openwa] cleanup failed:", error instanceof Error ? error.message : error);
+  }
+}
+
 async function notifyShamarConnect(session, event, payload = {}) {
   if (!WEBHOOK_URL) return;
 
@@ -146,6 +173,7 @@ async function initializeSession(session) {
   setStatus(session, "connecting");
   session.startedAt = new Date().toISOString();
   console.log(`[openwa] initializing session=${session.sessionId} dataPath=${SESSION_DATA_PATH}`);
+  cleanOpenWaIgnoreFiles(session.sessionId);
 
   session.initializing = create({
     sessionId: session.sessionId,
