@@ -206,7 +206,7 @@ export async function POST(request: NextRequest) {
 
         if (msgQuery.data?.id && msgQuery.data?.conversation_id) {
           const text = (msgQuery.data.body || "").trim();
-          const isLipsChannel = channel.channelId === LIPS_CHANNEL_ID && sessionId === LIPS_SESSION_ID;
+          const isLipsChannel = channel.channelId === LIPS_CHANNEL_ID;
           const isTextMessage = !msgQuery.data.message_type || ["text", "chat"].includes(msgQuery.data.message_type);
 
           if (!isLipsChannel) {
