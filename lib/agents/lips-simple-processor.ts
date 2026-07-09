@@ -397,7 +397,7 @@ function filterRankedCatalogResults(items: any[], vehicleInfo?: { model?: string
   const model = normalizeText(vehicleInfo.model);
   const modelMatches = items.filter(item => normalizeText(item.name || '').includes(model));
 
-  return modelMatches.length > 0 ? modelMatches : items;
+  return modelMatches;
 }
 
 // ============================================================================
