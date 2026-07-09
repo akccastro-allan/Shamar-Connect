@@ -22,6 +22,8 @@ function verifyOpenWaSignature(rawBody: string, signature: string | null) {
 }
 
 function normalizeIncomingMessage(data: Record<string, unknown>) {
+  const contact = data.contact as Record<string, unknown> | undefined;
+
   if (data.key && data.message) {
     const key = data.key as Record<string, unknown>;
     const message = data.message as Record<string, unknown>;
@@ -43,7 +45,13 @@ function normalizeIncomingMessage(data: Record<string, unknown>) {
     timestamp: data.timestamp as number | undefined,
     fromMe: Boolean(data.fromMe),
     isGroup: Boolean(data.isGroup) || String(data.chatId || data.from || "").endsWith("@g.us"),
-    displayName: data.pushName as string || data.contactName as string || "OpenWA User",
+    displayName:
+      contact?.pushName as string ||
+      contact?.name as string ||
+      data.pushName as string ||
+      data.contactName as string ||
+      data.chatName as string ||
+      "OpenWA User",
   };
 }
 
