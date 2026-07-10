@@ -654,7 +654,19 @@ ${item.brand ? `🏭 Marca: ${item.brand}` : ''}
 💰 **Valor: R$ ${price}**
 📍 **${stock}**
 
-Quer reservar ou falar com alguém? 😊`;
+Quer falar com o balcão para confirmar aplicação e disponibilidade?`;
+}
+
+function formatQuoteStockLine(qty: number | null | undefined): string {
+  if (typeof qty !== 'number') return '📊 Disponibilidade: precisa ser confirmada pelo balcão.';
+  if (qty > 0) return `📊 Estoque na última sincronização: ${Math.floor(qty)} unidade(s)`;
+  return '📊 Infelizmente não temos em estoque na última sincronização.';
+}
+
+function formatOptionAvailability(qty: number | null | undefined): string {
+  if (typeof qty !== 'number') return 'disponibilidade a confirmar';
+  if (qty > 0) return `estoque: ${Math.floor(qty)} un.`;
+  return 'sem estoque na última sincronização';
 }
 
 /**
@@ -663,13 +675,12 @@ Quer reservar ou falar com alguém? 😊`;
  */
 function formatSinglePieceQuote(item: any): string {
   const price = formatPrice(item.price);
-  const stock = item.stock_quantity >= 0 ? item.stock_quantity : 0;
 
   return `Encontrei no catálogo da Lips:
 
 📦 Produto: ${item.name}
 💰 Valor: R$ ${price}
-📊 Estoque na última sincronização: ${Math.max(stock, 0)} unidade(s)
+${formatQuoteStockLine(item.stock_quantity)}
 
 ⚠️ Esses dados são da última atualização do sistema. O balcão confirma aplicação e disponibilidade certinha antes de finalizar.
 
@@ -679,7 +690,7 @@ Lhe ajudo em algo mais?`;
 function formatCatalogOptions(items: any[]): string {
   const options = items
     .slice(0, 3)
-    .map((item, index) => `${index + 1}. ${item.name} — R$ ${formatPrice(item.price)}`)
+    .map((item, index) => `${index + 1}. ${item.name} — R$ ${formatPrice(item.price)} — ${formatOptionAvailability(item.stock_quantity)}`)
     .join('\n');
 
   return `Encontrei algumas opções no catálogo da Lips:
@@ -726,8 +737,7 @@ Aguarde, vamos confirmar tudo com você! 😊`;
 }
 
 function formatStock(qty: number): string {
-  if (qty === 0) return '❌ Sem estoque agora (podemos reservar)';
-  if (qty < 0) return '⏳ Em pedido (retorna em breve)';
+  if (qty <= 0) return '❌ Sem estoque na última sincronização';
   if (qty === 1) return '⚠️ Última unidade';
   if (qty < 5) return `✅ ${Math.floor(qty)} unidades`;
   return `✅ Disponível (${Math.floor(qty)}+ un)`;
