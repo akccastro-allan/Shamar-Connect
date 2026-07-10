@@ -96,6 +96,24 @@ const PIECE_KEYWORDS: Record<string, string[]> = {
   sensor: ['sensor', 'sensores'],
 };
 
+const APPLICATION_REQUIRED_PARTS = new Set([
+  'pastilha',
+  'disco_freio',
+  'filtro_oleo',
+  'filtro',
+  'amortecedor',
+  'vela',
+  'alternador',
+  'radiador',
+  'termostato',
+  'bomba',
+  'bucha',
+  'corrente',
+  'correia_dentada',
+  'correia',
+  'sensor',
+]);
+
 const VEHICLE_MODELS = [
   'gol', 'corolla', 'civic', 'uno', 'prisma', 'onix', 'hb20', 'i30', 'cerato',
   'tucson', 'sportage', 'creta', 'kwid', 'sandero', 'fox', 'palio', 'fiesta',
@@ -210,6 +228,10 @@ function needsVehicleYear(partNames: string[], vehicleInfo: { model?: string; ye
   return Boolean(vehicleInfo.model && !vehicleInfo.year && partNames.length > 0);
 }
 
+function needsVehicleApplication(partNames: string[], vehicleInfo: { model?: string; year?: number }): boolean {
+  return partNames.some(part => APPLICATION_REQUIRED_PARTS.has(part)) && (!vehicleInfo.model || !vehicleInfo.year);
+}
+
 function needsBrakePosition(partNames: string[], items: any[], messageBody: string): boolean {
   if (!partNames.some(part => ['pastilha', 'disco_freio'].includes(part))) return false;
   if (requestedBrakePosition(messageBody)) return false;
@@ -235,6 +257,11 @@ function isBrakePositionOnly(text: string): boolean {
   return /^(dianteira|dianteiro|diant|frente|traseira|traseiro|tras|traz|trazeira|trazeiro)$/.test(normalized);
 }
 
+function isVehicleApplicationReply(text: string): boolean {
+  const vehicleInfo = extractVehicleInfo(text);
+  return Boolean(vehicleInfo.model || vehicleInfo.year);
+}
+
 async function expandContextualQuoteReply(
   db: SupabaseClient,
   conversationId: string,
@@ -242,8 +269,9 @@ async function expandContextualQuoteReply(
 ): Promise<string> {
   const year = normalizeYearReply(messageBody);
   const positionOnly = isBrakePositionOnly(messageBody);
+  const vehicleApplicationReply = isVehicleApplicationReply(messageBody) && detectPiecesRequested(messageBody).length === 0;
 
-  if (!year && !positionOnly) return messageBody;
+  if (!year && !positionOnly && !vehicleApplicationReply) return messageBody;
 
   const { data } = await db
     .from('whatsapp_messages')
@@ -259,7 +287,7 @@ async function expandContextualQuoteReply(
     .find(body => body && body !== messageBody && detectPiecesRequested(body).length > 0);
 
   if (!previousQuote) return messageBody;
-  if (year) return `${previousQuote} ${year}`;
+  if (year || vehicleApplicationReply) return `${previousQuote} ${messageBody}`;
   return `${previousQuote} ${messageBody}`;
 }
 
@@ -706,6 +734,10 @@ function getNeedYearResponse(vehicleModel: string): string {
   return `Para localizar a peça certa para ${vehicleModel.toUpperCase()}, me informe o ano do veículo, por favor.`;
 }
 
+function getNeedVehicleApplicationResponse(): string {
+  return 'Para localizar a peça certa com segurança, me informe o modelo e o ano do veículo, por favor.';
+}
+
 function getNeedBrakePositionResponse(): string {
   return `Você precisa da peça dianteira ou traseira?`;
 }
@@ -804,6 +836,24 @@ export async function processLipsMessage(
     const requestedPieces = detectPiecesRequested(effectiveMessageBody);
     if (config.catalogEnabled && requestedPieces.length > 0) {
       const vehicleInfo = extractVehicleInfo(effectiveMessageBody);
+
+      if (needsVehicleApplication(requestedPieces, vehicleInfo)) {
+        const response = vehicleInfo.model
+          ? getNeedYearResponse(vehicleInfo.model)
+          : getNeedVehicleApplicationResponse();
+
+        return {
+          response,
+          shouldSend: true,
+          autoSendAllowed: true,
+          requiresHandoff: false,
+          quoteOnly: false,
+          idleCloseAfterMinutes: 10,
+          nextStatusSuggestion: 'open',
+          confidence: 0.85,
+          intent: vehicleInfo.model ? 'need_vehicle_year' : 'need_vehicle_application',
+        };
+      }
 
       if (needsVehicleYear(requestedPieces, vehicleInfo)) {
         return {
