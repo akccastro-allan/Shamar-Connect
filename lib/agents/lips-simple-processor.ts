@@ -303,10 +303,11 @@ async function expandContextualQuoteReply(
       .slice(0, previousQuoteIndex)
       .find(body => detectPiecesRequested(body).length === 0 && extractVehicleInfo(body).model);
 
-    if (previousVehicleReply) return `${previousQuote} ${previousVehicleReply} ${messageBody}`;
+    if (previousVehicleReply) return `${previousQuote} ${previousVehicleReply} ${year}`;
   }
 
-  if (year || vehicleApplicationReply) return `${previousQuote} ${messageBody}`;
+  if (year) return `${previousQuote} ${year}`;
+  if (vehicleApplicationReply) return `${previousQuote} ${messageBody}`;
   return `${previousQuote} ${messageBody}`;
 }
 
