@@ -22,6 +22,15 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { resolveSessionClient } from '@/lib/providers/resolve-session';
 import { getAutoReplyConfig, LIPS_AUTO_REPLY_CONFIG } from '@/lib/agents/auto-reply-config';
+import {
+  CatalogQueryClassification,
+  PART_FAMILY_RULES,
+  classifyCatalogQuery,
+  queryNeedsPositionFromCandidates,
+  queryNeedsSideFromCandidates,
+  queryNeedsVerticalPositionFromCandidates,
+  scoreCatalogCandidate,
+} from '@/lib/catalog/lips-classifier';
 
 // ============================================================================
 // Types
@@ -72,56 +81,6 @@ const SLA_MINUTES = {
 } as const;
 
 // ============================================================================
-// Banco de peças (com sinônimos e variações)
-// ============================================================================
-
-const PIECE_KEYWORDS: Record<string, string[]> = {
-  pastilha: ['pastilha', 'pastilhas', 'past', 'past freio', 'pastilha freio', 'pastilha de freio', 'plaqueta', 'plaquetas', 'kit pastilha', 'freio'],
-  disco_freio: ['disco freio', 'disco de freio', 'discos de freio', 'disco'],
-  oleo: ['oleo', 'óleo', 'lubrificante'],
-  filtro_oleo: ['filtro oleo', 'filtro de oleo', 'filtro óleo', 'filtro de óleo', 'filtro lubrificante'],
-  filtro: ['filtro', 'filtros', 'filtro ar', 'filtro de ar', 'filtro combustivel', 'filtro combustível'],
-  bateria: ['bateria', 'baterias', 'bat'],
-  pneu: ['pneu', 'pneus'],
-  amortecedor: ['amortecedor', 'amortecedores', 'amort', 'amort diant', 'amort dianteiro', 'amort tras', 'amort traseiro'],
-  vela: ['vela', 'velas'],
-  alternador: ['alternador'],
-  radiador: ['radiador'],
-  termostato: ['termostato'],
-  bomba: ['bomba', 'bomba agua', 'bomba d agua', 'bomba de agua'],
-  bucha: ['bucha', 'buchas'],
-  corrente: ['corrente'],
-  correia_dentada: ['correia dentada', 'corr dentada', 'correia den'],
-  correia: ['correia', 'correia dentada', 'correia alternador'],
-  sensor: ['sensor', 'sensores'],
-};
-
-const APPLICATION_REQUIRED_PARTS = new Set([
-  'pastilha',
-  'disco_freio',
-  'filtro_oleo',
-  'filtro',
-  'amortecedor',
-  'vela',
-  'alternador',
-  'radiador',
-  'termostato',
-  'bomba',
-  'bucha',
-  'corrente',
-  'correia_dentada',
-  'correia',
-  'sensor',
-]);
-
-const VEHICLE_MODELS = [
-  'corolla', 'civic', 'prisma', 'onix', 'hb20', 'cerato', 'tucson', 'sportage',
-  'creta', 'kwid', 'sandero', 'saveiro', 'strada', 'voyage', 'sentra', 'hilux',
-  'ranger', 'fiesta', 'palio', 'astra', 'meriva', 'vectra', 'celta', 'kombi',
-  'golf', 'polo', 'fox', 'uno', 'gol', 'ka', 's10', 'i30',
-];
-
-// ============================================================================
 // Funções de detecção
 // ============================================================================
 
@@ -133,19 +92,6 @@ function normalizeText(text: string): string {
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-}
-
-function tokenVariants(value: string): string[] {
-  const normalized = normalizeText(value);
-  const tokens = normalized.split(' ').filter(Boolean);
-  const singular = tokens.map(token => token.endsWith('s') && token.length > 3 ? token.slice(0, -1) : token);
-  return Array.from(new Set([normalized, singular.join(' ')]));
-}
-
-function includesNormalizedToken(text: string, token: string): boolean {
-  const normalizedToken = normalizeText(token);
-  if (!normalizedToken) return false;
-  return new RegExp(`(^|\\s)${normalizedToken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s|$)`).test(text);
 }
 
 function detectGreeting(text: string): boolean {
@@ -188,63 +134,9 @@ function detectGeneralSupervisorIntent(text: string): boolean {
   return /responsavel|reclamacao|parceria|fornecedor|administrativo|gerente|dono|falar com/.test(lower);
 }
 
-/**
- * Detecta peças solicitadas (suporta múltiplas)
- * Retorna lista de nomes de peças encontradas
- */
-function detectPiecesRequested(text: string): string[] {
-  const lower = normalizeText(text);
-  const foundPieces = new Set<string>();
-
-  // Procurar todas as peças mencionadas
-  Object.entries(PIECE_KEYWORDS).forEach(([pieceType, keywords]) => {
-    keywords.forEach(kw => {
-      if (tokenVariants(kw).some(variant => lower.includes(variant))) {
-        foundPieces.add(pieceType);
-      }
-    });
-  });
-
-  // Padrão explícito de pergunta sobre peça ou menção direta a uma peça conhecida.
-  const isPieceQuery =
-    /qual.*valor|quanto custa|preco|valor|tem|estoque|disponivel|peca|produto|modelo|orcamento|quanto (fica|da|sai)|preciso de/i.test(lower) ||
-    foundPieces.size > 0;
-
-  if (!isPieceQuery) {
-    return [];
-  }
-
-  return Array.from(foundPieces);
-}
-
-function requestedBrakePosition(text: string): 'dianteiro' | 'traseiro' | null {
-  const lower = normalizeText(text);
-  if (/diant|dianteir|frente/.test(lower)) return 'dianteiro';
-  if (/tras|traseir|traz|trazeir/.test(lower)) return 'traseiro';
-  return null;
-}
-
-function itemBrakePosition(item: any): 'dianteiro' | 'traseiro' | null {
-  const name = normalizeText(item.name || '');
-  if (/diant|dianteir/.test(name)) return 'dianteiro';
-  if (/tras|traseir/.test(name)) return 'traseiro';
-  return null;
-}
-
-function needsVehicleYear(partNames: string[], vehicleInfo: { model?: string; year?: number }): boolean {
-  return Boolean(vehicleInfo.model && !vehicleInfo.year && partNames.length > 0);
-}
-
-function needsVehicleApplication(partNames: string[], vehicleInfo: { model?: string; year?: number }): boolean {
-  return partNames.some(part => APPLICATION_REQUIRED_PARTS.has(part)) && (!vehicleInfo.model || !vehicleInfo.year);
-}
-
-function needsBrakePosition(partNames: string[], items: any[], messageBody: string): boolean {
-  if (!partNames.some(part => ['pastilha', 'disco_freio'].includes(part))) return false;
-  if (requestedBrakePosition(messageBody)) return false;
-
-  const positions = new Set(items.map(itemBrakePosition).filter(Boolean));
-  return positions.size > 1;
+function hasCatalogQueryIntent(text: string): boolean {
+  const classification = classifyCatalogQuery(text);
+  return Boolean(classification.family) || classification.missingRequiredFields.length > 0;
 }
 
 function normalizeYearReply(text: string): string | null {
@@ -264,9 +156,14 @@ function isBrakePositionOnly(text: string): boolean {
   return /^(dianteira|dianteiro|diant|frente|traseira|traseiro|tras|traz|trazeira|trazeiro)$/.test(normalized);
 }
 
+function isCatalogDetailOnly(text: string): boolean {
+  const normalized = normalizeText(text);
+  return /^(direito|direita|lado direito|ld|esquerdo|esquerda|lado esquerdo|le|superior|sup|inferior|inf|oleo|ar|combustivel|cabine|dentada|alternador|capa|protetor|agua|oleo)$/.test(normalized);
+}
+
 function isVehicleApplicationReply(text: string): boolean {
-  const vehicleInfo = extractVehicleInfo(text);
-  return Boolean(vehicleInfo.model || vehicleInfo.year);
+  const classification = classifyCatalogQuery(text);
+  return Boolean(classification.vehicle || classification.year);
 }
 
 async function expandContextualQuoteReply(
@@ -276,9 +173,10 @@ async function expandContextualQuoteReply(
 ): Promise<string> {
   const year = normalizeYearReply(messageBody);
   const positionOnly = isBrakePositionOnly(messageBody);
-  const vehicleApplicationReply = isVehicleApplicationReply(messageBody) && detectPiecesRequested(messageBody).length === 0;
+  const catalogDetailOnly = isCatalogDetailOnly(messageBody);
+  const vehicleApplicationReply = isVehicleApplicationReply(messageBody) && !hasCatalogQueryIntent(messageBody);
 
-  if (!year && !positionOnly && !vehicleApplicationReply) return messageBody;
+  if (!year && !positionOnly && !catalogDetailOnly && !vehicleApplicationReply) return messageBody;
 
   const { data } = await db
     .from('whatsapp_messages')
@@ -293,7 +191,7 @@ async function expandContextualQuoteReply(
     .map(row => (row.body || '').trim())
     .filter(body => body && body !== messageBody);
 
-  const previousQuoteIndex = previousMessages.findIndex(body => detectPiecesRequested(body).length > 0);
+  const previousQuoteIndex = previousMessages.findIndex(hasCatalogQueryIntent);
   const previousQuote = previousQuoteIndex >= 0 ? previousMessages[previousQuoteIndex] : null;
 
   if (!previousQuote) return messageBody;
@@ -301,7 +199,7 @@ async function expandContextualQuoteReply(
   if (year) {
     const previousVehicleReply = previousMessages
       .slice(0, previousQuoteIndex)
-      .find(body => detectPiecesRequested(body).length === 0 && extractVehicleInfo(body).model);
+      .find(body => !hasCatalogQueryIntent(body) && Boolean(classifyCatalogQuery(body).vehicle));
 
     if (previousVehicleReply) return `${previousQuote} ${previousVehicleReply} ${year}`;
   }
@@ -311,45 +209,23 @@ async function expandContextualQuoteReply(
   return `${previousQuote} ${messageBody}`;
 }
 
-/**
- * Extrai veículo da mensagem (marca + modelo + ano)
- */
-function extractVehicleInfo(text: string): {
-  brand?: string;
-  model?: string;
-  year?: number;
-} {
-  const lower = normalizeText(text);
-  const result: any = {};
-
-  VEHICLE_MODELS.forEach(model => {
-    if (includesNormalizedToken(lower, model)) {
-      result.model = model;
-    }
-  });
-
-  // Ano (ex: 2010, 2015)
-  const yearMatch = text.match(/\b(19|20)\d{2}\b/);
-  if (yearMatch) {
-    result.year = parseInt(yearMatch[0]);
-  }
-
-  return result;
-}
-
 // ============================================================================
 // Buscar peças no catálogo (suporta múltiplas)
 // ============================================================================
 
-async function findPartInCatalog(
+async function findClassifiedCatalogItems(
   db: SupabaseClient,
   organizationId: string,
-  partName: string,
-  vehicleInfo?: { model?: string; year?: number }
+  classification: CatalogQueryClassification,
 ): Promise<any[]> {
+  if (!classification.family) return [];
+
   try {
-    const synonyms = PIECE_KEYWORDS[partName] ?? [partName];
-    const searchTerms = Array.from(new Set([partName, ...synonyms].flatMap(tokenVariants))).slice(0, 8);
+    const rule = PART_FAMILY_RULES[classification.family];
+    const searchTerms = Array.from(new Set([
+      ...rule.positiveTerms,
+      classification.vehicle,
+    ].filter(Boolean) as string[])).slice(0, 8);
     const results: any[] = [];
 
     for (const term of searchTerms) {
@@ -359,7 +235,7 @@ async function findPartInCatalog(
         .eq('organization_id', organizationId)
         .eq('status', 'active')
         .ilike('name', `%${term}%`)
-        .limit(8);
+        .limit(100);
 
       if (data) results.push(...data);
     }
@@ -370,96 +246,22 @@ async function findPartInCatalog(
     });
 
     return Array.from(byId.values())
-      .map(item => ({ ...item, matchScore: scoreCatalogItem(item, partName, vehicleInfo) }))
-      .filter(item => item.price && item.price > 0 && item.matchScore > 0 && isSafeCatalogItemForPart(item, partName))
-      .sort((a, b) => b.matchScore - a.matchScore)
-      .slice(0, 3);
+      .map(item => {
+        const candidateScore = scoreCatalogCandidate(item, classification);
+        return {
+          ...item,
+          matchScore: candidateScore.score,
+          confidence: candidateScore.confidence,
+          candidateScore,
+        };
+      })
+      .filter(item => item.candidateScore.familyMatch && item.price && item.price > 0)
+      .sort((a, b) => b.confidence - a.confidence || b.matchScore - a.matchScore)
+      .slice(0, 8);
   } catch (error) {
-    console.error('[lips-simple-processor] Erro ao buscar peça:', error);
+    console.error('[lips-simple-processor] Erro ao buscar catálogo classificado:', error);
     return [];
   }
-}
-
-function scoreCatalogItem(item: any, partName: string, vehicleInfo?: { model?: string; year?: number }): number {
-  const name = normalizeText(item.name || '');
-  const sku = normalizeText(item.sku || '');
-  const brand = normalizeText(item.brand || '');
-  const haystack = `${name} ${sku} ${brand}`;
-  const synonyms = PIECE_KEYWORDS[partName] ?? [partName];
-  let score = 0;
-
-  if (name === normalizeText(partName)) score += 80;
-  if (haystack.includes(normalizeText(partName))) score += 40;
-
-  for (const synonym of synonyms) {
-    const normalizedSynonym = normalizeText(synonym);
-    if (!normalizedSynonym) continue;
-    if (haystack.includes(normalizedSynonym)) score += normalizedSynonym.includes(' ') ? 28 : 18;
-  }
-
-  if (vehicleInfo?.model && haystack.includes(normalizeText(vehicleInfo.model))) score += 25;
-  if (vehicleInfo?.year && haystack.includes(String(vehicleInfo.year))) score += 12;
-  if (item.price && item.price > 0) score += 20;
-  if (typeof item.stock_quantity === 'number' && item.stock_quantity > 0) score += 8;
-  if (typeof item.stock_quantity === 'number' && item.stock_quantity < 0) score -= 6;
-
-  return score;
-}
-
-function isSafeCatalogItemForPart(item: any, partName: string): boolean {
-  const name = normalizeText(item.name || '');
-
-  if (partName === 'correia_dentada') {
-    const isTimingBelt = name.includes('correia dentada') || name.includes('correia den') || name.includes('corr dentada');
-    const isAccessory = /\b(capa|protetor|tampa|corr alt|correia alt|alternador)\b/.test(name);
-    return isTimingBelt && !isAccessory;
-  }
-
-  return true;
-}
-
-/**
- * Buscar múltiplas peças no catálogo
- */
-async function findMultipleParts(
-  db: SupabaseClient,
-  organizationId: string,
-  partNames: string[],
-  vehicleInfo?: { model?: string; year?: number }
-): Promise<{ found: any[]; notFound: string[] }> {
-  const found: any[] = [];
-  const notFound: string[] = [];
-
-  for (const partName of partNames) {
-    const items = await findPartInCatalog(db, organizationId, partName, vehicleInfo);
-    if (items.length > 0) {
-      found.push(...items);
-    } else {
-      notFound.push(partName);
-    }
-  }
-
-  const byId = new Map<string, any>();
-  found.forEach(item => {
-    if (item?.id) byId.set(item.id, item);
-  });
-
-  return {
-    found: filterRankedCatalogResults(
-      Array.from(byId.values()).sort((a, b) => (b.matchScore ?? 0) - (a.matchScore ?? 0)),
-      vehicleInfo,
-    ).slice(0, 3),
-    notFound,
-  };
-}
-
-function filterRankedCatalogResults(items: any[], vehicleInfo?: { model?: string; year?: number }): any[] {
-  if (!vehicleInfo?.model) return items;
-
-  const model = normalizeText(vehicleInfo.model);
-  const modelMatches = items.filter(item => normalizeText(item.name || '').includes(model));
-
-  return modelMatches;
 }
 
 // ============================================================================
@@ -475,7 +277,8 @@ export type CooldownCheckResult = {
 function isCatalogQuoteResponse(responseText: string): boolean {
   return (
     responseText.includes('Encontrei no catálogo da Lips:') ||
-    responseText.includes('Encontrei algumas opções no catálogo da Lips:')
+    responseText.includes('Encontrei algumas opções no catálogo da Lips:') ||
+    responseText.includes('Encontrei algumas opções parecidas no catálogo da Lips:')
   );
 }
 
@@ -659,15 +462,15 @@ Quer falar com o balcão para confirmar aplicação e disponibilidade?`;
 }
 
 function formatQuoteStockLine(qty: number | null | undefined): string {
-  if (typeof qty !== 'number') return '📊 Disponibilidade: precisa ser confirmada pelo balcão.';
+  if (typeof qty !== 'number') return '📊 Disponibilidade: precisa ser confirmada pelo balcão. Vou direcionar para confirmação.';
   if (qty > 0) return `📊 Estoque na última sincronização: ${Math.floor(qty)} unidade(s)`;
-  return '📊 Infelizmente não temos em estoque na última sincronização.';
+  return '📊 O sistema não mostra saldo disponível na última sincronização. Vou direcionar para o balcão confirmar.';
 }
 
 function formatOptionAvailability(qty: number | null | undefined): string {
   if (typeof qty !== 'number') return 'disponibilidade a confirmar';
   if (qty > 0) return `estoque: ${Math.floor(qty)} un.`;
-  return 'sem estoque na última sincronização';
+  return 'saldo precisa ser confirmado pelo balcão';
 }
 
 /**
@@ -694,11 +497,11 @@ function formatCatalogOptions(items: any[]): string {
     .map((item, index) => `${index + 1}. ${item.name} — R$ ${formatPrice(item.price)} — ${formatOptionAvailability(item.stock_quantity)}`)
     .join('\n');
 
-  return `Encontrei algumas opções no catálogo da Lips:
+  return `Encontrei algumas opções parecidas no catálogo da Lips:
 
 ${options}
 
-Para confirmar a aplicação certinha, me envie o modelo completo, ano ou uma foto/código da peça.
+Para confirmar a aplicação correta, preciso da posição/lado quando aplicável, código ou foto da peça.
 
 Lhe ajudo em algo mais?`;
 }
@@ -738,7 +541,7 @@ Aguarde, vamos confirmar tudo com você! 😊`;
 }
 
 function formatStock(qty: number): string {
-  if (qty <= 0) return '❌ Sem estoque na última sincronização';
+  if (qty <= 0) return '⚠️ Saldo precisa ser confirmado pelo balcão';
   if (qty === 1) return '⚠️ Última unidade';
   if (qty < 5) return `✅ ${Math.floor(qty)} unidades`;
   return `✅ Disponível (${Math.floor(qty)}+ un)`;
@@ -746,6 +549,10 @@ function formatStock(qty: number): string {
 
 function formatPrice(price: number): string {
   return price.toFixed(2).replace('.', ',');
+}
+
+function requiresStockConfirmation(item: any): boolean {
+  return typeof item.stock_quantity !== 'number' || item.stock_quantity <= 0;
 }
 
 function getNeedMoreInfoResponse(text: string): string {
@@ -765,11 +572,35 @@ function getNeedYearResponse(vehicleModel: string): string {
 }
 
 function getNeedVehicleApplicationResponse(): string {
-  return 'Para localizar a peça certa com segurança, me informe o modelo e o ano do veículo, por favor.';
+  return 'Para localizar a peça certa, me informe o modelo do veículo, por favor.';
 }
 
 function getNeedBrakePositionResponse(): string {
   return `Você precisa da peça dianteira ou traseira?`;
+}
+
+function getNeedSideResponse(): string {
+  return 'Você precisa do lado direito ou esquerdo?';
+}
+
+function getNeedVerticalPositionResponse(): string {
+  return 'Você precisa da peça superior ou inferior?';
+}
+
+function getNeedCatalogTypeResponse(field: string): string {
+  if (field === 'tipo do filtro') return 'Você precisa de filtro de óleo, filtro de ar, filtro de combustível ou filtro de cabine?';
+  if (field === 'tipo da bomba') return 'Você precisa de bomba d\'água ou bomba de óleo?';
+  if (field === 'tipo da correia') return 'Você precisa de correia dentada, correia do alternador, capa ou protetor da correia?';
+  return 'Para localizar a peça certa, me informe mais detalhes da peça, por favor.';
+}
+
+function getClassificationMissingFieldResponse(classification: CatalogQueryClassification): string {
+  if (classification.missingRequiredFields.includes('tipo do filtro')) return getNeedCatalogTypeResponse('tipo do filtro');
+  if (classification.missingRequiredFields.includes('tipo da bomba')) return getNeedCatalogTypeResponse('tipo da bomba');
+  if (classification.missingRequiredFields.includes('tipo da correia')) return getNeedCatalogTypeResponse('tipo da correia');
+  if (classification.missingRequiredFields.includes('modelo do veículo')) return getNeedVehicleApplicationResponse();
+  if (classification.missingRequiredFields.includes('ano do veículo')) return 'Qual é o ano do veículo?';
+  return getNeedMoreInfoResponse('');
 }
 
 // ============================================================================
@@ -863,17 +694,13 @@ export async function processLipsMessage(
     // ========================================================================
     // FASE 3: Consultas de peças/preço/estoque (com orçamento inicial)
     // ========================================================================
-    const requestedPieces = detectPiecesRequested(effectiveMessageBody);
-    if (config.catalogEnabled && requestedPieces.length > 0) {
-      const vehicleInfo = extractVehicleInfo(effectiveMessageBody);
+    const catalogClassification = classifyCatalogQuery(effectiveMessageBody);
+    const hasCatalogIntent = hasCatalogQueryIntent(effectiveMessageBody);
 
-      if (needsVehicleApplication(requestedPieces, vehicleInfo)) {
-        const response = vehicleInfo.model
-          ? getNeedYearResponse(vehicleInfo.model)
-          : getNeedVehicleApplicationResponse();
-
+    if (config.catalogEnabled && hasCatalogIntent) {
+      if (catalogClassification.missingRequiredFields.length > 0) {
         return {
-          response,
+          response: getClassificationMissingFieldResponse(catalogClassification),
           shouldSend: true,
           autoSendAllowed: true,
           requiresHandoff: false,
@@ -881,27 +708,13 @@ export async function processLipsMessage(
           idleCloseAfterMinutes: 10,
           nextStatusSuggestion: 'open',
           confidence: 0.85,
-          intent: vehicleInfo.model ? 'need_vehicle_year' : 'need_vehicle_application',
+          intent: 'need_catalog_application',
         };
       }
 
-      if (needsVehicleYear(requestedPieces, vehicleInfo)) {
-        return {
-          response: getNeedYearResponse(vehicleInfo.model || 'o veículo'),
-          shouldSend: true,
-          autoSendAllowed: true,
-          requiresHandoff: false,
-          quoteOnly: false,
-          idleCloseAfterMinutes: 10,
-          nextStatusSuggestion: 'open',
-          confidence: 0.85,
-          intent: 'need_vehicle_year',
-        };
-      }
+      const found = await findClassifiedCatalogItems(db, organizationId, catalogClassification);
 
-      const { found, notFound } = await findMultipleParts(db, organizationId, requestedPieces, vehicleInfo);
-
-      if (found.length > 0 && needsBrakePosition(requestedPieces, found, effectiveMessageBody)) {
+      if (found.length > 0 && queryNeedsPositionFromCandidates(catalogClassification, found)) {
         return {
           response: getNeedBrakePositionResponse(),
           shouldSend: true,
@@ -915,14 +728,51 @@ export async function processLipsMessage(
         };
       }
 
+      if (found.length > 0 && queryNeedsSideFromCandidates(catalogClassification, found)) {
+        return {
+          response: getNeedSideResponse(),
+          shouldSend: true,
+          autoSendAllowed: true,
+          requiresHandoff: false,
+          quoteOnly: false,
+          idleCloseAfterMinutes: 10,
+          nextStatusSuggestion: 'open',
+          confidence: 0.85,
+          intent: 'need_side',
+        };
+      }
+
+      if (found.length > 0 && queryNeedsVerticalPositionFromCandidates(catalogClassification, found)) {
+        return {
+          response: getNeedVerticalPositionResponse(),
+          shouldSend: true,
+          autoSendAllowed: true,
+          requiresHandoff: false,
+          quoteOnly: false,
+          idleCloseAfterMinutes: 10,
+          nextStatusSuggestion: 'open',
+          confidence: 0.85,
+          intent: 'need_vertical_position',
+        };
+      }
+
+      const confidentMatches = found.filter(item => item.confidence >= 0.75).slice(0, 3);
+
       // Caso A: confiança alta em um produto com preço seguro.
-      if (found.length === 1 || (found.length > 1 && (found[0].matchScore ?? 0) >= ((found[1].matchScore ?? 0) + 25))) {
-        const quoteSingleResponse = formatSinglePieceQuote(found[0]);
+      if (
+        confidentMatches[0]?.confidence >= 0.90 &&
+        (!confidentMatches[1] || confidentMatches[0].confidence >= confidentMatches[1].confidence + 0.08)
+      ) {
+        const quoteSingleResponse = formatSinglePieceQuote(confidentMatches[0]);
+        const stockConfirmationNeeded = requiresStockConfirmation(confidentMatches[0]);
         return {
           response: quoteSingleResponse,
           shouldSend: true,
           autoSendAllowed: true, // Consulta simples: autoenvio OK
-          requiresHandoff: false, // Consulta simples NÃO escala
+          requiresHandoff: stockConfirmationNeeded,
+          department: stockConfirmationNeeded ? 'Balcão' : undefined,
+          handoffReason: stockConfirmationNeeded ? 'stock_confirmation_needed' : undefined,
+          slaMinutes: stockConfirmationNeeded ? SLA_MINUTES.Balcão : undefined,
           quoteOnly: true, // É apenas uma cotação consultiva
           idleCloseAfterMinutes: 10, // Marcar como idle se não responder em 10min
           nextStatusSuggestion: 'open',
@@ -932,8 +782,8 @@ export async function processLipsMessage(
       }
 
       // Caso B: encontrou opções parecidas; listar até 3 sem escolher aplicação.
-      if (found.length > 1) {
-        const response = formatCatalogOptions(found);
+      if (confidentMatches.length > 1) {
+        const response = formatCatalogOptions(confidentMatches);
         return {
           response,
           shouldSend: true,
