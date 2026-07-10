@@ -115,9 +115,10 @@ const APPLICATION_REQUIRED_PARTS = new Set([
 ]);
 
 const VEHICLE_MODELS = [
-  'gol', 'corolla', 'civic', 'uno', 'prisma', 'onix', 'hb20', 'i30', 'cerato',
-  'tucson', 'sportage', 'creta', 'kwid', 'sandero', 'fox', 'palio', 'fiesta',
-  'ka', 'sentra', 'hilux', 'ranger', 's10', 'saveiro', 'strada', 'voyage',
+  'corolla', 'civic', 'prisma', 'onix', 'hb20', 'cerato', 'tucson', 'sportage',
+  'creta', 'kwid', 'sandero', 'saveiro', 'strada', 'voyage', 'sentra', 'hilux',
+  'ranger', 'fiesta', 'palio', 'astra', 'meriva', 'vectra', 'celta', 'kombi',
+  'golf', 'polo', 'fox', 'uno', 'gol', 'ka', 's10', 'i30',
 ];
 
 // ============================================================================
@@ -139,6 +140,12 @@ function tokenVariants(value: string): string[] {
   const tokens = normalized.split(' ').filter(Boolean);
   const singular = tokens.map(token => token.endsWith('s') && token.length > 3 ? token.slice(0, -1) : token);
   return Array.from(new Set([normalized, singular.join(' ')]));
+}
+
+function includesNormalizedToken(text: string, token: string): boolean {
+  const normalizedToken = normalizeText(token);
+  if (!normalizedToken) return false;
+  return new RegExp(`(^|\\s)${normalizedToken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s|$)`).test(text);
 }
 
 function detectGreeting(text: string): boolean {
@@ -282,11 +289,23 @@ async function expandContextualQuoteReply(
     .order('created_at', { ascending: false })
     .limit(8);
 
-  const previousQuote = (data || [])
+  const previousMessages = (data || [])
     .map(row => (row.body || '').trim())
-    .find(body => body && body !== messageBody && detectPiecesRequested(body).length > 0);
+    .filter(body => body && body !== messageBody);
+
+  const previousQuoteIndex = previousMessages.findIndex(body => detectPiecesRequested(body).length > 0);
+  const previousQuote = previousQuoteIndex >= 0 ? previousMessages[previousQuoteIndex] : null;
 
   if (!previousQuote) return messageBody;
+
+  if (year) {
+    const previousVehicleReply = previousMessages
+      .slice(0, previousQuoteIndex)
+      .find(body => detectPiecesRequested(body).length === 0 && extractVehicleInfo(body).model);
+
+    if (previousVehicleReply) return `${previousQuote} ${previousVehicleReply} ${messageBody}`;
+  }
+
   if (year || vehicleApplicationReply) return `${previousQuote} ${messageBody}`;
   return `${previousQuote} ${messageBody}`;
 }
@@ -303,7 +322,7 @@ function extractVehicleInfo(text: string): {
   const result: any = {};
 
   VEHICLE_MODELS.forEach(model => {
-    if (lower.includes(model)) {
+    if (includesNormalizedToken(lower, model)) {
       result.model = model;
     }
   });
