@@ -4,38 +4,12 @@ import {
   channelRoadmap,
   commandCenterEntities,
   commandCenterMode,
-  LIPS_CHANNEL_ID,
-  LIPS_SESSION_ID,
   statusLabel,
   type ChannelKey,
   type CommandCenterStatus,
 } from "@/lib/admin/command-center-config";
-import { isLipsChannelValidated, type LipsLiveStatus } from "@/lib/admin/command-center-data";
 import { MetaReadinessCard } from "@/components/admin/command-center/meta-readiness-card";
 import { OperationCard } from "@/components/admin/command-center/operation-card";
-
-type CommandCenterDashboardProps = {
-  lips: LipsLiveStatus;
-};
-
-function formatDateTime(value?: string | null) {
-  if (!value) return "—";
-  try {
-    return new Intl.DateTimeFormat("pt-BR", {
-      day: "2-digit",
-      month: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(new Date(value));
-  } catch {
-    return value;
-  }
-}
-
-function preview(value?: string | null, size = 88) {
-  if (!value) return "Sem texto";
-  return value.length > size ? `${value.slice(0, size)}...` : value;
-}
 
 function pillClass(status?: string | null) {
   if (status === "processed" || status === "sent" || status === "completed" || status === "OK" || status === "em uso") {
@@ -90,12 +64,11 @@ function ChannelPills({ channels }: { channels: ChannelKey[] }) {
   );
 }
 
-function InboxRow({ entity, lips }: { entity: (typeof commandCenterEntities)[number]; lips: LipsLiveStatus }) {
-  const isLips = entity.name === "Lips";
+function InboxRow({ entity }: { entity: (typeof commandCenterEntities)[number] }) {
   const primaryChannel = entity.channels[0] ? channelCatalog[entity.channels[0]].label : "A configurar";
-  const open = isLips ? lips.pendingConversations : "—";
-  const pending = isLips ? lips.pendingConversations : entity.status === "planned" ? "Planejado" : "A configurar";
-  const lastMessage = isLips ? formatDateTime(lips.lastMessages[0]?.created_at) : "—";
+  const open = entity.status === "active" || entity.status === "production_initial" ? "Interna" : "Planejada";
+  const pending = entity.status === "planned" ? "Planejado" : entity.status === "active" ? "Operação interna" : "A configurar";
+  const lastMessage = "—";
 
   return (
     <div className="grid gap-3 border-b border-slate-100 px-4 py-4 text-sm last:border-b-0 lg:grid-cols-[1.3fr_1fr_0.8fr_0.8fr_0.9fr_0.7fr] lg:items-center">
@@ -119,45 +92,16 @@ function InboxRow({ entity, lips }: { entity: (typeof commandCenterEntities)[num
   );
 }
 
-function DataPanel<T>({
-  title,
-  error,
-  rows,
-  empty,
-  renderRow,
-}: {
-  title: string;
-  error: string | null;
-  rows: T[];
-  empty: string;
-  renderRow: (row: T) => React.ReactNode;
-}) {
-  return (
-    <div className="rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm">
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="font-black text-[#1B2F5B]">{title}</h3>
-        {error && <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700">Indisponível</span>}
-      </div>
-      {error ? <p className="mt-3 text-sm text-slate-500">Não foi possível carregar estes dados agora.</p> : null}
-      {!error && rows.length === 0 ? <p className="mt-3 text-sm text-slate-500">{empty}</p> : null}
-      {!error && rows.length > 0 ? <div className="mt-4 divide-y divide-slate-100 rounded-2xl border border-slate-100">{rows.map(renderRow)}</div> : null}
-    </div>
-  );
-}
-
-export function CommandCenterDashboard({ lips }: CommandCenterDashboardProps) {
-  const channelValidated = isLipsChannelValidated(lips.channel);
-  const connectedChannels = lips.channel?.is_active ? 1 : 0;
-  const activeAutomations = lips.channel?.is_active ? 1 : 0;
-  const activeClients = 1;
+export function CommandCenterDashboard() {
+  const channelKeys = commandCenterEntities.flatMap((entity) => entity.channels);
+  const connectedChannels = channelKeys.filter((channel) => channelCatalog[channel].status === "in_use").length;
+  const plannedChannels = channelKeys.filter((channel) => ["planned", "preparation", "future"].includes(channelCatalog[channel].status)).length;
   const operatingProducts = commandCenterEntities.filter((entity) => entity.group === "product" && ["production_initial", "development", "official_whatsapp_preparation"].includes(entity.status)).length;
-  const criticalAlerts = (lips.gateway.online ? 0 : 1) + lips.errorJobs + (channelValidated ? 0 : 1);
-  const lastOutbound = lips.lastMessages.find((message) => message.direction === "outbound");
-  const lastEvent = lips.lastProviderEvents[0];
+  const pendingInternal = commandCenterEntities.filter((entity) => ["planned", "pending_setup", "official_whatsapp_preparation"].includes(entity.status)).length;
+  const criticalAlerts = 0;
   const corporate = commandCenterEntities.filter((entity) => entity.group === "corporate");
   const ownOperations = commandCenterEntities.filter((entity) => entity.group === "own_operation");
   const products = commandCenterEntities.filter((entity) => entity.group === "product");
-  const clients = commandCenterEntities.filter((entity) => entity.group === "client");
 
   return (
     <div className="space-y-10">
@@ -168,10 +112,10 @@ export function CommandCenterDashboard({ lips }: CommandCenterDashboardProps) {
         </div>
         <h1 className="mt-3 text-3xl font-black md:text-4xl">Centro de Comando</h1>
         <p className="mt-3 max-w-4xl text-sm leading-6 text-slate-200">
-          Cockpit interno da Moriah para acompanhar operações, produtos, canais e atendimentos.
+          Cockpit interno da Moriah para acompanhar empresas próprias, produtos, operações próprias, canais internos e caixas internas.
         </p>
         <div className="mt-5 rounded-2xl border border-white/10 bg-white/10 p-4 text-sm leading-6 text-slate-100">
-          <strong>Shamar Connect</strong> é a central de comunicação, interação e atendimento da Moriah Systems: atendimento humano, automação por regra, fila, roteamento, SLA, histórico e relacionamento. IA será módulo assistivo futuro, como copiloto do atendente.
+          <strong>Shamar Connect</strong> é o motor de comunicação, interação, atendimento, automação por regra, fila e relacionamento da Moriah. IA será módulo assistivo futuro, como copiloto do atendente.
           <br />
           Esta visão é interna da Moriah. As integrações e componentes foram organizados para possível evolução comercial futura.
           <br />
@@ -179,24 +123,25 @@ export function CommandCenterDashboard({ lips }: CommandCenterDashboardProps) {
         </div>
         <div className="mt-6 flex flex-wrap gap-3">
           <Link href="/inbox" className="rounded-full bg-[#2ABFAB] px-5 py-3 text-sm font-black text-white hover:bg-[#229d8e]">Abrir atendimento</Link>
+          <Link href="/admin" className="rounded-full border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Administração Shamar Connect</Link>
           <Link href="/settings/whatsapp" className="rounded-full border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">WhatsApp Conectado</Link>
           <Link href="/settings/whatsapp-cloud" className="rounded-full border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">WhatsApp Oficial</Link>
         </div>
       </header>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <SummaryCard label="Empresas próprias" value={corporate.length + ownOperations.length} />
+        <SummaryCard label="Produtos Moriah" value={products.length} />
+        <SummaryCard label="Canais planejados" value={plannedChannels} />
         <SummaryCard label="Canais ativos" value={connectedChannels} />
-        <SummaryCard label="Caixas de entrada" value={commandCenterEntities.length} />
-        <SummaryCard label="Atendimentos abertos" value={lips.pendingConversations} tone={lips.pendingConversations > 0 ? "warning" : "default"} />
-        <SummaryCard label="Pendências humanas" value={lips.pendingConversations} tone={lips.pendingConversations > 0 ? "warning" : "default"} />
-        <SummaryCard label="Automações ativas" value={activeAutomations} />
-        <SummaryCard label="Clientes ativos" value={activeClients} />
+        <SummaryCard label="Caixas internas" value={commandCenterEntities.length} />
+        <SummaryCard label="Pendências internas" value={pendingInternal} tone={pendingInternal > 0 ? "warning" : "default"} />
         <SummaryCard label="Produtos em operação" value={operatingProducts} />
         <SummaryCard label="Alertas críticos" value={criticalAlerts} tone={criticalAlerts > 0 ? "danger" : "default"} />
       </section>
 
       <section>
-        <SectionTitle title="Caixas de entrada" description="Visão omnichannel por operação, produto e cliente. Integrações planejadas aparecem sem erro." />
+        <SectionTitle title="Canais e caixas internas" description="Visão omnichannel por empresa, produto e operação própria do Allan/Moriah. Clientes SaaS externos ficam fora desta tela." />
         <div className="mt-4 overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-sm">
           <div className="hidden bg-slate-50 px-4 py-3 text-xs font-black uppercase tracking-wide text-slate-500 lg:grid lg:grid-cols-[1.3fr_1fr_0.8fr_0.8fr_0.9fr_0.7fr]">
             <span>Operação</span>
@@ -206,7 +151,7 @@ export function CommandCenterDashboard({ lips }: CommandCenterDashboardProps) {
             <span>Última mensagem</span>
             <span>Ação</span>
           </div>
-          {commandCenterEntities.map((entity) => <InboxRow key={entity.name} entity={entity} lips={lips} />)}
+          {commandCenterEntities.map((entity) => <InboxRow key={entity.name} entity={entity} />)}
         </div>
       </section>
 
@@ -232,7 +177,7 @@ export function CommandCenterDashboard({ lips }: CommandCenterDashboardProps) {
       </section>
 
       <section>
-        <SectionTitle title="Produtos Shamar" description="Produtos próprios. Shamar Connect é o motor de comunicação/interação." />
+        <SectionTitle title="Produtos Moriah / Shamar" description="Produtos próprios. Shamar Connect é o motor de comunicação/interação." />
         <div className="mt-4 grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
           {products.map((item) => (
             <div key={item.name}>
@@ -243,84 +188,46 @@ export function CommandCenterDashboard({ lips }: CommandCenterDashboardProps) {
         </div>
       </section>
 
-      <section>
-        <SectionTitle title="Clientes" description="Clientes atendidos pelo Shamar Connect. Lips continua separada da Moriah." />
-        <div className="mt-4 grid gap-4 lg:grid-cols-2">
-          {clients.map((item) => (
-            <div key={item.name}>
-              <OperationCard name={item.name} type={item.name === "Lips" ? "Cliente Shamar Connect" : item.type} status={item.status} description={item.description} functionLabel={item.function} href={item.href} configHref={item.configHref} stats={item.name === "Lips" ? [{ label: "Fila", value: lips.pendingConversations }, { label: "Jobs erro", value: lips.errorJobs }] : [{ label: "Status", value: "Aguardando implantação" }]} />
-              <ChannelPills channels={item.channels} />
-            </div>
-          ))}
-        </div>
-      </section>
-
       <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-sm">
         <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
           <div>
-            <p className="text-sm font-black uppercase tracking-wide text-[#C9952A]">Cliente Shamar Connect / Go-live</p>
-            <h2 className="mt-1 text-2xl font-black text-[#1B2F5B]">Lips Live</h2>
-            <p className="mt-2 text-sm text-slate-500">OpenWA atual, auto-resposta por regra, consulta de preços, fila e handoff humano.</p>
+            <p className="text-sm font-black uppercase tracking-wide text-[#C9952A]">Administração Shamar Connect</p>
+            <h2 className="mt-1 text-2xl font-black text-[#1B2F5B]">Clientes e plataforma ficam em área separada</h2>
+            <p className="mt-2 max-w-3xl text-sm text-slate-500">Tenants, organizações, canais externos, planos, assinaturas e implantação pertencem à administração do Shamar Connect, não à visão macro do Centro de Comando Allan/Moriah.</p>
           </div>
-          <span className={`w-fit rounded-full border px-4 py-2 text-xs font-black ${pillClass(channelValidated && lips.gateway.online ? "OK" : "Atenção")}`}>
-            {channelValidated && lips.gateway.online ? "OK" : "Atenção"}
-          </span>
-        </div>
-
-        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <SummaryCard label="Provider" value={lips.channel?.provider || "—"} />
-          <SummaryCard label="Session" value={lips.channel?.session_id || LIPS_SESSION_ID} />
-          <SummaryCard label="Channel ID" value={lips.channel?.id === LIPS_CHANNEL_ID ? "validado" : "verificar"} tone={lips.channel?.id === LIPS_CHANNEL_ID ? "default" : "warning"} />
-          <SummaryCard label="Gateway" value={lips.gateway.online ? lips.gateway.status : "atenção"} tone={lips.gateway.online ? "default" : "danger"} />
+          <Link href="/admin" className="w-fit rounded-full bg-[#2ABFAB] px-5 py-3 text-sm font-black text-white hover:bg-[#229d8e]">Abrir admin</Link>
         </div>
 
         <div className="mt-5 grid gap-4 lg:grid-cols-3">
           <div className="rounded-2xl bg-slate-50 p-4 text-sm">
-            <p className="font-black text-slate-800">Canal</p>
+            <p className="font-black text-slate-800">Administração</p>
             <div className="mt-3 space-y-2 text-slate-600">
-              <p>provider_type: <strong>{lips.channel?.provider_type || "—"}</strong></p>
-              <p>slug: <strong>{lips.channel?.slug || "—"}</strong></p>
-              <p>ativo no banco: <strong>{lips.channel?.is_active ? "sim" : "não"}</strong></p>
-              <p>último evento: <strong>{formatDateTime(lastEvent?.created_at)}</strong></p>
+              <p>clientes externos: <strong>fora do Centro de Comando</strong></p>
+              <p>tenants e organizações: <strong>Admin Shamar Connect</strong></p>
+              <p>implantação: <strong>/admin/implantacao</strong></p>
             </div>
           </div>
           <div className="rounded-2xl bg-slate-50 p-4 text-sm">
-            <p className="font-black text-slate-800">Fila</p>
+            <p className="font-black text-slate-800">Links úteis</p>
             <div className="mt-3 space-y-2 text-slate-600">
-              <p>pendências humanas: <strong>{lips.pendingConversations}</strong></p>
-              <p>último atendimento: <strong>{formatDateTime(lips.lastConversationAt)}</strong></p>
-              <p>última resposta enviada: <strong>{formatDateTime(lastOutbound?.created_at)}</strong></p>
+              <p><Link href="/admin" className="font-black text-[#1B2F5B] hover:underline">Administração</Link></p>
+              <p><Link href="/admin/implantacao" className="font-black text-[#1B2F5B] hover:underline">Implantação</Link></p>
+              <p><Link href="/settings/whatsapp" className="font-black text-[#1B2F5B] hover:underline">Configurações SaaS</Link></p>
             </div>
           </div>
           <div className="rounded-2xl bg-slate-50 p-4 text-sm">
-            <p className="font-black text-slate-800">Automação segura</p>
+            <p className="font-black text-slate-800">Regra de escopo</p>
             <div className="mt-3 space-y-2 text-slate-600">
-              <p>auto-resposta por regra: <strong>ativa</strong></p>
-              <p>catálogo consultivo: <strong>ativo</strong></p>
-              <p>cooldown: <strong>{lips.lastCooldowns[0] ? formatDateTime(lips.lastCooldowns[0].last_automated_response_at) : "sem registro recente"}</strong></p>
+              <p>Centro de Comando: <strong>Allan/Moriah</strong></p>
+              <p>Admin Shamar Connect: <strong>clientes SaaS</strong></p>
+              <p>Operação SaaS: <strong>fora desta visão macro</strong></p>
             </div>
           </div>
         </div>
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-2">
-        <DataPanel title="Últimas mensagens Lips" error={lips.messagesError} rows={lips.lastMessages} empty="Nenhuma mensagem recente." renderRow={(row) => (
-          <div key={row.id} className="px-4 py-3">
-            <div className="flex items-center justify-between gap-3"><span className="text-sm font-black text-slate-700">{row.direction || "—"}</span><span className="text-xs text-slate-400">{formatDateTime(row.created_at)}</span></div>
-            <p className="mt-1 text-sm text-slate-500">{preview(row.body)}</p>
-          </div>
-        )} />
-        <DataPanel title="Últimos jobs" error={lips.jobsError} rows={lips.lastAutomationJobs} empty="Nenhum job recente." renderRow={(row) => (
-          <div key={row.id} className="px-4 py-3">
-            <div className="flex items-center justify-between gap-3"><span className={`rounded-full border px-3 py-1 text-xs font-black ${pillClass(row.status)}`}>{row.status || "—"}</span><span className="text-xs text-slate-400">{formatDateTime(row.created_at)}</span></div>
-            <p className="mt-1 text-sm text-slate-500">{row.response_type || row.agent_type || "Sem tipo"}</p>
-            {row.error_message && <p className="mt-1 text-xs font-bold text-red-600">{preview(row.error_message)}</p>}
-          </div>
-        )} />
-      </section>
-
       <section>
-        <SectionTitle title="Canais e integrações" description="Roadmap omnichannel do Shamar Connect como central de comunicação/interação." />
+        <SectionTitle title="Canais internos" description="Roadmap omnichannel para canais próprios do Allan/Moriah." />
         <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {channelRoadmap.map((channel) => (
             <div key={channel.label} className="rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm">

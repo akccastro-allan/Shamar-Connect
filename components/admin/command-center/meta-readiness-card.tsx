@@ -29,9 +29,9 @@ export function MetaReadinessCard() {
       <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
         <div>
           <p className="text-sm font-black uppercase tracking-wide text-[#C9952A]">Preparação oficial</p>
-          <h2 className="mt-1 text-2xl font-black text-[#1B2F5B]">WhatsApp Oficial / Meta Partner</h2>
+          <h2 className="mt-1 text-2xl font-black text-[#1B2F5B]">WhatsApp Oficial / Meta</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-            Preparação para WhatsApp Oficial e futura trilha de parceria Meta. Shamar Kids é o primeiro caso oficial futuro. Lips continua no WhatsApp Conectado / OpenWA.
+            Preparação para WhatsApp Oficial nos canais próprios do Allan/Moriah. Shamar Kids é o primeiro caso oficial futuro.
             O sistema ainda não deve comunicar que é Partner Meta.
           </p>
         </div>
@@ -47,7 +47,7 @@ export function MetaReadinessCard() {
             <div className="rounded-2xl bg-white p-4">
               <p className="font-black text-[#1B2F5B]">WhatsApp Conectado</p>
               <p className="mt-2 text-sm text-slate-500">OpenWA / WhatsApp Web Gateway para MVP, validação e operação rápida.</p>
-              <p className="mt-2 text-xs font-bold text-slate-500">Exemplo atual: Lips.</p>
+              <p className="mt-2 text-xs font-bold text-slate-500">Uso interno conforme canal próprio configurado.</p>
             </div>
             <div className="rounded-2xl bg-white p-4">
               <p className="font-black text-[#1B2F5B]">WhatsApp Oficial</p>
