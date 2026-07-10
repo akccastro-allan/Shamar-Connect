@@ -20,6 +20,13 @@ export const LIPS_ORGANIZATION_ID = "8f074193-bf58-4537-9842-720619a9f259";
 export const LIPS_CHANNEL_ID = "1f65f8d2-2609-42d9-ae57-709aecdb43da";
 export const LIPS_SESSION_ID = "lips-main";
 
+export const commandCenterMode = {
+  internalOnly: true,
+  productizable: true,
+  commercialEnabled: false,
+  aiMode: "off" as const,
+};
+
 export const channelCatalog: Record<ChannelKey, { label: string; status: ChannelStatus; mode?: ChannelMode }> = {
   whatsapp_connected: { label: "WhatsApp Conectado", status: "in_use", mode: "connected_whatsapp" },
   whatsapp_official_preparation: { label: "WhatsApp Oficial Meta", status: "preparation", mode: "official_whatsapp" },

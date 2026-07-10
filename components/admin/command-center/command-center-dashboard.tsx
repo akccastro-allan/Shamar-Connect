@@ -3,6 +3,7 @@ import {
   channelCatalog,
   channelRoadmap,
   commandCenterEntities,
+  commandCenterMode,
   LIPS_CHANNEL_ID,
   LIPS_SESSION_ID,
   statusLabel,
@@ -161,13 +162,20 @@ export function CommandCenterDashboard({ lips }: CommandCenterDashboardProps) {
   return (
     <div className="space-y-10">
       <header className="rounded-[2rem] bg-[#1B2F5B] p-8 text-white shadow-sm">
-        <p className="text-sm font-black uppercase tracking-[0.2em] text-[#2ABFAB]">Cockpit operacional Allan / Moriah</p>
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="text-sm font-black uppercase tracking-[0.2em] text-[#2ABFAB]">Cockpit operacional Allan / Moriah</p>
+          <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-black text-white">Uso interno</span>
+        </div>
         <h1 className="mt-3 text-3xl font-black md:text-4xl">Centro de Comando</h1>
         <p className="mt-3 max-w-4xl text-sm leading-6 text-slate-200">
-          Controle operacional da Moriah, produtos Shamar, canais, caixas de entrada e atendimentos.
+          Cockpit interno da Moriah para acompanhar operações, produtos, canais e atendimentos.
         </p>
         <div className="mt-5 rounded-2xl border border-white/10 bg-white/10 p-4 text-sm leading-6 text-slate-100">
           <strong>Shamar Connect</strong> é a central de comunicação, interação e atendimento da Moriah Systems: atendimento humano, automação por regra, fila, roteamento, SLA, histórico e relacionamento. IA será módulo assistivo futuro, como copiloto do atendente.
+          <br />
+          Esta visão é interna da Moriah. As integrações e componentes foram organizados para possível evolução comercial futura.
+          <br />
+          Modo atual: comercial {commandCenterMode.commercialEnabled ? "ativo" : "desativado"} · IA {commandCenterMode.aiMode}.
         </div>
         <div className="mt-6 flex flex-wrap gap-3">
           <Link href="/inbox" className="rounded-full bg-[#2ABFAB] px-5 py-3 text-sm font-black text-white hover:bg-[#229d8e]">Abrir atendimento</Link>
