@@ -30,8 +30,17 @@ type NormalizedIncomingMessage = {
   displayName: string;
 };
 
+type PersistedInboundMessage = {
+  id: string;
+  conversation_id: string;
+  body: string | null;
+  from_id: string | null;
+  message_type: string | null;
+};
+
 const LIPS_SESSION_ID = "lips-main";
 const LIPS_CHANNEL_ID = "1f65f8d2-2609-42d9-ae57-709aecdb43da";
+const AUTO_REPLY_ALLOWED_PENDING_REASONS = new Set(["new_inbound_message", "auto_quote_idle", "quote_context"]);
 
 function verifyOpenWaSignature(rawBody: string, signature: string | null) {
   const secret = process.env.OPENWA_WEBHOOK_SECRET || process.env.SHAMARCONNECT_WEBHOOK_TOKEN || "";
@@ -133,6 +142,95 @@ function hasPriceInResponse(response: string) {
   return /\bValor:\s*R\$/i.test(normalized);
 }
 
+function isAwaitingHuman(requiresHuman?: boolean | null, pendingReason?: string | null) {
+  return Boolean(requiresHuman && (!pendingReason || !AUTO_REPLY_ALLOWED_PENDING_REASONS.has(pendingReason)));
+}
+
+function maskChatId(chatId: string) {
+  if (!chatId) return "unknown";
+  const [identifier, suffix] = chatId.split("@");
+  const tail = identifier.slice(-4);
+  return `${tail ? `***${tail}` : "unknown"}${suffix ? `@${suffix}` : ""}`;
+}
+
+async function findPersistedInboundMessage(
+  db: ReturnType<typeof createSupabaseWriteClient>,
+  channelId: string,
+  incomingId: string,
+  chatId: string,
+  body: string,
+): Promise<PersistedInboundMessage | null> {
+  const byMessageId = await db
+    .from("whatsapp_messages")
+    .select("id, conversation_id, body, from_id, message_type")
+    .eq("channel_id", channelId)
+    .eq("external_message_id", incomingId)
+    .maybeSingle();
+
+  if (byMessageId.data?.id && byMessageId.data.conversation_id) {
+    return byMessageId.data;
+  }
+
+  const conversation = await db
+    .from("whatsapp_conversations")
+    .select("id")
+    .eq("channel_id", channelId)
+    .eq("external_chat_id", chatId)
+    .maybeSingle();
+
+  if (!conversation.data?.id) return null;
+
+  const recentMessage = await db
+    .from("whatsapp_messages")
+    .select("id, conversation_id, body, from_id, message_type")
+    .eq("conversation_id", conversation.data.id)
+    .eq("direction", "inbound")
+    .eq("body", body)
+    .gte("created_at", new Date(Date.now() - 10 * 60_000).toISOString())
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  return recentMessage.data?.id && recentMessage.data.conversation_id ? recentMessage.data : null;
+}
+
+async function ensureLipsAutomationJob(
+  db: ReturnType<typeof createSupabaseWriteClient>,
+  channel: { tenantId: string; organizationId: string | null; channelId: string },
+  messageId: string,
+  conversationId: string,
+) {
+  if (!channel.organizationId) return { job: null, created: false };
+
+  const existing = await db
+    .from("agent_automation_jobs")
+    .select("id, status")
+    .eq("message_id", messageId)
+    .eq("agent_type", "lips-auto")
+    .maybeSingle();
+
+  if (existing.data?.id) {
+    return { job: existing.data, created: false };
+  }
+
+  const created = await db.from("agent_automation_jobs").insert({
+    tenant_id: channel.tenantId,
+    organization_id: channel.organizationId,
+    channel_id: channel.channelId,
+    conversation_id: conversationId,
+    message_id: messageId,
+    status: "pending",
+    agent_type: "lips-auto",
+  }).select("id, status").single();
+
+  if (created.error) {
+    console.error("[openwa-webhook] Failed to create Lips automation job:", created.error.message);
+    return { job: null, created: false };
+  }
+
+  return { job: created.data, created: true };
+}
+
 async function routeNonTextToHuman(
   db: ReturnType<typeof createSupabaseWriteClient>,
   conversationId: string,
@@ -195,9 +293,7 @@ export async function POST(request: NextRequest) {
         .eq("channel_id", channel.channelId)
         .eq("external_chat_id", incoming.chatId)
         .maybeSingle();
-      const wasAwaitingHuman = Boolean(
-        existingConversation?.requires_human && existingConversation.pending_reason !== "new_inbound_message",
-      );
+      const wasAwaitingHuman = isAwaitingHuman(existingConversation?.requires_human, existingConversation?.pending_reason);
 
       const result = await ingestInboundMessage(db, channel, {
         externalEventId: incoming.id,
@@ -214,35 +310,43 @@ export async function POST(request: NextRequest) {
         rawPayload: data,
       });
 
-      if (result === "processed" && channel.organizationId) {
-        const msgQuery = await db
-          .from("whatsapp_messages")
-          .select("id, conversation_id, body, from_id, message_type")
-          .eq("external_message_id", incoming.id)
-          .maybeSingle();
+      if ((result === "processed" || result === "duplicate") && channel.organizationId) {
+        const persistedMessage = await findPersistedInboundMessage(
+          db,
+          channel.channelId,
+          incoming.id,
+          incoming.chatId,
+          incoming.body,
+        );
 
-        if (msgQuery.data?.id && msgQuery.data?.conversation_id) {
-          const text = (msgQuery.data.body || "").trim();
+        if (persistedMessage?.id && persistedMessage.conversation_id) {
+          const text = (persistedMessage.body || "").trim();
           const isLipsChannel = channel.channelId === LIPS_CHANNEL_ID;
-          const isTextMessage = !msgQuery.data.message_type || ["text", "chat"].includes(msgQuery.data.message_type);
-          const messageType = msgQuery.data.message_type || "text";
+          const isTextMessage = !persistedMessage.message_type || ["text", "chat"].includes(persistedMessage.message_type);
+          const messageType = persistedMessage.message_type || "text";
 
           if (!isLipsChannel) {
             return NextResponse.json({ ok: true });
           }
 
-          const { data: job, error: jobError } = await db.from("agent_automation_jobs").insert({
-            tenant_id: channel.tenantId,
-            organization_id: channel.organizationId,
-            channel_id: channel.channelId,
-            conversation_id: msgQuery.data.conversation_id,
-            message_id: msgQuery.data.id,
-            status: "pending",
-            agent_type: "lips-auto",
-          }).select("id").single();
+          const { job, created } = await ensureLipsAutomationJob(
+            db,
+            channel,
+            persistedMessage.id,
+            persistedMessage.conversation_id,
+          );
 
-          if (jobError) {
-            console.error("[openwa-webhook] Failed to create Lips automation job:", jobError.message);
+          console.log("[openwa-webhook] Lips automation checkpoint", {
+            ingestResult: result,
+            channelId: channel.channelId,
+            chat: maskChatId(incoming.chatId),
+            messagePersisted: true,
+            jobId: job?.id || null,
+            jobCreated: created,
+            jobStatus: job?.status || null,
+          });
+
+          if (!job || (result === "duplicate" && !created && job.status === "done")) {
             return NextResponse.json({ ok: true });
           }
 
@@ -251,8 +355,8 @@ export async function POST(request: NextRequest) {
               db,
               channel.organizationId,
               text,
-              msgQuery.data.from_id || incoming.senderExternalId || incoming.chatId,
-              msgQuery.data.conversation_id,
+              persistedMessage.from_id || incoming.senderExternalId || incoming.chatId,
+              persistedMessage.conversation_id,
             );
 
             if (wasAwaitingHuman && job?.id) {
@@ -268,16 +372,18 @@ export async function POST(request: NextRequest) {
                 .eq("id", job.id);
             } else if (isOfficialAutoReply(processResult)) {
               if (processResult.requiresHandoff) {
-                await applyLipsConversationState(db, channel.organizationId, msgQuery.data.conversation_id, processResult);
+                await applyLipsConversationState(db, channel.organizationId, persistedMessage.conversation_id, processResult);
               }
 
-              const cooldown = await checkCooldown(db, msgQuery.data.conversation_id, processResult.response);
+              const cooldown = await checkCooldown(db, persistedMessage.conversation_id, processResult.response, {
+                allowWithinCooldown: processResult.requiresHandoff,
+              });
 
               if (cooldown.allowed) {
                 const sendResult = await sendAndSaveResponse(
                   db,
                   channel.organizationId,
-                  msgQuery.data.conversation_id,
+                  persistedMessage.conversation_id,
                   incoming.chatId,
                   processResult.response,
                   processResult.requiresHandoff,
@@ -285,9 +391,9 @@ export async function POST(request: NextRequest) {
                 );
 
                 if (sendResult.success) {
-                  await recordAutoReply(db, channel.organizationId, msgQuery.data.conversation_id, processResult.response);
+                  await recordAutoReply(db, channel.organizationId, persistedMessage.conversation_id, processResult.response);
                   if (!processResult.requiresHandoff) {
-                    await applyLipsConversationState(db, channel.organizationId, msgQuery.data.conversation_id, processResult);
+                    await applyLipsConversationState(db, channel.organizationId, persistedMessage.conversation_id, processResult);
                   }
                   if (job?.id) {
                     await db
@@ -341,7 +447,7 @@ export async function POST(request: NextRequest) {
 
             await routeNonTextToHuman(
               db,
-              msgQuery.data.conversation_id,
+              persistedMessage.conversation_id,
               messageType,
               Boolean(channelSettings?.transcription_enabled),
             );

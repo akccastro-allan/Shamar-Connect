@@ -441,7 +441,8 @@ function isCatalogQuoteResponse(responseText: string): boolean {
 export async function checkCooldown(
   db: SupabaseClient,
   conversationId: string,
-  responseText: string
+  responseText: string,
+  options?: { allowWithinCooldown?: boolean }
 ): Promise<CooldownCheckResult> {
   try {
     // Configuração do cooldown (padrão 5 minutos)
@@ -472,6 +473,10 @@ export async function checkCooldown(
       // Autopeças: mecânicos podem cotar várias peças em sequência.
       // Permitir nova cotação diferente mesmo dentro da janela de cooldown.
       if (timeSinceLastReply < cooldownMs && isCatalogQuoteResponse(responseText)) {
+        return { allowed: true, lastAutoReplyAt: lastReplyTime };
+      }
+
+      if (timeSinceLastReply < cooldownMs && options?.allowWithinCooldown) {
         return { allowed: true, lastAutoReplyAt: lastReplyTime };
       }
 

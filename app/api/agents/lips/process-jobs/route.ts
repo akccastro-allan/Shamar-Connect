@@ -179,8 +179,10 @@ export async function POST(request: NextRequest) {
         // ========================================================================
 
         // Autoenvio oficial: menu, cotação segura ou direcionamento humano seguro.
+        const autoReplyAllowedPendingReasons = new Set(["new_inbound_message", "auto_quote_idle", "quote_context"]);
         const isAwaitingHuman = Boolean(
-          conversation.requires_human && conversation.pending_reason !== "new_inbound_message",
+          conversation.requires_human &&
+            (!conversation.pending_reason || !autoReplyAllowedPendingReasons.has(conversation.pending_reason)),
         );
 
         const canAutoSend =
@@ -199,7 +201,8 @@ export async function POST(request: NextRequest) {
           const cooldownCheck = await checkCooldown(
             db,
             job.conversation_id,
-            processResult.response
+            processResult.response,
+            { allowWithinCooldown: processResult.requiresHandoff }
           );
 
           if (!cooldownCheck.allowed) {
