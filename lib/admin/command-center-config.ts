@@ -1,4 +1,18 @@
-export type CommandCenterStatus = "active" | "pending_setup" | "production_initial" | "development" | "meta_official_preparation" | "go_live";
+export type CommandCenterGroup = "corporate" | "own_operation" | "product" | "client";
+export type CommandCenterStatus = "active" | "planned" | "pending_setup" | "production_initial" | "development" | "official_whatsapp_preparation" | "go_live";
+export type ChannelStatus = "active" | "in_use" | "preparation" | "planned" | "future";
+export type ChannelKey =
+  | "whatsapp_connected"
+  | "whatsapp_official_preparation"
+  | "whatsapp_planned"
+  | "whatsapp_support_planned"
+  | "instagram_planned"
+  | "facebook_planned"
+  | "tiktok_planned"
+  | "email_future"
+  | "site_form_future"
+  | "chat_future"
+  | "ai_assistant_future";
 export type ChannelMode = "connected_whatsapp" | "official_whatsapp";
 export type MetaReadinessStatus = "pending" | "in_progress" | "ready" | "blocked";
 
@@ -6,116 +20,170 @@ export const LIPS_ORGANIZATION_ID = "8f074193-bf58-4537-9842-720619a9f259";
 export const LIPS_CHANNEL_ID = "1f65f8d2-2609-42d9-ae57-709aecdb43da";
 export const LIPS_SESSION_ID = "lips-main";
 
-export const commandCenterOperations = {
-  ownOperations: [
-    {
-      name: "Moriah Systems",
-      type: "empresa",
-      status: "active" as const,
-      channel: "Administração interna",
-      description: "Empresa principal da operação Allan/Moriah.",
-      function: "Holding/operação principal",
-      href: "/admin",
-      configHref: "/settings/team",
-    },
-    {
-      name: "MK Shalom",
-      type: "operacao_propria",
-      status: "pending_setup" as const,
-      channel: "A configurar",
-      description: "Agência, marketing, sites e serviços digitais.",
-      function: "Agência/marketing/sites",
-      href: "/dashboard",
-      configHref: "/settings/whatsapp",
-    },
-    {
-      name: "Viciados em Trilhas",
-      type: "operacao_propria",
-      status: "pending_setup" as const,
-      channel: "A configurar",
-      description: "Turismo, trilhas, rapel, aventuras e eventos.",
-      function: "Turismo, eventos, trilhas e rapel",
-      href: "/distribution",
-      configHref: "/settings/whatsapp",
-    },
-    {
-      name: "Pessoal Allan",
-      type: "pessoal",
-      status: "pending_setup" as const,
-      channel: "A configurar",
-      description: "Gestão pessoal, prioridades e tarefas.",
-      function: "Gestão pessoal, tarefas e prioridades",
-      href: "/dashboard",
-      configHref: "/settings/profile",
-    },
-  ],
-  products: [
-    {
-      name: "Shamar Connect",
-      type: "produto SaaS",
-      status: "production_initial" as const,
-      environment: "Produção inicial",
-      priority: "Alta",
-      description: "Central de atendimento, WhatsApp, fila e automação por regra.",
-      function: "Atendimento, WhatsApp, fila, automação por regra e clientes",
-      href: "/operations",
-    },
-    {
-      name: "Shamar ERP",
-      type: "produto",
-      status: "development" as const,
-      environment: "Desenvolvimento",
-      priority: "Média",
-      description: "Financeiro, fiscal, gestão e operação empresarial.",
-      function: "Financeiro/fiscal/gestão",
-      href: "/dashboard",
-    },
-    {
-      name: "Shamar Kids",
-      type: "produto",
-      status: "meta_official_preparation" as const,
-      environment: "Preparação WhatsApp Oficial",
-      priority: "Alta após Lips estável",
-      description: "Produto futuro com WhatsApp Oficial / Meta.",
-      function: "Gestão infantil/escola/igreja/família",
-      href: "/settings/whatsapp-cloud",
-    },
-    {
-      name: "OriahFin",
-      type: "produto",
-      status: "pending_setup" as const,
-      environment: "A configurar",
-      priority: "Média",
-      description: "Produto financeiro/gestão.",
-      function: "Financeiro/gestão",
-      href: "/financeiro",
-    },
-  ],
-  clients: [
-    {
-      name: "Lips",
-      type: "cliente",
-      status: "go_live" as const,
-      product: "Shamar Connect",
-      channelMode: "connected_whatsapp" as ChannelMode,
-      provider: "openwa",
-      sessionId: LIPS_SESSION_ID,
-      href: "/inbox",
-      configHref: "/settings/whatsapp",
-    },
-    {
-      name: "Futuros clientes",
-      type: "clientes",
-      status: "pending_setup" as const,
-      product: "Shamar Connect",
-      channelMode: "connected_whatsapp" as ChannelMode,
-      provider: "a definir",
-      sessionId: null,
-      href: "/admin/implantacao",
-      configHref: "/admin/clients",
-    },
-  ],
+export const channelCatalog: Record<ChannelKey, { label: string; status: ChannelStatus; mode?: ChannelMode }> = {
+  whatsapp_connected: { label: "WhatsApp Conectado", status: "in_use", mode: "connected_whatsapp" },
+  whatsapp_official_preparation: { label: "WhatsApp Oficial Meta", status: "preparation", mode: "official_whatsapp" },
+  whatsapp_planned: { label: "WhatsApp", status: "planned" },
+  whatsapp_support_planned: { label: "WhatsApp para suporte", status: "planned" },
+  instagram_planned: { label: "Instagram", status: "planned" },
+  facebook_planned: { label: "Facebook", status: "planned" },
+  tiktok_planned: { label: "TikTok", status: "planned" },
+  email_future: { label: "E-mail", status: "future" },
+  site_form_future: { label: "Site/Formulário", status: "future" },
+  chat_future: { label: "Chat", status: "future" },
+  ai_assistant_future: { label: "Assistente de Atendimento", status: "future" },
 };
+
+export const commandCenterEntities = [
+  {
+    name: "Moriah Systems",
+    group: "corporate" as const,
+    type: "empresa",
+    status: "active" as const,
+    description: "Empresa principal da operação Allan/Moriah.",
+    function: "Administração geral, visão macro, produtos e clientes.",
+    priority: "Alta",
+    channels: ["whatsapp_planned", "email_future", "site_form_future"] as ChannelKey[],
+    href: "/admin",
+    configHref: "/settings/team",
+  },
+  {
+    name: "Allan / Pessoal",
+    group: "corporate" as const,
+    type: "pessoal/admin",
+    status: "planned" as const,
+    description: "Gestão pessoal, prioridades, tarefas e acompanhamento administrativo.",
+    function: "WhatsApp pessoal / administrativo.",
+    priority: "Média",
+    channels: ["whatsapp_planned"] as ChannelKey[],
+    href: "/dashboard",
+    configHref: "/settings/profile",
+  },
+  {
+    name: "Viciados em Trilhas",
+    group: "own_operation" as const,
+    type: "operação própria",
+    status: "planned" as const,
+    description: "Turismo, trilhas, rapel, aventuras e eventos.",
+    function: "Leads, dúvidas sobre trilhas, reservas, eventos e pagamentos encaminhados para humano.",
+    priority: "Média",
+    channels: ["whatsapp_planned", "instagram_planned", "facebook_planned", "tiktok_planned", "email_future"] as ChannelKey[],
+    href: "/distribution",
+    configHref: "/settings/whatsapp",
+  },
+  {
+    name: "MK Shalom",
+    group: "own_operation" as const,
+    type: "operação própria",
+    status: "planned" as const,
+    description: "Agência, marketing, sites e serviços digitais.",
+    function: "Leads, orçamento, atendimento comercial, suporte de clientes e projetos.",
+    priority: "Média",
+    channels: ["whatsapp_planned", "instagram_planned", "facebook_planned", "email_future"] as ChannelKey[],
+    href: "/dashboard",
+    configHref: "/settings/whatsapp",
+  },
+  {
+    name: "OriahFin",
+    group: "own_operation" as const,
+    type: "operação própria / produto",
+    status: "planned" as const,
+    description: "Produto e operação financeira em preparação.",
+    function: "Atendimento de produto financeiro, suporte e leads.",
+    priority: "Média",
+    channels: ["whatsapp_planned", "email_future", "site_form_future"] as ChannelKey[],
+    href: "/financeiro",
+    configHref: "/settings/billing",
+  },
+  {
+    name: "Shamar Connect",
+    group: "product" as const,
+    type: "produto SaaS",
+    status: "production_initial" as const,
+    description: "Central de comunicação, interação, atendimento, automação, fila e relacionamento da Moriah Systems.",
+    function: "Múltiplas caixas de entrada, canais, marcas, clientes, automações por regra, SLA, histórico, tags e funil.",
+    priority: "Alta",
+    channels: ["whatsapp_connected", "whatsapp_official_preparation", "instagram_planned", "facebook_planned", "tiktok_planned", "email_future", "chat_future", "ai_assistant_future"] as ChannelKey[],
+    href: "/operations",
+    configHref: "/settings/whatsapp",
+  },
+  {
+    name: "Shamar ERP",
+    group: "product" as const,
+    type: "produto",
+    status: "development" as const,
+    description: "Financeiro, fiscal, gestão e operação empresarial.",
+    function: "Suporte operacional, financeiro, fiscal, administrativo e notificações futuras.",
+    priority: "Média",
+    channels: ["whatsapp_support_planned", "email_future"] as ChannelKey[],
+    href: "/dashboard",
+    configHref: "/settings/billing",
+  },
+  {
+    name: "Shamar Church",
+    group: "product" as const,
+    type: "produto",
+    status: "planned" as const,
+    description: "Produto para igrejas, membros, células, eventos e ministérios.",
+    function: "Atendimento pastoral/administrativo, eventos, células e relacionamento com membros.",
+    priority: "Média",
+    channels: ["whatsapp_planned", "instagram_planned", "facebook_planned", "email_future"] as ChannelKey[],
+    href: "/dashboard",
+    configHref: "/settings/whatsapp",
+  },
+  {
+    name: "Shamar Kids",
+    group: "product" as const,
+    type: "produto",
+    status: "official_whatsapp_preparation" as const,
+    description: "Primeiro caso futuro usando WhatsApp API oficial.",
+    function: "Gestão infantil/escola/igreja/família com WhatsApp Oficial Meta.",
+    priority: "Alta após Lips estável",
+    channels: ["whatsapp_official_preparation", "email_future"] as ChannelKey[],
+    href: "/settings/whatsapp-cloud",
+    configHref: "/settings/whatsapp-cloud",
+  },
+  {
+    name: "Shamar Events",
+    group: "product" as const,
+    type: "produto",
+    status: "planned" as const,
+    description: "Produto para eventos, inscrições, confirmações e suporte.",
+    function: "Eventos, inscrições, confirmações, suporte e relacionamento.",
+    priority: "Média",
+    channels: ["whatsapp_planned", "instagram_planned", "facebook_planned", "tiktok_planned", "email_future"] as ChannelKey[],
+    href: "/dashboard",
+    configHref: "/settings/whatsapp",
+  },
+  {
+    name: "Lips",
+    group: "client" as const,
+    type: "cliente",
+    status: "go_live" as const,
+    product: "Shamar Connect",
+    description: "Cliente Shamar Connect em go-live com atendimento de autopeças.",
+    function: "Consulta de preço, catálogo, fila, auto-resposta por regra e handoff humano.",
+    priority: "Alta",
+    channels: ["whatsapp_connected"] as ChannelKey[],
+    provider: "openwa",
+    sessionId: LIPS_SESSION_ID,
+    href: "/inbox",
+    configHref: "/settings/whatsapp",
+  },
+  {
+    name: "Futuros clientes",
+    group: "client" as const,
+    type: "clientes",
+    status: "planned" as const,
+    product: "Shamar Connect",
+    description: "Igrejas, clínicas, autopeças e negócios locais aguardando implantação.",
+    function: "Novas caixas de entrada e canais por cliente.",
+    priority: "Média",
+    channels: ["whatsapp_planned", "whatsapp_official_preparation", "instagram_planned", "facebook_planned", "email_future"] as ChannelKey[],
+    href: "/admin/implantacao",
+    configHref: "/admin/clients",
+  },
+];
 
 export const metaReadinessItems = [
   { label: "Business Manager Moriah", status: "pending" as MetaReadinessStatus },
@@ -134,13 +202,24 @@ export const metaReadinessItems = [
   { label: "Partner readiness", status: "pending" as MetaReadinessStatus },
 ];
 
+export const channelRoadmap = [
+  { label: "WhatsApp Conectado", description: "OpenWA / web_gateway", status: "em uso" },
+  { label: "WhatsApp Oficial Meta", description: "Meta WhatsApp Business Platform / official_api", status: "em preparação" },
+  { label: "Instagram", description: "Atendimento social e leads", status: "planejado" },
+  { label: "Facebook", description: "Páginas, mensagens e comentários", status: "planejado" },
+  { label: "TikTok", description: "Leads e interação social futura", status: "planejado" },
+  { label: "E-mail", description: "Caixa de entrada e suporte futuro", status: "futuro" },
+  { label: "IA assistiva", description: "Copiloto do atendente humano", status: "futuro" },
+];
+
 export function statusLabel(status: CommandCenterStatus) {
   const labels: Record<CommandCenterStatus, string> = {
     active: "Ativa",
+    planned: "Planejado",
     pending_setup: "A configurar",
     production_initial: "Em produção inicial",
     development: "Em desenvolvimento",
-    meta_official_preparation: "Preparação WhatsApp Oficial",
+    official_whatsapp_preparation: "Preparação WhatsApp Oficial",
     go_live: "Go-live",
   };
 

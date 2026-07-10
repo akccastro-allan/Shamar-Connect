@@ -31,7 +31,8 @@ export function MetaReadinessCard() {
           <p className="text-sm font-black uppercase tracking-wide text-[#C9952A]">Preparação oficial</p>
           <h2 className="mt-1 text-2xl font-black text-[#1B2F5B]">WhatsApp Oficial / Meta Partner</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-            Preparação para WhatsApp Oficial e futura trilha de parceria Meta. O sistema ainda não deve comunicar que é Partner Meta.
+            Preparação para WhatsApp Oficial e futura trilha de parceria Meta. Shamar Kids é o primeiro caso oficial futuro. Lips continua no WhatsApp Conectado / OpenWA.
+            O sistema ainda não deve comunicar que é Partner Meta.
           </p>
         </div>
         <Link href="/settings/whatsapp-cloud" className="w-fit rounded-full bg-[#2ABFAB] px-5 py-3 text-sm font-black text-white hover:bg-[#229d8e]">

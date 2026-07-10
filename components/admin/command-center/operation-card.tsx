@@ -17,7 +17,7 @@ function statusClass(status: CommandCenterStatus) {
   if (status === "active" || status === "production_initial" || status === "go_live") {
     return "border-emerald-200 bg-emerald-50 text-emerald-700";
   }
-  if (status === "development" || status === "meta_official_preparation") {
+  if (status === "development" || status === "official_whatsapp_preparation") {
     return "border-amber-200 bg-amber-50 text-amber-700";
   }
   return "border-slate-200 bg-slate-50 text-slate-600";

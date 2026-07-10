@@ -6,9 +6,13 @@ Preparar o Shamar Connect para operar com WhatsApp Business Platform oficial da 
 
 ## Posicionamento
 
-O Shamar Connect é:
+O Shamar Connect é a central de comunicação, interação e atendimento da Moriah Systems.
+
+Ele opera como:
 
 - central de atendimento;
+- caixas de entrada;
+- canais de comunicação;
 - roteamento;
 - fila;
 - automação por regra;
@@ -62,6 +66,12 @@ Não é vendido como bot genérico de IA.
 ## Primeiro caso oficial
 
 Shamar Kids.
+
+Lips continua no WhatsApp Conectado / OpenWA e não deve ser migrada para Meta agora.
+
+## IA futura
+
+IA será módulo assistivo/copiloto do atendente humano, não produto base e não resposta livre inicial.
 
 ## Não fazer ainda
 
