@@ -1,5 +1,7 @@
 # Shamar OpenWA Gateway Legacy
 
+> NÃO USAR EM PRODUÇÃO.
+
 Este diretório contém o wrapper legado que usava `@open-wa/wa-automate`.
 
 O gateway real da operação Lips agora deve ser o OpenWA oficial em repositório separado:
@@ -10,6 +12,9 @@ https://github.com/akccastro-allan/OpenWA
 
 O Shamar Connect consome esse gateway via HTTP usando `WHATSAPP_WEB_GATEWAY_URL` e `WHATSAPP_WEB_GATEWAY_TOKEN`.
 Não use este diretório como fonte do serviço Railway novo.
+
+O runtime oficial está fora deste repositório, no Railway, apontando para `akccastro-allan/OpenWA`.
+Não atualize dependências deste diretório para corrigir alertas de produção, porque ele não é o gateway em uso.
 
 ## Railway
 
