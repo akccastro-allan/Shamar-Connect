@@ -1,20 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
-import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
-import { resolveSessionClient, sessionIdErrorResponse } from "@/lib/providers/resolve-session";
+import { isUnauthorizedError } from "@/lib/auth/app-context";
+import { requireOwnedWhatsappSession } from "../_auth";
 
 export async function POST(request: NextRequest) {
   try {
-    const context = await getRequiredAppContext();
     const body = await request.json().catch(() => ({}));
     const sessionId = body?.sessionId ? String(body.sessionId) : null;
-    const resolved = resolveSessionClient(sessionId);
-    if (!resolved) return sessionIdErrorResponse();
+    const session = await requireOwnedWhatsappSession(sessionId);
+    if (!session.ok) return session.response;
 
-    const client = createSupabaseWriteClient();
-    const result = await resolved.client.connect();
+    const result = await session.resolved.client.connect();
 
-    await client
+    await session.db
       .from("whatsapp_connections")
       .update({
         status: result.status ?? "connecting",
@@ -26,8 +23,8 @@ export async function POST(request: NextRequest) {
           source: "whatsapp_web_start",
         },
       })
-      .eq("tenant_id", context.tenantId)
-      .eq("organization_id", context.organizationId)
+      .eq("tenant_id", session.context.tenantId)
+      .eq("organization_id", session.context.organizationId)
       .eq("provider", "whatsapp_web")
       .eq("is_active", true);
 

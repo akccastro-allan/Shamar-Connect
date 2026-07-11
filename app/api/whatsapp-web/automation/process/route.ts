@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
-import { resolveSessionClient } from "@/lib/providers/resolve-session";
+import { isUnauthorizedError } from "@/lib/auth/app-context";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
+import { requireOwnedWhatsappSession } from "../../_auth";
 
 type ConversationRow = {
   id: string;
   tenant_id: string;
   organization_id: string;
+  channel_id: string | null;
   external_chat_id: string | null;
   contact_id: string | null;
   name: string | null;
@@ -244,6 +245,7 @@ async function persistOutboundMessage(
     organization_id: conversation.organization_id,
     external_message_id: sent.id,
     provider: "whatsapp_web",
+    channel_id: conversation.channel_id,
     conversation_id: conversation.id,
     contact_id: conversation.contact_id || null,
     direction: "outbound",
@@ -256,7 +258,7 @@ async function persistOutboundMessage(
     media_count: 0,
     media_summary: null,
     created_at: now,
-  }, { onConflict: "external_message_id" });
+  }, { onConflict: "channel_id,external_message_id" });
 
   if (messageError) throw messageError;
 
@@ -265,8 +267,6 @@ async function persistOutboundMessage(
 
 export async function GET(request: NextRequest) {
   try {
-    const context = await getRequiredAppContext();
-    const db = createSupabaseWriteClient();
     const searchParams = request.nextUrl.searchParams;
     const limit = Math.max(1, Math.min(Number(searchParams.get("limit") || 50), 200));
     const dryRun = searchParams.get("dryRun") === "1" || searchParams.get("dryRun") === "true";
@@ -274,10 +274,9 @@ export async function GET(request: NextRequest) {
     // sessionId selects which gateway sends messages and which conversations to process.
     // Defaults to hall-main for backward compatibility.
     const sessionId = searchParams.get("sessionId") || "hall-main";
-    const resolved = resolveSessionClient(sessionId);
-    if (!resolved) {
-      return NextResponse.json({ ok: false, error: `sessionId inválido: ${sessionId}` }, { status: 400 });
-    }
+    const session = await requireOwnedWhatsappSession(sessionId);
+    if (!session.ok) return session.response;
+    const { context, db, resolved, channelId } = session;
 
     // Verify gateway is ready before processing any conversations
     const gatewayStatus = await resolved.client.getStatus().catch(() => null);
@@ -290,19 +289,9 @@ export async function GET(request: NextRequest) {
       }, { status: 503 });
     }
 
-    // Resolve channel_id so automation only processes conversations from this session
-    const { data: channelRow } = await db
-      .from("channels")
-      .select("id")
-      .eq("tenant_id", context.tenantId)
-      .eq("organization_id", context.organizationId)
-      .eq("session_id", resolved.sessionId)
-      .maybeSingle();
-    const channelId: string | null = channelRow?.id ?? null;
-
     let conversationsQuery = db
       .from("whatsapp_conversations")
-      .select("id, tenant_id, organization_id, external_chat_id, contact_id, name, status, is_group, requires_human")
+      .select("id, tenant_id, organization_id, channel_id, external_chat_id, contact_id, name, status, is_group, requires_human")
       .eq("tenant_id", context.tenantId)
       .eq("organization_id", context.organizationId)
       .eq("provider", "whatsapp_web")
@@ -310,12 +299,7 @@ export async function GET(request: NextRequest) {
       .order("last_message_at", { ascending: false, nullsFirst: false })
       .limit(limit);
 
-    // Filter by channel when available; otherwise fall back to untagged conversations
-    if (channelId) {
-      conversationsQuery = conversationsQuery.eq("channel_id", channelId);
-    } else {
-      conversationsQuery = conversationsQuery.is("channel_id", null);
-    }
+    conversationsQuery = conversationsQuery.eq("channel_id", channelId);
 
     const { data: conversations, error: conversationsError } = await conversationsQuery;
 
@@ -365,7 +349,7 @@ export async function GET(request: NextRequest) {
 
       alreadyProcessedInboundIds = new Set(
         (eventRows || [])
-          .map((event) => {
+          .map((event: { metadata: { latestInboundId?: string } | null }) => {
             const metadata = event.metadata as { latestInboundId?: string } | null;
             return metadata?.latestInboundId || null;
           })

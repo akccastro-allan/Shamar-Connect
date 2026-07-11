@@ -1,14 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { resolveSessionClient, sessionIdErrorResponse } from "@/lib/providers/resolve-session";
+import { isUnauthorizedError } from "@/lib/auth/app-context";
+import { requireOwnedWhatsappSession } from "../_auth";
 
 export async function GET(request: NextRequest) {
   try {
     const sessionId = request.nextUrl.searchParams.get("sessionId");
-    const resolved = resolveSessionClient(sessionId);
-    if (!resolved) return sessionIdErrorResponse();
-    const chats = await resolved.client.listChats();
+    const session = await requireOwnedWhatsappSession(sessionId);
+    if (!session.ok) return session.response;
+
+    const chats = await session.resolved.client.listChats();
     return NextResponse.json({ ok: true, chats });
   } catch (error) {
+    if (isUnauthorizedError(error)) {
+      return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
+    }
+
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Failed to load WhatsApp chats" }, { status: 500 });
   }
 }

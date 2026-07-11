@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
-import { resolveSessionClient, sessionIdErrorResponse } from "@/lib/providers/resolve-session";
+import { requireOwnedWhatsappSession } from "../_auth";
 import type { ProviderChatSummary, ProviderSyncedMessage } from "@/types/messaging-provider";
 
 function normalizePhone(value?: string) {
@@ -81,7 +81,7 @@ async function upsertConversation(
     contactId: string | null;
     lastMessageAt?: string | null;
     unreadCount?: number;
-    channelId?: string | null;
+    channelId: string;
   },
 ) {
   const { data: existingConversation, error: conversationLookupError } = await client
@@ -90,6 +90,7 @@ async function upsertConversation(
     .eq("tenant_id", context.tenantId)
     .eq("organization_id", context.organizationId)
     .eq("provider", "whatsapp_web")
+    .eq("channel_id", payload.channelId)
     .eq("external_chat_id", payload.externalChatId)
     .maybeSingle();
 
@@ -191,6 +192,7 @@ async function upsertMessage(
   message: ProviderSyncedMessage,
   conversationId: string,
   contactId: string | null,
+  channelId: string,
 ) {
   const externalMessageId = String(message.id || "").trim();
   if (!externalMessageId) return false;
@@ -201,6 +203,7 @@ async function upsertMessage(
     .eq("tenant_id", context.tenantId)
     .eq("organization_id", context.organizationId)
     .eq("provider", "whatsapp_web")
+    .eq("channel_id", channelId)
     .eq("external_message_id", externalMessageId)
     .maybeSingle();
 
@@ -211,6 +214,7 @@ async function upsertMessage(
     organization_id: context.organizationId,
     external_message_id: externalMessageId,
     provider: "whatsapp_web",
+    channel_id: channelId,
     conversation_id: conversationId,
     contact_id: contactId,
     direction: message.direction || "inbound",
@@ -252,8 +256,8 @@ async function syncChat(
   context: AppContext,
   chat: ProviderChatSummary,
   limit: number,
-  gatewayClient = resolveSessionClient(null)!.client,
-  channelId?: string | null,
+  gatewayClient: { listChatMessages: (chatId: string, limit?: number) => Promise<ProviderSyncedMessage[]> },
+  channelId: string,
 ) {
   const messages = await gatewayClient.listChatMessages(chat.id, limit);
   const latestMessage = messages[0];
@@ -285,7 +289,7 @@ async function syncChat(
           ? await upsertContact(client, context, messagePhone, message.contactName || chat.name || messagePhone)
           : contactId;
 
-        const inserted = await upsertMessage(client, context, message, conversationId, messageContactId);
+        const inserted = await upsertMessage(client, context, message, conversationId, messageContactId, channelId);
         if (inserted) savedMessages += 1;
       } catch (error) {
         errors.push({
@@ -302,23 +306,10 @@ async function syncChat(
 }
 
 async function syncChats(chatIds?: string[], messageLimit = 50, chatLimit = 20, sessionId?: string | null) {
-  const context = await getRequiredAppContext();
-  const resolved = resolveSessionClient(sessionId);
-  if (!resolved) throw new Error(`sessionId inválido: ${sessionId}`);
-  const client = createSupabaseWriteClient();
+  const session = await requireOwnedWhatsappSession(sessionId);
+  if (!session.ok) throw new Error("CHANNEL_FORBIDDEN");
 
-  // Resolve channel_id for this session so conversations are tagged correctly
-  let channelId: string | null = null;
-  if (resolved.sessionId) {
-    const { data: channel } = await client
-      .from("channels")
-      .select("id")
-      .eq("tenant_id", context.tenantId)
-      .eq("organization_id", context.organizationId)
-      .eq("session_id", resolved.sessionId)
-      .maybeSingle();
-    channelId = channel?.id ?? null;
-  }
+  const { context, db: client, resolved, channelId } = session;
 
   const allChats = await resolved.client.listChats();
   const selectedChats = Array.isArray(chatIds) && chatIds.length > 0
@@ -363,12 +354,14 @@ export async function GET(request: NextRequest) {
     const sessionId = searchParams.get("sessionId");
     const limit = Math.min(Number(searchParams.get("limit") || 30), 200);
     const chatLimit = Math.min(Number(searchParams.get("chatLimit") || 20), 100);
-    if (sessionId && !resolveSessionClient(sessionId)) return sessionIdErrorResponse();
     const result = await syncChats(chatId ? [chatId] : undefined, limit, chatLimit, sessionId);
     return NextResponse.json(result);
   } catch (error) {
     if (isUnauthorizedError(error)) {
       return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
+    }
+    if (error instanceof Error && error.message === "CHANNEL_FORBIDDEN") {
+      return NextResponse.json({ ok: false, error: "Canal não encontrado." }, { status: 403 });
     }
 
     return NextResponse.json(
@@ -389,13 +382,15 @@ export async function POST(request: NextRequest) {
     const messageLimit = Math.min(Number(body?.limit || 50), 200);
     const chatLimit = Math.min(Number(body?.chatLimit || 20), 100);
     const sessionId = body?.sessionId ? String(body.sessionId) : null;
-    if (sessionId && !resolveSessionClient(sessionId)) return sessionIdErrorResponse();
 
     const result = await syncChats(chatIds, messageLimit, chatLimit, sessionId);
     return NextResponse.json(result);
   } catch (error) {
     if (isUnauthorizedError(error)) {
       return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
+    }
+    if (error instanceof Error && error.message === "CHANNEL_FORBIDDEN") {
+      return NextResponse.json({ ok: false, error: "Canal não encontrado." }, { status: 403 });
     }
 
     return NextResponse.json(

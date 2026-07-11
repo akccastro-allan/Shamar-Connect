@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
-import { resolveSessionClient } from "@/lib/providers/resolve-session";
-import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
+import { isUnauthorizedError } from "@/lib/auth/app-context";
+import { requireOwnedWhatsappSession } from "../../_auth";
+import { upsertTenantRow } from "../../_tenant-upsert";
 import type { ProviderGroupParticipant } from "@/types/messaging-provider";
 
 function normalizePhone(value?: string) {
@@ -10,7 +10,6 @@ function normalizePhone(value?: string) {
 
 export async function POST(request: NextRequest) {
   try {
-    const context = await getRequiredAppContext();
     const body = await request.json();
     const groupId = String(body?.groupId || "");
     const sessionId = String(body?.sessionId || "");
@@ -19,13 +18,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "groupId is required" }, { status: 400 });
     }
 
-    const resolved = resolveSessionClient(sessionId);
-    if (!resolved) {
-      return NextResponse.json({ ok: false, error: "Sessão WhatsApp inválida." }, { status: 400 });
-    }
+    const session = await requireOwnedWhatsappSession(sessionId);
+    if (!session.ok) return session.response;
 
-    const client = createSupabaseWriteClient();
-    const participants = await resolved.client.listGroupParticipants(groupId);
+    const { context, db: client } = session;
+    const participants = await session.resolved.client.listGroupParticipants(groupId);
     const firstParticipant = participants[0];
     const groupName = firstParticipant?.sourceGroupName || body?.groupName || groupId;
 
@@ -38,22 +35,17 @@ export async function POST(request: NextRequest) {
       ).values()
     );
 
-    const { data: group, error: groupError } = await client
-      .from("whatsapp_groups")
-      .upsert({
-        tenant_id: context.tenantId,
-        organization_id: context.organizationId,
+    const group = await upsertTenantRow(client, context, "whatsapp_groups", {
+      provider: "whatsapp_web",
+      external_group_id: groupId,
+    }, {
         external_group_id: groupId,
         provider: "whatsapp_web",
         name: groupName,
         participant_count: participants.length,
         last_synced_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-      }, { onConflict: "external_group_id" })
-      .select("id")
-      .single();
-
-    if (groupError) throw groupError;
+      });
 
     const { data: list, error: listError } = await client
       .from("group_contact_lists")
@@ -83,12 +75,8 @@ export async function POST(request: NextRequest) {
       updated_at: new Date().toISOString(),
     }));
 
-    if (contactRows.length > 0) {
-      const { error: contactsError } = await client
-        .from("crm_contacts")
-        .upsert(contactRows, { onConflict: "phone" });
-
-      if (contactsError) throw contactsError;
+    for (const contactRow of contactRows) {
+      await upsertTenantRow(client, context, "crm_contacts", { phone: contactRow.phone }, contactRow);
     }
 
     const { data: savedContacts, error: savedContactsError } = await client

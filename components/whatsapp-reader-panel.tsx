@@ -130,9 +130,9 @@ export function WhatsappReaderPanel() {
   function clearSelection() { setSelectedMessageIds([]); }
 
   async function saveMessages(messagesToSave: SyncedMessage[]) {
-    if (messagesToSave.length === 0) return;
+    if (messagesToSave.length === 0 || !selectedChatId) return;
     setLoading(true); setError(null);
-    try { const data = await readJson<Result>("/api/whatsapp-web/messages/save-selected", { method: "POST", body: JSON.stringify({ messages: messagesToSave }) }); setResult(data); clearSelection(); }
+    try { const data = await readJson<Result>("/api/whatsapp-web/chats/import-history", { method: "POST", body: JSON.stringify({ chatId: selectedChatId, limit: Math.max(limit, messagesToSave.length) }) }); setResult(data); clearSelection(); }
     catch (err) { setError(err instanceof Error ? err.message : "Erro ao salvar mensagens"); }
     finally { setLoading(false); }
   }

@@ -189,6 +189,10 @@ export async function POST(request: NextRequest) {
   const endpointKey = resolveEndpointKey(request, input);
   const webhookContext = await resolveWebhookContext(db, endpointKey);
 
+  if (!webhookContext.tenantId || !webhookContext.organizationId) {
+    return NextResponse.json({ ok: false, error: "Endpoint de webhook não reconhecido." }, { status: 403 });
+  }
+
   const rows = payloads.map((payload) => {
     const normalizedPayload = normalizePayload(payload);
 
@@ -196,8 +200,8 @@ export async function POST(request: NextRequest) {
       provider: resolveProvider(normalizedPayload, webhookContext.provider),
       event: resolveEventName(normalizedPayload),
       payload: normalizedPayload,
-      organization_id: resolveUuid(normalizedPayload.organization_id || normalizedPayload.organizationId) || webhookContext.organizationId,
-      tenant_id: resolveUuid(normalizedPayload.tenant_id || normalizedPayload.tenantId) || webhookContext.tenantId,
+      organization_id: webhookContext.organizationId,
+      tenant_id: webhookContext.tenantId,
       processing_status: "pending",
     };
   });
