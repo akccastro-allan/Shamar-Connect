@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Users, MessageCircle, Activity, Cloud, Rocket, Upload, Settings, type LucideIcon } from "lucide-react";
+import { Users, MessageCircle, Activity, Cloud, Rocket, Settings, CheckCircle2, Bot, Clock, type LucideIcon } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -7,9 +7,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 
 type Metrics = {
   contactCount: number;
-  conversationCount: number;
   openConversationCount: number;
+  pendingConversationCount: number;
+  assignedConversationCount: number;
+  resolvedTodayCount: number;
+  inboundTodayCount: number;
   connectedChannelCount: number;
+  activeAutomationCount: number;
 };
 
 const numberFormatter = new Intl.NumberFormat("pt-BR");
@@ -19,23 +23,27 @@ function formatCount(value: number) {
 }
 
 const quickActions: { label: string; helper: string; href: string; icon: LucideIcon }[] = [
-  { label: "Atender no WhatsApp", helper: "Veja a fila e responda seus clientes", href: "/whatsapp-messages", icon: MessageCircle },
-  { label: "Contatos", helper: "Sua base de leads e clientes", href: "/contacts", icon: Users },
-  { label: "Importar conversas", helper: "Traga o histórico do WhatsApp", href: "/whatsapp-import", icon: Upload },
-  { label: "Configurar conexão", helper: "Conecte ou ajuste seus canais", href: "/settings/whatsapp", icon: Settings },
+  { label: "Abrir atendimentos", helper: "Veja a fila e responda clientes", href: "/whatsapp-messages", icon: MessageCircle },
+  { label: "Ver contatos", helper: "Consulte sua base de clientes", href: "/contacts", icon: Users },
+  { label: "Configurar WhatsApp", helper: "Ajuste a conexão do canal", href: "/settings/whatsapp", icon: Settings },
 ];
 
 export function DashboardOperationalPanel({ metrics }: { metrics: Metrics }) {
   const isEmpty =
     metrics.contactCount === 0 &&
-    metrics.conversationCount === 0 &&
+    metrics.openConversationCount === 0 &&
+    metrics.pendingConversationCount === 0 &&
+    metrics.inboundTodayCount === 0 &&
     metrics.connectedChannelCount === 0;
 
   const cards: { label: string; helper: string; value: number; icon: LucideIcon; href: string; highlight?: boolean }[] = [
-    { label: "Contatos na base", helper: "Leads e clientes salvos", value: metrics.contactCount, icon: Users, href: "/contacts" },
-    { label: "Conversas", helper: "Atendimentos registrados", value: metrics.conversationCount, icon: MessageCircle, href: "/whatsapp-messages" },
-    { label: "Em aberto agora", helper: "Aguardando sua resposta", value: metrics.openConversationCount, icon: Activity, href: "/whatsapp-messages", highlight: metrics.openConversationCount > 0 },
-    { label: "Canais conectados", helper: "WhatsApp ativo", value: metrics.connectedChannelCount, icon: Cloud, href: "/settings/whatsapp" },
+    { label: "Aguardando atendimento", helper: "Conversas na fila", value: metrics.pendingConversationCount, icon: Clock, href: "/whatsapp-messages", highlight: metrics.pendingConversationCount > 0 },
+    { label: "Em atendimento", helper: "Conversas abertas", value: metrics.assignedConversationCount, icon: Activity, href: "/whatsapp-messages" },
+    { label: "Resolvidas hoje", helper: "Atendimentos encerrados", value: metrics.resolvedTodayCount, icon: CheckCircle2, href: "/whatsapp-messages" },
+    { label: "Recebidas hoje", helper: "Mensagens de clientes", value: metrics.inboundTodayCount, icon: MessageCircle, href: "/whatsapp-messages" },
+    { label: "Contatos", helper: "Clientes salvos", value: metrics.contactCount, icon: Users, href: "/contacts" },
+    { label: "Automações ativas", helper: "Regras em funcionamento", value: metrics.activeAutomationCount, icon: Bot, href: "/quick-replies" },
+    { label: "WhatsApp conectado", helper: "Canais ativos", value: metrics.connectedChannelCount, icon: Cloud, href: "/settings/whatsapp" },
   ];
 
   return (
@@ -46,18 +54,22 @@ export function DashboardOperationalPanel({ metrics }: { metrics: Metrics }) {
           <Badge variant="secondary">Sistema online</Badge>
         </div>
         <h2 className="mt-5 max-w-2xl text-2xl font-black tracking-tight md:text-3xl">
-          {metrics.openConversationCount > 0
-            ? `Você tem ${formatCount(metrics.openConversationCount)} ${metrics.openConversationCount === 1 ? "conversa esperando" : "conversas esperando"}`
-            : "Tudo em dia por aqui"}
+          {metrics.pendingConversationCount > 0
+            ? `Você tem ${formatCount(metrics.pendingConversationCount)} ${metrics.pendingConversationCount === 1 ? "conversa aguardando" : "conversas aguardando"}`
+            : metrics.inboundTodayCount > 0
+              ? "Atendimentos do dia em acompanhamento"
+              : "Ainda não há conversas hoje"}
         </h2>
         <p className="mt-3 max-w-2xl text-sm leading-7 text-white/70 md:text-base">
-          {metrics.openConversationCount > 0
+          {metrics.pendingConversationCount > 0
             ? "Abra a central de atendimento para responder quem está esperando."
-            : "Nenhuma conversa pendente no momento. Que tal revisar seus contatos ou campanhas?"}
+            : metrics.inboundTodayCount > 0
+              ? "Acompanhe a fila, as conversas em atendimento e o histórico do WhatsApp."
+              : "Quando novas mensagens chegarem pelo WhatsApp, elas aparecerão aqui."}
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
           <Button asChild className="rounded-full bg-[#2ABFAB] px-5 font-black text-white hover:bg-[#24aa98]">
-            <Link href="/whatsapp-messages">Ir para o atendimento</Link>
+            <Link href="/whatsapp-messages">Abrir atendimentos</Link>
           </Button>
           <Button asChild variant="secondary" className="rounded-full font-black">
             <Link href="/contacts">Ver contatos</Link>
@@ -72,14 +84,14 @@ export function DashboardOperationalPanel({ metrics }: { metrics: Metrics }) {
               <Rocket className="h-6 w-6" />
             </span>
             <div>
-              <h3 className="text-lg font-black text-[#1B2F5B]">Vamos começar?</h3>
+              <h3 className="text-lg font-black text-[#1B2F5B]">Ainda não há conversas hoje.</h3>
               <p className="mt-1 max-w-xl text-sm text-slate-600">
-                Conecte seu WhatsApp e importe suas conversas para ver tudo acontecendo aqui no painel.
+                Quando novas mensagens chegarem pelo WhatsApp, elas aparecerão aqui. Se o canal ainda não foi conectado, configure o WhatsApp da empresa.
               </p>
             </div>
           </div>
           <Button asChild className="shrink-0 rounded-full bg-[#1B2F5B] px-5 font-black text-white hover:bg-[#16264a]">
-            <Link href="/getting-started">Primeiros passos</Link>
+            <Link href="/settings/whatsapp">Configurar WhatsApp</Link>
           </Button>
         </section>
       ) : (
@@ -114,8 +126,8 @@ export function DashboardOperationalPanel({ metrics }: { metrics: Metrics }) {
       )}
 
       <section>
-        <h3 className="mb-3 px-1 text-sm font-black uppercase tracking-wide text-slate-500">Atalhos rápidos</h3>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <h3 className="mb-3 px-1 text-sm font-black uppercase tracking-wide text-slate-500">Atalhos</h3>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {quickActions.map((action) => {
             const Icon = action.icon;
             return (

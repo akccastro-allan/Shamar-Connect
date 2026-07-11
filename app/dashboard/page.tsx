@@ -9,37 +9,72 @@ export const metadata = { title: "Dashboard — ShamarConnect" };
 
 async function getDashboardMetrics(tenantId: string, organizationId: string) {
   const db = createSupabaseWriteClient();
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const todayIso = startOfToday.toISOString();
 
-  const [contacts, conversations, openConversations, channels] = await Promise.all([
+  const [contacts, openConversations, pendingConversations, assignedConversations, resolvedToday, inboundToday, channels, activeAutomations] = await Promise.all([
     db
       .from("crm_contacts")
       .select("id", { count: "exact", head: true })
       .eq("tenant_id", tenantId)
       .eq("organization_id", organizationId),
     db
-      .from("conversations")
-      .select("id", { count: "exact", head: true })
-      .eq("tenant_id", tenantId)
-      .eq("organization_id", organizationId),
-    db
-      .from("conversations")
+      .from("whatsapp_conversations")
       .select("id", { count: "exact", head: true })
       .eq("tenant_id", tenantId)
       .eq("organization_id", organizationId)
-      .in("status", ["open", "pending"]),
+      .eq("status", "open"),
+    db
+      .from("whatsapp_conversations")
+      .select("id", { count: "exact", head: true })
+      .eq("tenant_id", tenantId)
+      .eq("organization_id", organizationId)
+      .eq("status", "pending"),
+    db
+      .from("whatsapp_conversations")
+      .select("id", { count: "exact", head: true })
+      .eq("tenant_id", tenantId)
+      .eq("organization_id", organizationId)
+      .eq("status", "open")
+      .not("assigned_to", "is", null),
+    db
+      .from("whatsapp_conversations")
+      .select("id", { count: "exact", head: true })
+      .eq("tenant_id", tenantId)
+      .eq("organization_id", organizationId)
+      .eq("status", "resolved")
+      .gte("updated_at", todayIso),
+    db
+      .from("whatsapp_messages")
+      .select("id", { count: "exact", head: true })
+      .eq("tenant_id", tenantId)
+      .eq("organization_id", organizationId)
+      .eq("direction", "inbound")
+      .gte("created_at", todayIso),
     db
       .from("channels")
       .select("id", { count: "exact", head: true })
       .eq("tenant_id", tenantId)
       .eq("organization_id", organizationId)
+      .eq("active", true)
       .not("session_id", "is", null),
+    db
+      .from("conversation_flows")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", organizationId)
+      .eq("status", "active"),
   ]);
 
   return {
     contactCount: contacts.count ?? 0,
-    conversationCount: conversations.count ?? 0,
     openConversationCount: openConversations.count ?? 0,
+    pendingConversationCount: pendingConversations.count ?? 0,
+    assignedConversationCount: assignedConversations.count ?? 0,
+    resolvedTodayCount: resolvedToday.count ?? 0,
+    inboundTodayCount: inboundToday.count ?? 0,
     connectedChannelCount: channels.count ?? 0,
+    activeAutomationCount: activeAutomations.count ?? 0,
   };
 }
 
@@ -59,7 +94,7 @@ export default async function DashboardPage() {
     <AppShell active="dashboard">
       <PageHeader
         title={firstName ? `Olá, ${firstName}` : "Seu painel"}
-        description="Acompanhe seus atendimentos, contatos e canais conectados — tudo em um só lugar."
+        description="Acompanhe os atendimentos do WhatsApp da sua empresa em um só lugar."
         badge="Visão geral"
       />
       <DashboardOperationalPanel metrics={metrics} />
