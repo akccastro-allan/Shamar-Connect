@@ -18,10 +18,6 @@ export type ChannelKey =
 export type ChannelMode = "connected_whatsapp" | "official_whatsapp";
 export type MetaReadinessStatus = "pending" | "in_progress" | "ready" | "blocked";
 
-export const LIPS_ORGANIZATION_ID = "8f074193-bf58-4537-9842-720619a9f259";
-export const LIPS_CHANNEL_ID = "1f65f8d2-2609-42d9-ae57-709aecdb43da";
-export const LIPS_SESSION_ID = "lips-main";
-
 export const commandCenterMode = {
   internalOnly: true,
   productizable: true,
