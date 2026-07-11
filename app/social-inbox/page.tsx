@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/page-header";
 import { MessageCircle, AtSign, Send, Megaphone, type LucideIcon } from "lucide-react";
 import { getRequiredAppContext } from "@/lib/auth/app-context";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
+import { canAccessMetaChannels, getTenantFeatureMetadata } from "@/lib/features/feature-flags";
 
 export const metadata = { title: "Social Inbox — ShamarConnect" };
 
@@ -34,20 +35,12 @@ async function getActiveSocialProviders(): Promise<Set<string>> {
 }
 
 export default async function SocialInboxPage() {
-  // Guarda de feature flag: redireciona para dashboard se meta_channels não estiver ativo
   const ctx = await getRequiredAppContext();
-  if (!ctx.isPlatformTenant) {
-    const db = createSupabaseWriteClient();
-    const { data: tenant } = await db.from("tenants").select("metadata").eq("id", ctx.tenantId).maybeSingle();
-    const meta = tenant?.metadata as Record<string, unknown> | null;
-    const enabled =
-      meta?.features !== undefined &&
-      typeof meta.features === "object" &&
-      (meta.features as Record<string, unknown>).meta_channels === true;
-    if (!enabled) {
-      const { redirect } = await import("next/navigation");
-      redirect("/dashboard");
-    }
+  const db = createSupabaseWriteClient();
+  const tenantMetadata = await getTenantFeatureMetadata(db, ctx.tenantId);
+  if (!canAccessMetaChannels(ctx, tenantMetadata)) {
+    const { redirect } = await import("next/navigation");
+    redirect("/dashboard");
   }
 
   const activeProviders = await getActiveSocialProviders();

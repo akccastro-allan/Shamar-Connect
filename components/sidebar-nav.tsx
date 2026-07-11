@@ -13,8 +13,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type NavItem = { href: string; label: string; icon: LucideIcon; platformOnly?: true; metaOnly?: true };
-type NavGroup = { label: string; icon: LucideIcon; flat?: true; platformOnly?: true; metaOnly?: true; items: NavItem[] };
+type NavItem = { href: string; label: string; icon: LucideIcon; platformOnly?: true; metaOnly?: true; commandCenterOnly?: true };
+type NavGroup = { label: string; icon: LucideIcon; flat?: true; platformOnly?: true; metaOnly?: true; commandCenterOnly?: true; items: NavItem[] };
 
 const navigationGroups: NavGroup[] = [
   {
@@ -31,7 +31,7 @@ const navigationGroups: NavGroup[] = [
       { href: "/whatsapp-messages", label: "WhatsApp", icon: MessageCircle },
       { href: "/inbox", label: "Inbox", icon: Inbox },
       { href: "/social-inbox", label: "Social Inbox", icon: AtSign, metaOnly: true },
-      { href: "/operations", label: "Operações", icon: Activity },
+      { href: "/operations", label: "Operações", icon: Activity, platformOnly: true, commandCenterOnly: true },
       { href: "/reports/team", label: "Relatório da equipe", icon: TrendingUp },
     ],
   },
@@ -55,7 +55,7 @@ const navigationGroups: NavGroup[] = [
       { href: "/conversation-flows", label: "Fluxos", icon: Workflow },
       { href: "/automations", label: "Automações", icon: Zap },
       { href: "/knowledge", label: "Conhecimento", icon: BookOpen },
-      { href: "/ai-lab", label: "AI Lab", icon: Sparkles },
+      { href: "/ai-lab", label: "AI Lab", icon: Sparkles, platformOnly: true },
     ],
   },
   {
@@ -139,10 +139,10 @@ function NavLink({ item, active, onNavigate }: { item: NavItem; active?: string;
   );
 }
 
-export function SidebarNav({ active, isPlatformAdmin, metaChannelsEnabled = false, onNavigate }: { active?: string; isPlatformAdmin: boolean; metaChannelsEnabled?: boolean; onNavigate?: () => void }) {
+export function SidebarNav({ active, isPlatformAdmin, metaChannelsEnabled = false, commandCenterEnabled = false, onNavigate }: { active?: string; isPlatformAdmin: boolean; metaChannelsEnabled?: boolean; commandCenterEnabled?: boolean; onNavigate?: () => void }) {
   const visibleGroups = navigationGroups
-    .filter((g) => (isPlatformAdmin || !g.platformOnly) && (metaChannelsEnabled || !g.metaOnly))
-    .map((g) => ({ ...g, items: g.items.filter((i) => (isPlatformAdmin || !i.platformOnly) && (metaChannelsEnabled || !i.metaOnly)) }))
+    .filter((g) => (isPlatformAdmin || !g.platformOnly) && (metaChannelsEnabled || !g.metaOnly) && (commandCenterEnabled || !g.commandCenterOnly))
+    .map((g) => ({ ...g, items: g.items.filter((i) => (isPlatformAdmin || !i.platformOnly) && (metaChannelsEnabled || !i.metaOnly) && (commandCenterEnabled || !i.commandCenterOnly)) }))
     .filter((g) => g.items.length > 0);
 
   const activeGroupLabel = visibleGroups.find(

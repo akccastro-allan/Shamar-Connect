@@ -1,8 +1,7 @@
-import { redirect } from "next/navigation";
 import Link from "next/link";
-import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 import { AppShell } from "@/components/app-shell";
+import { assertPlatformAdminRoute } from "@/lib/features/route-guards";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -106,17 +105,7 @@ function CheckItem({
 }
 
 export default async function DemoChecklistPage() {
-  let context;
-  try {
-    context = await getRequiredAppContext();
-  } catch (err) {
-    if (isUnauthorizedError(err)) redirect("/login");
-    throw err;
-  }
-
-  if (!context.isPlatformTenant) {
-    redirect("/dashboard");
-  }
+  await assertPlatformAdminRoute();
 
   const r = await fetchLipsReadiness();
 

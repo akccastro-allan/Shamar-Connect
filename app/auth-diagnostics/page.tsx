@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { getCurrentSession } from "@/lib/auth/session";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
 import { redirect } from "next/navigation";
+import { assertPlatformAdminRoute } from "@/lib/features/route-guards";
 
 export const metadata: Metadata = {
   title: "Auth Diagnostics — ShamarConnect",
@@ -33,6 +34,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 export default async function AuthDiagnosticsPage() {
+  await assertPlatformAdminRoute();
+
   const session = await getCurrentSession();
 
   if (!session) {

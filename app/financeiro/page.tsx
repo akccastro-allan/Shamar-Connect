@@ -1,6 +1,7 @@
 import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/page-header";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
+import { assertPlatformAdminRoute } from "@/lib/features/route-guards";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,8 @@ function inferPlan(name?: string | null) {
 }
 
 export default async function FinanceiroPage() {
+  await assertPlatformAdminRoute();
+
   const db = createSupabaseWriteClient();
 
   const [organizationsResult, endpointsResult] = await Promise.all([

@@ -12,12 +12,14 @@ export function MobileNav({
   avatarUrl,
   isPlatformAdmin,
   metaChannelsEnabled = false,
+  commandCenterEnabled = false,
 }: {
   active?: string;
   user: SidebarUser;
   avatarUrl?: string | null;
   isPlatformAdmin: boolean;
   metaChannelsEnabled?: boolean;
+  commandCenterEnabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -79,6 +81,7 @@ export function MobileNav({
               avatarUrl={avatarUrl}
               isPlatformAdmin={isPlatformAdmin}
               metaChannelsEnabled={metaChannelsEnabled}
+              commandCenterEnabled={commandCenterEnabled}
               onNavigate={() => setOpen(false)}
             />
           </div>

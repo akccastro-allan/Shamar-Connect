@@ -1,9 +1,12 @@
 import { AppShell } from "@/components/app-shell";
 import { AiLabPanel } from "@/components/ai-lab-panel";
+import { assertPlatformAdminRoute } from "@/lib/features/route-guards";
 
 export const metadata = { title: "AI Lab — ShamarConnect" };
 
-export default function AiLabPage() {
+export default async function AiLabPage() {
+  await assertPlatformAdminRoute();
+
   return (
     <AppShell active="ai-lab">
       <div>
