@@ -9,7 +9,7 @@
  *    - Consulta catálogo se peça solicitada
  *    - Gera sugestão com confidence score
  * 3. Decide se autoenviar ou requerer handoff humano
- * 4. Se autoSendAllowed: envia direto
+ * 4. Se autoSendAllowed: envia resposta segura
  * 5. Se requiresHandoff: marca para humano na Central
  *
  * Regras:
@@ -39,7 +39,7 @@ import {
 export type ProcessMessageResult = {
   response: string;
   shouldSend: boolean;
-  autoSendAllowed: boolean; // ← pode enviar automático (sem handoff)
+  autoSendAllowed: boolean; // ← pode enviar resposta automática segura
   requiresHandoff: boolean;
   department?: 'Balcão' | 'Oficina' | 'Supervisor'; // ← onde encaminhar se handoff
   handoffReason?: string; // ← motivo do handoff (purchase_intent, service_request, etc)

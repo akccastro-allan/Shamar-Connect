@@ -35,13 +35,20 @@ function hasPriceInResponse(response: string) {
 function isOfficialAutoReply(result: Awaited<ReturnType<typeof processLipsMessage>>) {
   if (!result.shouldSend || !result.autoSendAllowed) return false;
 
+  const isSafeHandoff = Boolean(
+    result.requiresHandoff &&
+      result.department &&
+      ["Balcão", "Oficina", "Supervisor"].includes(result.department) &&
+      result.handoffReason,
+  );
+
   if (result.quoteOnly) {
     return (
-      !result.requiresHandoff &&
       (
         (result.intent === "quote" && hasPriceInResponse(result.response)) ||
         (result.intent === "quote_options" && /R\$\s*\d/i.test(result.response))
-      )
+      ) &&
+      (!result.requiresHandoff || isSafeHandoff)
     );
   }
 
@@ -53,16 +60,11 @@ function isOfficialAutoReply(result: Awaited<ReturnType<typeof processLipsMessag
     return !result.requiresHandoff && result.response.includes("Não encontrei essa peça com segurança");
   }
 
-  if (["need_vehicle_year", "need_brake_position"].includes(result.intent)) {
+  if (["need_vehicle_year", "need_brake_position", "need_catalog_application", "need_side", "need_vertical_position"].includes(result.intent)) {
     return !result.requiresHandoff;
   }
 
-  return Boolean(
-    result.requiresHandoff &&
-      result.department &&
-      ["Balcão", "Oficina", "Supervisor"].includes(result.department) &&
-      result.handoffReason,
-  );
+  return isSafeHandoff;
 }
 
 export async function POST(request: NextRequest) {
