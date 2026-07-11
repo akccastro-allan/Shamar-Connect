@@ -8,6 +8,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { timingSafeEqual } from "crypto";
 import { parseEvolutionWebhook } from "@/lib/providers/evolution-client";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 import { resolveChannelFromWebhook } from "@/lib/inbox/resolve-channel";
@@ -25,7 +26,13 @@ function verifyEvolutionWebhook(request: NextRequest) {
   const bearerToken = authorization.startsWith("Bearer ") ? authorization.slice("Bearer ".length).trim() : "";
   const headerToken = request.headers.get("x-webhook-token") || request.headers.get("x-shamarconnect-token") || "";
 
-  return bearerToken === expectedToken || headerToken === expectedToken;
+  return safeTokenEqual(bearerToken, expectedToken) || safeTokenEqual(headerToken, expectedToken);
+}
+
+function safeTokenEqual(received: string, expected: string) {
+  const receivedBuffer = Buffer.from(received);
+  const expectedBuffer = Buffer.from(expected);
+  return receivedBuffer.length === expectedBuffer.length && timingSafeEqual(receivedBuffer, expectedBuffer);
 }
 
 export async function GET() {
