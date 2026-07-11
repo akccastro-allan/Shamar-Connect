@@ -23,6 +23,24 @@ Mesmo uma primeira versão deve transmitir:
 - qualidade;
 - continuidade.
 
+Política permanente de módulos:
+
+> A Moriah não publica módulos incompletos como beta comercial. Cada canal permanece invisível até passar por desenvolvimento, testes, homologação, segurança, documentação e operação real.
+
+Ciclo obrigatório:
+
+```text
+desenvolvimento interno
+→ teste automatizado
+→ teste em ambiente controlado
+→ uso interno
+→ homologação
+→ documentação
+→ ativação comercial
+```
+
+Nenhum canal ou módulo comercial deve aparecer como parcialmente funcional. WhatsApp, Instagram, Facebook, TikTok, e-mail, IA e qualquer canal futuro só ficam visíveis ao cliente quando estiverem completos, protegidos server-side e operáveis ponta a ponta.
+
 ---
 
 ## 2. O ecossistema Moriah
