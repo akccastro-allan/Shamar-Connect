@@ -256,7 +256,7 @@ async function stopSession(sessionName: string) {
   return normalizeStatus(session);
 }
 
-export const ALLOWED_SESSION_IDS = [
+const LEGACY_SESSION_IDS = [
   "hall-main",
   "lips-main",
   "viciados-main",
@@ -266,10 +266,39 @@ export const ALLOWED_SESSION_IDS = [
   "shamarerp-main",
   "shamarkids-main",
 ] as const;
+
+const NUMBERED_SESSION_PREFIXES = [
+  "hall",
+  "lips",
+  "viciados",
+  "mkshalom",
+  "oriahfin",
+  "shamar",
+  "shamarerp",
+  "shamarkids",
+] as const;
+
+const SESSION_NUMBER_SUFFIXES = ["01", "02", "03", "04", "05", "06", "07", "08", "09"] as const;
+
+type LegacySessionId = (typeof LEGACY_SESSION_IDS)[number];
+type NumberedSessionPrefix = (typeof NUMBERED_SESSION_PREFIXES)[number];
+type SessionNumberSuffix = (typeof SESSION_NUMBER_SUFFIXES)[number];
+type NumberedSessionId = `${NumberedSessionPrefix}-${SessionNumberSuffix}`;
+
+const NUMBERED_SESSION_IDS: NumberedSessionId[] = NUMBERED_SESSION_PREFIXES.flatMap((prefix) =>
+  SESSION_NUMBER_SUFFIXES.map((suffix) => `${prefix}-${suffix}` as NumberedSessionId),
+);
+
+export const ALLOWED_SESSION_IDS: readonly (LegacySessionId | NumberedSessionId)[] = [
+  ...LEGACY_SESSION_IDS,
+  ...NUMBERED_SESSION_IDS,
+];
 export type AllowedSessionId = (typeof ALLOWED_SESSION_IDS)[number];
 
+const ALLOWED_SESSION_ID_SET = new Set<string>(ALLOWED_SESSION_IDS);
+
 export function isAllowedSessionId(value: unknown): value is AllowedSessionId {
-  return ALLOWED_SESSION_IDS.includes(value as AllowedSessionId);
+  return typeof value === "string" && ALLOWED_SESSION_ID_SET.has(value);
 }
 
 // Factory: creates a gateway client scoped to a specific session.

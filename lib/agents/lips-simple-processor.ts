@@ -74,6 +74,9 @@ const SUPERVISOR_PURCHASE_RESPONSE =
 const SUPERVISOR_GENERAL_RESPONSE =
   'Entendi. Vou direcionar sua mensagem para o responsável da Lips te atender certinho.';
 
+const CONTINUE_QUOTE_RESPONSE =
+  'Claro. Me envie a próxima peça com o modelo e ano do veículo. Se preferir atendimento humano, escreva "atendente".';
+
 const SLA_MINUTES = {
   Balcão: LIPS_AUTO_REPLY_CONFIG.quoteSlaMinutes,
   Oficina: LIPS_AUTO_REPLY_CONFIG.serviceSlaMinutes,
@@ -115,6 +118,17 @@ function detectProductHandoffIntent(text: string): boolean {
   const lower = normalizeText(text);
   return /^(quero|quero sim|eu quero|pode ser)$/.test(lower) ||
     /quero esse produto|quero essa peça|quero essa peca|tenho interesse nesse produto/.test(lower);
+}
+
+function detectAttendantIntent(text: string): boolean {
+  const lower = normalizeText(text);
+  return /^(atendente|humano|balcao|balcão|vendedor|pessoa)$/.test(lower) ||
+    /falar com atendente|chamar atendente|quero atendente|falar com humano|falar com vendedor|falar com o balcao|falar com o balcão/.test(lower);
+}
+
+function detectQuoteContinuationIntent(text: string): boolean {
+  const lower = normalizeText(text);
+  return /continuar cotando|outra cotacao|outra cotação|cotar outra|mais uma cotacao|mais uma cotação|nova cotacao|nova cotação|novo orcamento|novo orçamento|outra peca|outra peça/.test(lower);
 }
 
 /**
@@ -488,7 +502,8 @@ ${formatQuoteStockLine(item.stock_quantity)}
 
 ⚠️ Esses dados são da última atualização do sistema. O balcão confirma aplicação e disponibilidade certinha antes de finalizar.
 
-Lhe ajudo em algo mais?`;
+Se quiser cotar outra peça, envie o nome da peça com modelo e ano do veículo.
+Se quiser confirmar com um atendente, responda "atendente".`;
 }
 
 function formatCatalogOptions(items: any[]): string {
@@ -503,7 +518,8 @@ ${options}
 
 Para confirmar a aplicação correta, preciso da posição/lado quando aplicável, código ou foto da peça.
 
-Lhe ajudo em algo mais?`;
+Se quiser cotar outra peça, envie o nome da peça com modelo e ano do veículo.
+Se quiser confirmar com um atendente, responda "atendente".`;
 }
 
 /**
@@ -641,6 +657,21 @@ export async function processLipsMessage(
         requiresHandoff: true,
         department: 'Balcão',
         handoffReason: 'quote_followup_product_interest',
+        slaMinutes: SLA_MINUTES.Balcão,
+        confidence: 0.95,
+        intent: 'balcao',
+      };
+    }
+
+    // Se cliente pede atendimento humano/balcão, não tenta continuar automação.
+    if (detectAttendantIntent(effectiveMessageBody)) {
+      return {
+        response: BALCAO_HANDOFF_RESPONSE,
+        shouldSend: true,
+        autoSendAllowed: true,
+        requiresHandoff: true,
+        department: 'Balcão',
+        handoffReason: 'customer_requested_attendant',
         slaMinutes: SLA_MINUTES.Balcão,
         confidence: 0.95,
         intent: 'balcao',
@@ -825,6 +856,20 @@ export async function processLipsMessage(
       };
     }
 
+    if (detectQuoteContinuationIntent(effectiveMessageBody) && !hasCatalogQueryIntent(effectiveMessageBody)) {
+      return {
+        response: CONTINUE_QUOTE_RESPONSE,
+        shouldSend: true,
+        autoSendAllowed: true,
+        requiresHandoff: false,
+        quoteOnly: false,
+        idleCloseAfterMinutes: 10,
+        nextStatusSuggestion: 'open',
+        confidence: 0.85,
+        intent: 'quote_context',
+      };
+    }
+
     // ========================================================================
     // FASE 4: Mensagem não classificada
     // ========================================================================
@@ -866,10 +911,25 @@ export async function sendAndSaveResponse(
   department?: 'Balcão' | 'Oficina' | 'Supervisor'
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
-    // 1. Enviar via Evolution API
-    const resolved = resolveSessionClient('lips-main');
+    const { data: conversation } = await db
+      .from('whatsapp_conversations')
+      .select('tenant_id, organization_id, channel_id, provider, channels(session_id)')
+      .eq('id', conversationId)
+      .single();
+
+    const channel = Array.isArray(conversation?.channels)
+      ? conversation.channels[0]
+      : conversation?.channels;
+    const sessionId = typeof channel?.session_id === 'string' ? channel.session_id : null;
+
+    if (!sessionId) {
+      return { success: false, error: 'Canal sem sessão WhatsApp configurada' };
+    }
+
+    // Envia pela mesma linha/canal que recebeu a conversa.
+    const resolved = resolveSessionClient(sessionId);
     if (!resolved || !resolved.client) {
-      return { success: false, error: 'Provider não configurado' };
+      return { success: false, error: `Provider não configurado para a sessão ${sessionId}` };
     }
 
     const sendResult = await resolved.client.sendMessage({
@@ -880,12 +940,6 @@ export async function sendAndSaveResponse(
     if (sendResult.status !== 'sent' && sendResult.status !== 'queued') {
       return { success: false, error: `Falha ao enviar: ${sendResult.status}` };
     }
-
-    const { data: conversation } = await db
-      .from('whatsapp_conversations')
-      .select('tenant_id, organization_id, channel_id, provider')
-      .eq('id', conversationId)
-      .single();
 
     // 2. Salvar no histórico da Central
     const { data: saved } = await db

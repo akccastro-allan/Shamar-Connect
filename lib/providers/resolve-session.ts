@@ -1,9 +1,34 @@
-import { ALLOWED_SESSION_IDS, createWhatsappGatewayClient, isAllowedSessionId, type AllowedSessionId } from "./whatsapp-web-gateway-client";
+import { ALLOWED_SESSION_IDS, createWhatsappGatewayClient, isAllowedSessionId } from "./whatsapp-web-gateway-client";
 import { whatsappWebGatewayClient } from "./whatsapp-web-gateway-client";
 import { evolutionApiClient } from "./evolution-api-client";
 import { NextResponse } from "next/server";
 
-export const SESSION_LABELS: Record<AllowedSessionId, string> = {
+const SESSION_BASE_LABELS: Record<string, string> = {
+  hall: "Hall Donous",
+  lips: "Lips",
+  viciados: "Viciados em Trilhas",
+  mkshalom: "MK Shalom",
+  oriahfin: "Oriahfin",
+  shamar: "Shamar Connect",
+  shamarerp: "Shamar ERP",
+  shamarkids: "Shamar Kids",
+};
+
+function getSessionLabel(sessionId: string) {
+  const numbered = sessionId.match(/^(.+)-(0[1-9])$/);
+  if (numbered) {
+    const [, prefix, suffix] = numbered;
+    return `${SESSION_BASE_LABELS[prefix] || prefix} ${suffix}`;
+  }
+
+  return SESSION_BASE_LABELS[sessionId.replace(/-main$/, "")] || sessionId;
+}
+
+export const SESSION_LABELS: Record<string, string> = Object.fromEntries(
+  ALLOWED_SESSION_IDS.map((sessionId) => [sessionId, getSessionLabel(sessionId)]),
+);
+
+Object.assign(SESSION_LABELS, {
   "hall-main": "Hall Donous",
   "lips-main": "Lips",
   "viciados-main": "Viciados em Trilhas",
@@ -12,7 +37,7 @@ export const SESSION_LABELS: Record<AllowedSessionId, string> = {
   "shamar-main": "Shamar Connect",
   "shamarerp-main": "Shamar ERP",
   "shamarkids-main": "Shamar Kids",
-};
+});
 
 export function resolveSessionClient(sessionId?: string | null) {
   if (!sessionId) {

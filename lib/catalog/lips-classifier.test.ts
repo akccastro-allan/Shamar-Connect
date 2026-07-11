@@ -99,3 +99,12 @@ test('correia dentada gol without year still rejects capa and protetor', () => {
     assert.equal(score.familyMatch, false, name);
   }
 });
+
+test('pastilha nivus followed by engine and short year keeps vehicle context', () => {
+  const query = classifyCatalogQuery('Pastilha nivus? 1.0 22');
+
+  assert.equal(query.family, 'pastilha_freio');
+  assert.equal(query.vehicle, 'nivus');
+  assert.equal(query.year, 2022);
+  assert.deepEqual(query.missingRequiredFields, []);
+});

@@ -258,6 +258,7 @@ const VEHICLE_ALIASES: Record<string, string[]> = {
   saveiro: ["saveiro", "sav"],
   strada: ["strada"],
   voyage: ["voyage", "voy"],
+  nivus: ["nivus"],
   sandero: ["sandero"],
 };
 

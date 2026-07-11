@@ -56,6 +56,10 @@ function isOfficialAutoReply(result: Awaited<ReturnType<typeof processLipsMessag
     return !result.requiresHandoff;
   }
 
+  if (result.intent === "quote_context") {
+    return !result.requiresHandoff;
+  }
+
   if (result.intent === "nao_encontrado") {
     return !result.requiresHandoff && result.response.includes("Não encontrei essa peça com segurança");
   }
@@ -65,6 +69,47 @@ function isOfficialAutoReply(result: Awaited<ReturnType<typeof processLipsMessag
   }
 
   return isSafeHandoff;
+}
+
+function isCatalogContinuation(result: Awaited<ReturnType<typeof processLipsMessage>>) {
+  return [
+    "need_catalog_application",
+    "need_brake_position",
+    "need_side",
+    "need_vertical_position",
+    "quote_context",
+    "quote",
+    "quote_options",
+    "nao_encontrado",
+  ].includes(result.intent);
+}
+
+async function countConsecutiveInboundMessages(
+  db: ReturnType<typeof createSupabaseWriteClient>,
+  conversationId: string,
+  currentMessageCreatedAt?: string | null,
+) {
+  let query = db
+    .from("whatsapp_messages")
+    .select("id, direction, created_at")
+    .eq("conversation_id", conversationId)
+    .order("created_at", { ascending: false })
+    .limit(10);
+
+  if (currentMessageCreatedAt) {
+    query = query.lte("created_at", currentMessageCreatedAt);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+
+  let count = 0;
+  for (const message of data || []) {
+    if (message.direction !== "inbound") break;
+    count += 1;
+  }
+
+  return count;
 }
 
 export async function POST(request: NextRequest) {
@@ -214,6 +259,63 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
+        const consecutiveInboundCount = await countConsecutiveInboundMessages(
+          db,
+          job.conversation_id,
+          inboundMsg.created_at,
+        );
+
+        if (consecutiveInboundCount >= 2) {
+          const handoffResult = {
+            response: "Recebi suas mensagens. Vou chamar um atendente do balcão para continuar seu atendimento.",
+            shouldSend: true,
+            autoSendAllowed: true,
+            requiresHandoff: true,
+            department: "Balcão" as const,
+            handoffReason: "multiple_unanswered_inbounds",
+            slaMinutes: 15,
+            confidence: 0.95,
+            intent: "balcao",
+          };
+
+          await applyLipsConversationState(db, job.organization_id, job.conversation_id, handoffResult);
+
+          const sendResult = await sendAndSaveResponse(
+            db,
+            job.organization_id,
+            job.conversation_id,
+            conversation.external_chat_id || inboundMsg.from_id,
+            handoffResult.response,
+            true,
+            "Balcão",
+          );
+
+          if (!sendResult.success) {
+            throw new Error(sendResult.error || "Falha ao enviar handoff para atendente");
+          }
+
+          await db
+            .from("agent_automation_jobs")
+            .update({
+              status: "done",
+              completed_at: new Date().toISOString(),
+              response_type: "multiple_unanswered_inbounds_handoff",
+              response_text: handoffResult.response,
+              sent_to_evolution: true,
+              outbound_message_id: sendResult.messageId,
+            })
+            .eq("id", job.id);
+
+          results.push({
+            jobId: job.id,
+            status: "done",
+            responded: true,
+            responseType: "multiple_unanswered_inbounds_handoff",
+            conversationStatus: "pending",
+          });
+          continue;
+        }
+
         // Processar mensagem com lógica de autoenvio controlado
         const processResult = await processLipsMessage(
           db,
@@ -251,7 +353,7 @@ export async function POST(request: NextRequest) {
             db,
             job.conversation_id,
             processResult.response,
-            { allowWithinCooldown: processResult.requiresHandoff }
+            { allowWithinCooldown: processResult.requiresHandoff || isCatalogContinuation(processResult) }
           );
 
           if (!cooldownCheck.allowed) {
