@@ -12,15 +12,31 @@ import { parseEvolutionWebhook } from "@/lib/providers/evolution-client";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 import { resolveChannelFromWebhook } from "@/lib/inbox/resolve-channel";
 import { ingestInboundMessage, recordUnresolvedEvent } from "@/lib/inbox/persist-inbound";
+import { LIPS_ORGANIZATION_ID } from "@/lib/agents/auto-reply-config";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+
+function verifyEvolutionWebhook(request: NextRequest) {
+  const expectedToken = process.env.EVOLUTION_WEBHOOK_TOKEN || process.env.SHAMARCONNECT_WEBHOOK_TOKEN || "";
+  if (!expectedToken) return process.env.NODE_ENV !== "production";
+
+  const authorization = request.headers.get("authorization") || "";
+  const bearerToken = authorization.startsWith("Bearer ") ? authorization.slice("Bearer ".length).trim() : "";
+  const headerToken = request.headers.get("x-webhook-token") || request.headers.get("x-shamarconnect-token") || "";
+
+  return bearerToken === expectedToken || headerToken === expectedToken;
+}
 
 export async function GET() {
   return NextResponse.json({ ok: true, service: "evolution-webhook" });
 }
 
 export async function POST(request: NextRequest) {
+  if (!verifyEvolutionWebhook(request)) {
+    return NextResponse.json({ ok: false, error: "Invalid Evolution webhook token." }, { status: 401 });
+  }
+
   let body: unknown;
   try {
     body = await request.json();
@@ -88,7 +104,7 @@ export async function POST(request: NextRequest) {
         // Criar job na fila para agente Lips
         // Apenas para Lips, não para grupos
         // Funciona independente do provider do canal (evolution recebendo, canal pode ser whatsapp_web)
-        if (!m.isGroup && channel.organizationId) {
+        if (!m.isGroup && channel.organizationId === LIPS_ORGANIZATION_ID) {
           const msgQuery = await db
             .from("whatsapp_messages")
             .select("id, conversation_id")

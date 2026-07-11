@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createHmac, timingSafeEqual } from "crypto";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 import { resolveChannelFromWebhook } from "@/lib/inbox/resolve-channel";
 import { ingestInboundMessage } from "@/lib/inbox/persist-inbound";
 import type { IdentityType } from "@/lib/inbox/contacts";
+import { verifyOpenWaWebhookRequest } from "@/lib/webhooks/openwa-auth";
 import {
   applyLipsConversationState,
   checkCooldown,
@@ -11,6 +11,7 @@ import {
   recordAutoReply,
   sendAndSaveResponse,
 } from "@/lib/agents/lips-simple-processor";
+import { LIPS_ORGANIZATION_ID } from "@/lib/agents/auto-reply-config";
 
 export const dynamic = "force-dynamic";
 
@@ -38,20 +39,7 @@ type PersistedInboundMessage = {
   message_type: string | null;
 };
 
-const LIPS_SESSION_ID = "lips-main";
-const LIPS_CHANNEL_ID = "1f65f8d2-2609-42d9-ae57-709aecdb43da";
 const AUTO_REPLY_ALLOWED_PENDING_REASONS = new Set(["new_inbound_message", "auto_quote_idle", "quote_context"]);
-
-function verifyOpenWaSignature(rawBody: string, signature: string | null) {
-  const secret = process.env.OPENWA_WEBHOOK_SECRET || process.env.SHAMARCONNECT_WEBHOOK_TOKEN || "";
-  if (!secret) return true;
-  if (!signature?.startsWith("sha256=")) return false;
-
-  const expected = `sha256=${createHmac("sha256", secret).update(rawBody).digest("hex")}`;
-  const receivedBuffer = Buffer.from(signature);
-  const expectedBuffer = Buffer.from(expected);
-  return receivedBuffer.length === expectedBuffer.length && timingSafeEqual(receivedBuffer, expectedBuffer);
-}
 
 function normalizeIncomingMessage(data: Record<string, unknown>): NormalizedIncomingMessage {
   const contact = data.contact as Record<string, unknown> | undefined;
@@ -153,6 +141,12 @@ function maskChatId(chatId: string) {
   const [identifier, suffix] = chatId.split("@");
   const tail = identifier.slice(-4);
   return `${tail ? `***${tail}` : "unknown"}${suffix ? `@${suffix}` : ""}`;
+}
+
+function maskSessionReference(sessionRef: string) {
+  if (!sessionRef) return "unknown";
+  if (sessionRef.length <= 8) return "***";
+  return `${sessionRef.slice(0, 4)}***${sessionRef.slice(-4)}`;
 }
 
 async function findPersistedInboundMessage(
@@ -262,8 +256,8 @@ async function routeNonTextToHuman(
 export async function POST(request: NextRequest) {
   try {
     const rawBody = await request.text();
-    if (!verifyOpenWaSignature(rawBody, request.headers.get("x-openwa-signature"))) {
-      return NextResponse.json({ ok: false, error: "Invalid OpenWA signature." }, { status: 401 });
+    if (!verifyOpenWaWebhookRequest(rawBody, request.headers)) {
+      return NextResponse.json({ ok: false, error: "Invalid OpenWA webhook authentication." }, { status: 401 });
     }
 
     const body = JSON.parse(rawBody) as Record<string, unknown>;
@@ -279,12 +273,14 @@ export async function POST(request: NextRequest) {
       const db = createSupabaseWriteClient();
       const sessionId = body.sessionId as string;
       console.log("[openwa-webhook] Resolving channel for sessionId:", sessionId);
-      const channel =
-        await resolveChannelFromWebhook(db, "openwa", { sessionId }) ||
-        await resolveChannelFromWebhook(db, "openwa", { sessionId: process.env.WHATSAPP_WEB_GATEWAY_SESSION_ID || "lips-main" });
+      const channel = await resolveChannelFromWebhook(db, "openwa", { sessionId });
 
       if (!channel) {
-        console.log("[openwa-webhook] Channel not resolved for sessionId:", sessionId);
+        console.warn("[openwa-webhook] channel resolution failed", {
+          provider: "openwa",
+          sessionRef: maskSessionReference(sessionId),
+          eventType: body.event,
+        });
         return NextResponse.json({ ok: true });
       }
       console.log("[openwa-webhook] Channel resolved:", channel.channelId);
@@ -323,7 +319,7 @@ export async function POST(request: NextRequest) {
 
         if (persistedMessage?.id && persistedMessage.conversation_id) {
           const text = (persistedMessage.body || "").trim();
-          const isLipsChannel = channel.channelId === LIPS_CHANNEL_ID;
+          const isLipsChannel = channel.organizationId === LIPS_ORGANIZATION_ID;
           const isTextMessage = !persistedMessage.message_type || ["text", "chat"].includes(persistedMessage.message_type);
           const messageType = persistedMessage.message_type || "text";
 

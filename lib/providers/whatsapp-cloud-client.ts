@@ -213,12 +213,11 @@ export function verifyWebhook(
 
 /**
  * Validate X-Hub-Signature-256 on incoming POST payloads.
- * Requires WHATSAPP_CLOUD_APP_SECRET to be set.
- * Returns true if signature is valid or APP_SECRET is not configured (skip).
+ * Requires WHATSAPP_CLOUD_APP_SECRET to be set in production.
  */
 export function validateSignature(rawBody: string, signature: string | null): boolean {
   const cfg = getCloudConfig();
-  if (!cfg.appSecret) return true; // skip if not configured
+  if (!cfg.appSecret) return process.env.NODE_ENV !== "production";
 
   if (!signature?.startsWith("sha256=")) return false;
 

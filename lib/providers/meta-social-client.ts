@@ -137,12 +137,11 @@ export function verifyWebhook(
 }
 
 /**
- * Valida o X-Hub-Signature-256 dos POSTs. Se META_APP_SECRET não estiver
- * configurado, pula a checagem (retorna true).
+ * Valida o X-Hub-Signature-256 dos POSTs. Em produção, META_APP_SECRET é obrigatório.
  */
 export function validateSignature(rawBody: string, signature: string | null): boolean {
   const cfg = getSocialWebhookConfig();
-  if (!cfg.appSecret) return true;
+  if (!cfg.appSecret) return process.env.NODE_ENV !== "production";
   if (!signature?.startsWith("sha256=")) return false;
 
   const expected = createHmac("sha256", cfg.appSecret).update(rawBody, "utf8").digest("hex");
