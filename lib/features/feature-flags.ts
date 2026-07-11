@@ -111,5 +111,7 @@ export function canAccessCommandCenter(context: AppContext, metadata: TenantMeta
 }
 
 export function canAccessMetaChannels(context: AppContext, metadata: TenantMetadata): boolean {
-  return context.isPlatformTenant || hasTenantFeature(metadata, "meta_channels");
+  void context;
+  void metadata;
+  return false;
 }

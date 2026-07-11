@@ -41,9 +41,9 @@ test("command center requires platform admin and explicit command_center flag", 
   assert.equal(canAccessCommandCenter(context({ isPlatformTenant: true, role: "owner" }), { features: {} }), false);
 });
 
-test("meta channels are enabled for platform tenants or explicit tenant flag", () => {
-  assert.equal(canAccessMetaChannels(context({ isPlatformTenant: true }), null), true);
-  assert.equal(canAccessMetaChannels(context(), { features: { meta_channels: true } }), true);
+test("meta channels remain hidden during WhatsApp-only commercial release", () => {
+  assert.equal(canAccessMetaChannels(context({ isPlatformTenant: true }), null), false);
+  assert.equal(canAccessMetaChannels(context(), { features: { meta_channels: true } }), false);
   assert.equal(canAccessMetaChannels(context(), { features: { meta_channels: false } }), false);
 });
 
