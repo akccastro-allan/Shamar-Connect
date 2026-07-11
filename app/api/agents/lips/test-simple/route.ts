@@ -14,6 +14,18 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   try {
+    const isProduction = process.env.NODE_ENV === "production";
+    const processorToken = request.headers.get("x-processor-token");
+    const expectedToken = process.env.LIPS_PROCESSOR_TOKEN;
+
+    if (!expectedToken && isProduction) {
+      return NextResponse.json({ ok: false, error: "Endpoint disabled" }, { status: 404 });
+    }
+
+    if (expectedToken && processorToken !== expectedToken) {
+      return NextResponse.json({ ok: false, error: "Token inválido ou faltando" }, { status: 401 });
+    }
+
     const { message } = await request.json();
 
     if (!message || typeof message !== "string") {
