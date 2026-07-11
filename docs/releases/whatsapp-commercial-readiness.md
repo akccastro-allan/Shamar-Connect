@@ -44,6 +44,21 @@ Status: validação técnica local aprovada; pendente alinhamento de secret Open
 
 > A Moriah não publica módulos incompletos como beta comercial. Cada canal permanece invisível até passar por desenvolvimento, testes, homologação, segurança, documentação e operação real.
 
+> A Moriah usa o Centro de Comando como ambiente real de validação dos recursos futuros. Funcionalidades podem ser liberadas internamente quando estiverem funcionais, seguras e isoladas. Clientes só recebem recursos após uso interno, homologação e aprovação explícita do Allan.
+
+> Nenhum módulo comercial será apresentado como beta. Recursos ainda não aprovados permanecem invisíveis aos clientes.
+
+Existem dois níveis de liberação:
+
+```text
+1. Liberação interna para Allan/Moriah
+2. Liberação comercial para clientes
+```
+
+O Centro de Comando pode receber funcionalidades internas progressivamente quando estiverem funcionais, protegidas, sem risco de perda ou vazamento de dados, utilizáveis no dia a dia e claramente identificadas como internas. Isso inclui WhatsApp com grupos e comunidades, redes sociais e IA assistiva, desde que cada recurso esteja isolado, observável e reversível.
+
+Para clientes, recurso inexistente deve permanecer invisível. Não exibir item desativado, card "em breve", canal incompleto, botão sem função, laboratório, feature experimental ou configuração técnica futura.
+
 Ciclo obrigatório:
 
 ```text
@@ -57,6 +72,66 @@ desenvolvimento interno
 ```
 
 Para este release, apenas WhatsApp pode ficar visível ao cliente. Instagram, Facebook, TikTok, e-mail, IA, Meta/Cloud API e canais futuros permanecem escondidos da navegação, protegidos server-side, desativados por feature flags e indisponíveis por API.
+
+## Ordem Oficial da Lips
+
+```text
+1. WhatsApp
+2. IA
+3. Redes sociais
+```
+
+### Fase 1 — WhatsApp Lips
+
+Concluir totalmente antes de avançar comercialmente:
+
+- inbound;
+- outbound;
+- inbox;
+- contato;
+- catálogo;
+- classificador;
+- cotação segura;
+- cooldown;
+- handoff;
+- equipe;
+- oficina;
+- balcão;
+- grupos ignorados no fluxo comercial atual;
+- mídia preservada;
+- autenticação de webhook;
+- isolamento por organização;
+- observabilidade;
+- operação real.
+
+### Fase 2 — IA Lips
+
+IA entra como apoio supervisionado. Inicialmente pode resumir conversa, sugerir resposta, identificar intenção/urgência, sugerir departamento/tags/próximo passo, buscar contexto de produto e ajudar o atendente.
+
+IA não deve inicialmente fechar venda, confirmar estoque, reservar produto, enviar PIX, confirmar aplicação, negociar preço, responder autonomamente sem controle ou substituir regra determinística segura.
+
+### Fase 3 — Redes Sociais Lips
+
+Somente depois do WhatsApp e da IA estarem estáveis. Cada canal deve passar por integração, entrada, resposta, histórico, identidade do contato, fila, atribuição, automação, segurança, teste interno, aprovação e liberação.
+
+## Aprovação do Allan
+
+Nenhum recurso muda de `internal_active` para `internal_approved`, `commercial_pilot` ou `commercial_active` sem aprovação explícita do Allan.
+
+Modelo de registro obrigatório:
+
+```text
+recurso:
+ambiente testado:
+data:
+resultado:
+problemas encontrados:
+correções:
+aprovado por Allan:
+liberação autorizada:
+```
+
+Estado atual do WhatsApp Lips: validação técnica local aprovada; `internal_approved`/`commercial_pilot` somente após homologação real ponta a ponta e aprovação explícita do Allan.
 
 ## Validações
 

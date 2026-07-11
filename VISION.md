@@ -27,6 +27,21 @@ Política permanente de módulos:
 
 > A Moriah não publica módulos incompletos como beta comercial. Cada canal permanece invisível até passar por desenvolvimento, testes, homologação, segurança, documentação e operação real.
 
+> A Moriah usa o Centro de Comando como ambiente real de validação dos recursos futuros. Funcionalidades podem ser liberadas internamente quando estiverem funcionais, seguras e isoladas. Clientes só recebem recursos após uso interno, homologação e aprovação explícita do Allan.
+
+> Nenhum módulo comercial será apresentado como beta. Recursos ainda não aprovados permanecem invisíveis aos clientes.
+
+Existem dois níveis de liberação:
+
+```text
+1. Liberação interna para Allan/Moriah
+2. Liberação comercial para clientes
+```
+
+O Centro de Comando pode receber recursos em validação interna quando estiverem funcionais, seguros, isolados, observáveis e reversíveis. Essa liberação interna não torna o recurso comercialmente pronto.
+
+Clientes só recebem recursos depois de testes automatizados, uso real interno, homologação, validação de segurança, validação visual/mobile, documentação, tratamento de erros e aprovação explícita do Allan.
+
 Ciclo obrigatório:
 
 ```text
@@ -40,6 +55,20 @@ desenvolvimento interno
 ```
 
 Nenhum canal ou módulo comercial deve aparecer como parcialmente funcional. WhatsApp, Instagram, Facebook, TikTok, e-mail, IA e qualquer canal futuro só ficam visíveis ao cliente quando estiverem completos, protegidos server-side e operáveis ponta a ponta.
+
+Estados oficiais de funcionalidade:
+
+```text
+hidden
+internal_alpha
+internal_active
+internal_approved
+commercial_pilot
+commercial_active
+disabled
+```
+
+Nenhum recurso muda de `internal_active` para `internal_approved`, `commercial_pilot` ou `commercial_active` sem aprovação explícita do Allan registrada em documentação de release.
 
 ---
 
