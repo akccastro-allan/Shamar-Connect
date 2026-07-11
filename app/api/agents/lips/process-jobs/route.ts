@@ -111,6 +111,7 @@ export async function POST(request: NextRequest) {
       .from("agent_automation_jobs")
       .select("*")
       .eq("status", "pending")
+      .eq("agent_type", "lips-auto")
       .order("created_at", { ascending: true })
       .limit(limit);
 
@@ -136,14 +137,22 @@ export async function POST(request: NextRequest) {
 
     for (const job of jobs) {
       try {
-        // Marca como processing
-        await db
+        // Claim idempotente: se outro worker já pegou, não processa de novo.
+        const { data: claimed } = await db
           .from("agent_automation_jobs")
           .update({
             status: "processing",
             started_at: new Date().toISOString(),
           })
-          .eq("id", job.id);
+          .eq("id", job.id)
+          .eq("status", "pending")
+          .select("id")
+          .maybeSingle();
+
+        if (!claimed?.id) {
+          results.push({ jobId: job.id, status: "skipped", reason: "already_claimed" });
+          continue;
+        }
 
         // Fetch da mensagem inbound
         const { data: inboundMsg } = await db
@@ -165,6 +174,44 @@ export async function POST(request: NextRequest) {
 
         if (!conversation) {
           throw new Error("Conversa não encontrada");
+        }
+
+        const inboundMessageType = inboundMsg.message_type || "text";
+        const isTextInbound = ["text", "chat"].includes(inboundMessageType);
+
+        if (inboundMsg.direction !== "inbound" || conversation.is_group || !isTextInbound || !inboundMsg.body) {
+          const responseType = conversation.is_group
+            ? "group_skipped"
+            : inboundMsg.direction !== "inbound"
+              ? "non_inbound_skipped"
+              : `${inboundMessageType}_requires_human`;
+
+          if (!conversation.is_group && inboundMsg.direction === "inbound" && !isTextInbound) {
+            await db
+              .from("whatsapp_conversations")
+              .update({
+                status: "pending",
+                requires_human: true,
+                pending_reason: `${inboundMessageType}_requires_human`,
+                sla_status: "pending",
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", job.conversation_id);
+          }
+
+          await db
+            .from("agent_automation_jobs")
+            .update({
+              status: "done",
+              completed_at: new Date().toISOString(),
+              response_type: responseType,
+              sent_to_evolution: false,
+              outbound_message_id: null,
+            })
+            .eq("id", job.id);
+
+          results.push({ jobId: job.id, status: "done", responded: false, responseType });
+          continue;
         }
 
         // Processar mensagem com lógica de autoenvio controlado
@@ -189,7 +236,7 @@ export async function POST(request: NextRequest) {
 
         const canAutoSend =
           !isAwaitingHuman &&
-          (!inboundMsg.message_type || ["text", "chat"].includes(inboundMsg.message_type)) &&
+          isTextInbound &&
           isOfficialAutoReply(processResult);
 
         if (canAutoSend) {
