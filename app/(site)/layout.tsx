@@ -55,7 +55,7 @@ export default async function SiteLayout({ children }: { children: ReactNode }) 
 
           <div className="flex items-center gap-3">
             <Link
-              href={isAuthenticated ? "/operations" : "/login"}
+              href={isAuthenticated ? "/dashboard" : "/login"}
               className="hidden rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-black text-[#132B57] shadow-sm transition hover:-translate-y-0.5 hover:border-[#2ABFAB] hover:text-[#13796D] sm:inline-flex"
             >
               {isAuthenticated ? "Abrir plataforma" : "Entrar"}
@@ -75,7 +75,7 @@ export default async function SiteLayout({ children }: { children: ReactNode }) 
               {link.label}
             </Link>
           ))}
-          <Link href={isAuthenticated ? "/operations" : "/login"} className="font-black text-[#13796D]">
+          <Link href={isAuthenticated ? "/dashboard" : "/login"} className="font-black text-[#13796D]">
             {isAuthenticated ? "Plataforma" : "Entrar"}
           </Link>
         </nav>

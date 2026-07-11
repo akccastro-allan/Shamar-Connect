@@ -240,7 +240,7 @@ export default async function HomePage() {
                 Falar com especialista
               </Link>
               <Link
-                href={isAuthenticated ? "/operations" : "/login"}
+                href={isAuthenticated ? "/dashboard" : "/login"}
                 className="inline-flex items-center justify-center rounded-full px-7 py-4 text-sm font-black text-white/80 transition hover:bg-white/8"
               >
                 {isAuthenticated ? "Abrir plataforma" : "Entrar"}
