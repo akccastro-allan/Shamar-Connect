@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
   try {
     const context = await getRequiredAppContext();
 
-    if (context.role !== "owner" && context.role !== "admin") {
+    if ((context.role !== "owner" && context.role !== "admin") || !context.isPlatformTenant) {
       return NextResponse.json({ ok: false, error: "Acesso restrito a administradores." }, { status: 403 });
     }
 
