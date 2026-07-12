@@ -20,6 +20,8 @@ type InternalGateway = {
   id: string;
   name: string;
   slug: string;
+  provider: string;
+  baseUrl: string;
   environment: string;
   status: string;
   version: string | null;
@@ -120,19 +122,30 @@ export function InternalChannelsPanel() {
   const [plannedChannels, setPlannedChannels] = useState<PlannedChannel[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [savingGateway, setSavingGateway] = useState(false);
   const [updatingChannelId, setUpdatingChannelId] = useState<string | null>(null);
+  const [qrByChannel, setQrByChannel] = useState<Record<string, string | null>>({});
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [filters, setFilters] = useState({ businessKey: "all", channelType: "all", purpose: "all", status: "all" });
   const [form, setForm] = useState({
     organizationId: "",
-    gatewayId: "gateway-01",
+    gatewayId: "",
     channelType: "whatsapp_web",
     accountLabel: "",
     purpose: "support",
     externalAccountId: "",
     status: "draft",
     featureStage: "internal_alpha",
+  });
+  const [gatewayForm, setGatewayForm] = useState({
+    name: "Gateway 01",
+    slug: "gateway-01",
+    provider: "openwa",
+    baseUrl: "",
+    environment: "production",
+    status: "inactive",
+    maxSessions: 9,
   });
 
   async function load() {
@@ -147,7 +160,9 @@ export function InternalChannelsPanel() {
       setChannels(data.channels || []);
       setPlannedChannels(data.plannedChannels || []);
       if (!form.organizationId && data.organizations?.[0]?.id) {
-        setForm((current) => ({ ...current, organizationId: data.organizations![0].id }));
+        setForm((current) => ({ ...current, organizationId: data.organizations![0].id, gatewayId: current.gatewayId || data.gateways?.[0]?.id || "" }));
+      } else if (!form.gatewayId && data.gateways?.[0]?.id) {
+        setForm((current) => ({ ...current, gatewayId: data.gateways![0].id }));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao carregar canais internos.");
@@ -176,6 +191,68 @@ export function InternalChannelsPanel() {
       setError(err instanceof Error ? err.message : "Falha ao cadastrar canal interno.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function submitGateway(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSavingGateway(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch("/api/operations/internal-gateways", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(gatewayForm),
+      });
+      const data = await response.json() as ApiResponse;
+      if (!data.ok) throw new Error(data.error || "Falha ao cadastrar gateway interno.");
+      setNotice("Gateway interno cadastrado.");
+      setGatewayForm((current) => ({ ...current, baseUrl: "" }));
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao cadastrar gateway interno.");
+    } finally {
+      setSavingGateway(false);
+    }
+  }
+
+  async function checkGateway(gateway: InternalGateway) {
+    setUpdatingChannelId(gateway.id);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch("/api/operations/internal-gateways", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: gateway.id, action: "health_check" }),
+      });
+      const data = await response.json() as ApiResponse;
+      if (!data.ok) throw new Error(data.error || "Falha no health check.");
+      setNotice("Health check do gateway concluído.");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha no health check.");
+    } finally {
+      setUpdatingChannelId(null);
+    }
+  }
+
+  async function requestQr(channel: InternalChannel) {
+    setUpdatingChannelId(channel.id);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch(`/api/operations/internal-channels/${channel.id}/qr`, { method: "POST" });
+      const data = await response.json() as { ok: boolean; error?: string; qrCode?: string | null; status?: string };
+      if (!data.ok) throw new Error(data.error || "Falha ao solicitar QR.");
+      setQrByChannel((current) => ({ ...current, [channel.id]: data.qrCode || null }));
+      setNotice(`Status da sessão: ${data.status || "em preparação"}.`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao solicitar QR.");
+    } finally {
+      setUpdatingChannelId(null);
     }
   }
 
@@ -251,6 +328,40 @@ export function InternalChannelsPanel() {
       {notice && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-700">{notice}</div>}
 
       <div className="grid gap-6 xl:grid-cols-[0.9fr_1.4fr]">
+        <Card className="rounded-[2rem] xl:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-lg font-black text-[#1B2F5B]">Gateways internos</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-6 lg:grid-cols-[0.9fr_1.4fr]">
+              <form onSubmit={submitGateway} className="space-y-3">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="block text-sm font-bold text-slate-700">Nome<input className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm" value={gatewayForm.name} onChange={(event) => setGatewayForm({ ...gatewayForm, name: event.target.value })} /></label>
+                  <label className="block text-sm font-bold text-slate-700">Slug<input className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm" value={gatewayForm.slug} onChange={(event) => setGatewayForm({ ...gatewayForm, slug: event.target.value })} /></label>
+                </div>
+                <label className="block text-sm font-bold text-slate-700">Base URL<input className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm" value={gatewayForm.baseUrl} onChange={(event) => setGatewayForm({ ...gatewayForm, baseUrl: event.target.value })} placeholder="https://gateway.exemplo.com" /></label>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="block text-sm font-bold text-slate-700">Ambiente<select className="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" value={gatewayForm.environment} onChange={(event) => setGatewayForm({ ...gatewayForm, environment: event.target.value })}><option value="production">Produção</option><option value="test">Teste</option></select></label>
+                  <label className="block text-sm font-bold text-slate-700">Status<select className="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" value={gatewayForm.status} onChange={(event) => setGatewayForm({ ...gatewayForm, status: event.target.value })}><option value="inactive">Inativo</option><option value="active">Ativo</option><option value="maintenance">Manutenção</option><option value="error">Erro</option></select></label>
+                </div>
+                <Button type="submit" disabled={savingGateway} className="w-full rounded-full bg-[#1B2F5B] font-black text-white hover:bg-[#16284d]">{savingGateway ? "Salvando..." : "Cadastrar gateway"}</Button>
+                <p className="text-xs text-slate-500">Não cadastre API key, secret, token ou cookie. Credenciais ficam no ambiente do gateway.</p>
+              </form>
+              <div className="space-y-3">
+                {gateways.map((gateway) => (
+                  <div key={gateway.id} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div><p className="font-black text-[#1B2F5B]">{gateway.name}</p><p className="mt-1 text-xs text-slate-500">{gateway.provider} · {gateway.environment} · {gateway.activeSessions}/{gateway.maxSessions} sessões</p><p className="mt-1 text-xs text-slate-400">{gateway.baseUrl}</p>{gateway.lastError && <p className="mt-1 text-xs font-bold text-red-600">{gateway.lastError}</p>}</div>
+                      <div className="flex flex-wrap gap-2"><Badge className={statusClass(gateway.status)}>{gateway.status}</Badge><Button type="button" size="sm" variant="outline" className="rounded-full" disabled={updatingChannelId === gateway.id} onClick={() => checkGateway(gateway)}>Health check</Button></div>
+                    </div>
+                  </div>
+                ))}
+                {!gateways.length && <p className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-500">Nenhum gateway interno cadastrado. Cadastre um gateway antes de criar sessões WhatsApp internas.</p>}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         <Card className="rounded-[2rem]">
           <CardHeader>
             <CardTitle className="text-lg font-black text-[#1B2F5B]">Novo canal interno</CardTitle>
@@ -302,7 +413,7 @@ export function InternalChannelsPanel() {
                 Identificador externo não secreto
                 <input className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm" value={form.externalAccountId} onChange={(event) => setForm({ ...form, externalAccountId: event.target.value })} placeholder="Page ID, phone_number_id ou conta" />
               </label>
-              <Button type="submit" disabled={saving || !organizations.length} className="w-full rounded-full bg-[#2ABFAB] font-black text-white hover:bg-[#229d8e]">
+              <Button type="submit" disabled={saving || !organizations.length || (whatsappWebSelected && !gateways.length)} className="w-full rounded-full bg-[#2ABFAB] font-black text-white hover:bg-[#229d8e]">
                 {saving ? "Salvando..." : "Cadastrar canal interno"}
               </Button>
               {plannedByBusiness.length > 0 && (
@@ -384,7 +495,11 @@ export function InternalChannelsPanel() {
                     <Button type="button" size="sm" variant="outline" className="rounded-full" disabled={updatingChannelId === channel.id} onClick={() => toggleChannel(channel)}>
                       {channel.active ? "Desativar" : "Ativar"}
                     </Button>
+                    {channel.channelType === "whatsapp_web" && channel.status !== "connected" && (
+                      <Button type="button" size="sm" variant="outline" className="rounded-full" disabled={updatingChannelId === channel.id} onClick={() => requestQr(channel)}>Conectar WhatsApp</Button>
+                    )}
                   </div>
+                  {qrByChannel[channel.id] && <div className="mt-3 rounded-2xl border border-slate-100 bg-slate-50 p-3 text-xs text-slate-500">QR recebido para conexão manual. Escaneie apenas com o número autorizado por Allan.</div>}
                 </div>
               ))}
               {!channels.length && <p className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-500">Nenhum canal interno cadastrado. Cadastre o primeiro canal para começar a centralizar as comunicações das empresas da Moriah.</p>}

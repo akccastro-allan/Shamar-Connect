@@ -5,9 +5,7 @@ import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 import { canAccessCommandCenter, getTenantFeatureMetadata } from "@/lib/features/feature-flags";
 import {
   buildInternalChannelMetadata,
-  getChannelGatewayId,
   getInternalBusinessLabel,
-  getMigrationReadinessReport,
   getNextInternalSessionId,
   INTERNAL_CHANNEL_PURPOSES,
   INTERNAL_CHANNEL_STATUSES,
@@ -15,12 +13,10 @@ import {
   INTERNAL_COMMUNITY_MODEL,
   INTERNAL_FEATURE_STAGE_CONFIG,
   INTERNAL_FEATURE_STAGES,
-  INTERNAL_GATEWAYS,
   INTERNAL_GROUP_MODEL,
   INTERNAL_SOCIAL_CONNECTION_MODEL,
   isAllowedInternalChannelType,
   isAllowedInternalFeatureStage,
-  isAllowedInternalGateway,
   isAllowedInternalPurpose,
   isAllowedInternalStatus,
   isValidInternalWhatsappSessionId,
@@ -31,6 +27,7 @@ import {
   validateInternalSessionRegistration,
   type InternalChannelStatus,
 } from "@/lib/operations/internal-channels";
+import { getChannelGatewayId, publicGatewaySummary, type InternalGatewayRow } from "@/lib/operations/internal-gateways";
 
 export const dynamic = "force-dynamic";
 
@@ -53,6 +50,7 @@ type ChannelRow = {
   channel_type: string | null;
   display_name: string | null;
   session_id: string | null;
+  gateway_id?: string | null;
   phone_number: string | null;
   phone_number_id: string | null;
   external_instance: string | null;
@@ -66,7 +64,7 @@ type ChannelRow = {
 
 const createChannelSchema = z.object({
   organizationId: z.string().uuid(),
-  gatewayId: z.string().default("gateway-01"),
+  gatewayId: z.string().uuid().optional(),
   accountLabel: z.string().trim().min(2).max(80),
   channelType: z.enum(INTERNAL_CHANNEL_TYPES),
   purpose: z.enum(INTERNAL_CHANNEL_PURPOSES),
@@ -100,7 +98,7 @@ function normalizeStatus(status: string | null | undefined, active: boolean | nu
   return "draft";
 }
 
-function channelSummary(channel: ChannelRow, organization: OrganizationRow) {
+function channelSummary(channel: ChannelRow, organization: OrganizationRow, gatewayById: Map<string, InternalGatewayRow>) {
   const businessKey = resolveInternalBusinessKey(organization);
   const metadata = channel.metadata && typeof channel.metadata === "object" && !Array.isArray(channel.metadata)
     ? channel.metadata as Record<string, unknown>
@@ -108,7 +106,7 @@ function channelSummary(channel: ChannelRow, organization: OrganizationRow) {
   const metadataPurpose = typeof metadata.purpose === "string" ? metadata.purpose : null;
   const metadataStage = typeof metadata.featureStage === "string" ? metadata.featureStage : null;
   const metadataLabel = typeof metadata.accountLabel === "string" ? metadata.accountLabel : null;
-  const gatewayId = getChannelGatewayId(metadata);
+  const gatewayId = getChannelGatewayId(channel);
   const lastEventAt = typeof metadata.lastEventAt === "string" ? metadata.lastEventAt : null;
   const lastError = typeof metadata.lastError === "string" ? metadata.lastError : null;
   const sessionId = channel.session_id;
@@ -123,7 +121,7 @@ function channelSummary(channel: ChannelRow, organization: OrganizationRow) {
     displayName: channel.display_name || channel.name,
     sessionId,
     gatewayId,
-    gatewayName: INTERNAL_GATEWAYS.find((gateway) => gateway.id === gatewayId)?.name || gatewayId,
+    gatewayName: gatewayId ? gatewayById.get(gatewayId)?.name || gatewayId : null,
     externalAccountId: metadata.externalAccountId || channel.phone_number_id || channel.external_instance || null,
     purpose: metadataPurpose || "other",
     status: normalizeStatus(channel.status, channel.is_active ?? channel.active),
@@ -148,8 +146,19 @@ function channelSummary(channel: ChannelRow, organization: OrganizationRow) {
 function existingSessions(channels: ChannelRow[]) {
   return channels.map((channel) => ({
     sessionId: channel.session_id,
-    gatewayId: getChannelGatewayId(channel.metadata),
+    gatewayId: getChannelGatewayId(channel),
   }));
+}
+
+async function loadInternalGateways(db: ReturnType<typeof createSupabaseWriteClient>, tenantId: string) {
+  const { data, error } = await db
+    .from("internal_messaging_gateways")
+    .select("id, tenant_id, name, slug, provider, base_url, environment, status, version, max_sessions, last_health_check_at, last_error, metadata, created_at, updated_at")
+    .eq("tenant_id", tenantId)
+    .order("name");
+
+  if (error) throw error;
+  return (data || []) as InternalGatewayRow[];
 }
 
 async function loadInternalOrganizations(db: ReturnType<typeof createSupabaseWriteClient>, tenantId: string) {
@@ -173,10 +182,12 @@ export async function GET() {
     if (!auth.ok) return auth.response;
 
     const organizations = await loadInternalOrganizations(auth.db, auth.context.tenantId);
+    const gateways = await loadInternalGateways(auth.db, auth.context.tenantId);
+    const gatewayById = new Map(gateways.map((gateway) => [gateway.id, gateway]));
     const organizationIds = organizations.map((organization) => organization.id);
 
     if (!organizationIds.length) {
-      return NextResponse.json({ ok: true, organizations: [], channels: [] });
+      return NextResponse.json({ ok: true, gateways: gateways.map((gateway) => publicGatewaySummary(gateway)), organizations: [], channels: [] });
     }
 
     const { data: channels, error } = await auth.db
@@ -192,21 +203,21 @@ export async function GET() {
     const safeChannels = (channels || [])
       .map((channel) => {
         const organization = organizationById.get(channel.organization_id);
-        return organization ? channelSummary(channel as ChannelRow, organization) : null;
+        return organization ? channelSummary(channel as ChannelRow, organization, gatewayById) : null;
       })
       .filter(Boolean);
     const sessions = existingSessions((channels || []) as ChannelRow[]);
 
     return NextResponse.json({
       ok: true,
-      gateways: INTERNAL_GATEWAYS,
+      gateways: gateways.map((gateway) => publicGatewaySummary(gateway, sessions.filter((session) => session.gatewayId === gateway.id).length)),
       organizations: organizations.map((organization) => ({
         id: organization.id,
         name: organization.name,
         slug: organization.slug,
         businessKey: organization.businessKey,
         businessLabel: getInternalBusinessLabel(String(organization.businessKey)),
-        nextSessions: INTERNAL_GATEWAYS.map((gateway) => {
+        nextSessions: gateways.map((gateway) => {
           const next = getNextInternalSessionId({
             businessKey: organization.businessKey as NonNullable<typeof organization.businessKey>,
             gatewayId: gateway.id,
@@ -223,7 +234,6 @@ export async function GET() {
         socialConnections: INTERNAL_SOCIAL_CONNECTION_MODEL,
       },
       featureStages: INTERNAL_FEATURE_STAGE_CONFIG,
-      migration: getMigrationReadinessReport(),
     });
   } catch (error) {
     if (isUnauthorizedError(error)) {
@@ -244,7 +254,7 @@ export async function POST(request: NextRequest) {
     }
 
     const { organizationId, accountLabel, channelType, purpose, status, featureStage } = parsed.data;
-    const gatewayId = parsed.data.gatewayId;
+    const gatewayId = parsed.data.gatewayId || null;
     const externalAccountId = parsed.data.externalAccountId || null;
     if (!isAllowedInternalChannelType(channelType) || !isAllowedInternalPurpose(purpose) || !isAllowedInternalStatus(status) || !isAllowedInternalFeatureStage(featureStage)) {
       return NextResponse.json({ ok: false, error: "Finalidade, status ou estágio inválido." }, { status: 400 });
@@ -255,13 +265,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "Empresa não pertence ao Centro de Comando interno." }, { status: 403 });
     }
 
-    if (channelType === "whatsapp_web" && !isAllowedInternalGateway(gatewayId)) {
-      return NextResponse.json({ ok: false, error: "Gateway interno inválido." }, { status: 400 });
+    const gateways = await loadInternalGateways(auth.db, auth.context.tenantId);
+    const gateway = gatewayId ? gateways.find((item) => item.id === gatewayId) : null;
+    if (channelType === "whatsapp_web" && !gateway) {
+      return NextResponse.json({ ok: false, error: "Gateway interno real é obrigatório para WhatsApp Web interno." }, { status: 400 });
     }
 
     const { data: existingChannels, error: existingError } = await auth.db
       .from("channels")
-      .select("id, tenant_id, organization_id, name, slug, provider, provider_type, channel_type, display_name, session_id, phone_number, phone_number_id, external_instance, status, active, is_active, metadata, created_at, updated_at")
+      .select("id, tenant_id, organization_id, name, slug, provider, provider_type, channel_type, display_name, session_id, gateway_id, phone_number, phone_number_id, external_instance, status, active, is_active, metadata, created_at, updated_at")
       .eq("tenant_id", auth.context.tenantId)
       .eq("organization_id", organizationId);
     if (existingError) throw existingError;
@@ -274,12 +286,12 @@ export async function POST(request: NextRequest) {
       }
       const nextSession = parsed.data.sessionId
         ? { ok: true as const, sessionId: parsed.data.sessionId }
-        : getNextInternalSessionId({ businessKey: organization.businessKey, gatewayId, existingSessions: sessions });
+        : getNextInternalSessionId({ businessKey: organization.businessKey, gatewayId: gatewayId!, existingSessions: sessions });
       if (!nextSession.ok) return NextResponse.json({ ok: false, error: nextSession.error }, { status: 400 });
 
       const registration = validateInternalSessionRegistration({
         businessKey: organization.businessKey,
-        gatewayId,
+        gatewayId: gatewayId!,
         sessionId: nextSession.sessionId,
         existingSessions: sessions,
       });
@@ -322,6 +334,7 @@ export async function POST(request: NextRequest) {
         display_name: accountLabel,
         slug,
         session_id: sessionId || slug,
+        gateway_id: channelType === "whatsapp_web" ? gatewayId : null,
         provider,
         provider_type: providerType,
         channel_type: channelType,
