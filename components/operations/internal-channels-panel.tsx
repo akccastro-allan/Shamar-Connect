@@ -13,6 +13,20 @@ type InternalOrganization = {
   slug: string | null;
   businessKey: string;
   businessLabel: string;
+  nextSessions: Array<{ gatewayId: string; ok: boolean; sessionId?: string; error?: string }>;
+};
+
+type InternalGateway = {
+  id: string;
+  name: string;
+  slug: string;
+  environment: string;
+  status: string;
+  version: string | null;
+  maxSessions: number;
+  activeSessions: number;
+  lastHealthCheck: string | null;
+  lastError: string | null;
 };
 
 type InternalChannel = {
@@ -26,17 +40,40 @@ type InternalChannel = {
   accountLabel: string;
   displayName: string;
   sessionId: string | null;
+  gatewayId: string | null;
+  gatewayName: string;
   externalAccountId: string | null;
   purpose: string;
   status: string;
   featureStage: string;
   active: boolean;
+  inboxUrl: string;
+  originContext: {
+    business: string;
+    channel: string;
+    account: string;
+    sessionId: string | null;
+    gateway: string | null;
+    purpose: string;
+  };
+  lastEventAt: string | null;
+  lastError: string | null;
+};
+
+type PlannedChannel = {
+  businessKey: string;
+  sessionId: string;
+  purpose: string;
+  channelType: string;
+  gatewayId: string;
 };
 
 type ApiResponse = {
   ok: boolean;
+  gateways?: InternalGateway[];
   organizations?: InternalOrganization[];
   channels?: InternalChannel[];
+  plannedChannels?: PlannedChannel[];
   error?: string;
 };
 
@@ -77,19 +114,22 @@ function purposeLabel(value: string) {
 }
 
 export function InternalChannelsPanel() {
+  const [gateways, setGateways] = useState<InternalGateway[]>([]);
   const [organizations, setOrganizations] = useState<InternalOrganization[]>([]);
   const [channels, setChannels] = useState<InternalChannel[]>([]);
+  const [plannedChannels, setPlannedChannels] = useState<PlannedChannel[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [updatingChannelId, setUpdatingChannelId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [filters, setFilters] = useState({ businessKey: "all", channelType: "all", purpose: "all", status: "all" });
   const [form, setForm] = useState({
     organizationId: "",
+    gatewayId: "gateway-01",
     channelType: "whatsapp_web",
     accountLabel: "",
     purpose: "support",
-    sessionId: "",
     externalAccountId: "",
     status: "draft",
     featureStage: "internal_alpha",
@@ -102,8 +142,10 @@ export function InternalChannelsPanel() {
       const response = await fetch("/api/operations/internal-channels", { cache: "no-store" });
       const data = await response.json() as ApiResponse;
       if (!data.ok) throw new Error(data.error || "Falha ao carregar canais internos.");
+      setGateways(data.gateways || []);
       setOrganizations(data.organizations || []);
       setChannels(data.channels || []);
+      setPlannedChannels(data.plannedChannels || []);
       if (!form.organizationId && data.organizations?.[0]?.id) {
         setForm((current) => ({ ...current, organizationId: data.organizations![0].id }));
       }
@@ -128,12 +170,33 @@ export function InternalChannelsPanel() {
       const data = await response.json() as ApiResponse;
       if (!data.ok) throw new Error(data.error || "Falha ao cadastrar canal interno.");
       setNotice("Canal interno cadastrado para validação.");
-      setForm((current) => ({ ...current, accountLabel: "", sessionId: "", externalAccountId: "" }));
+      setForm((current) => ({ ...current, accountLabel: "", externalAccountId: "" }));
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao cadastrar canal interno.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function toggleChannel(channel: InternalChannel) {
+    setUpdatingChannelId(channel.id);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch("/api/operations/internal-channels", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ channelId: channel.id, active: !channel.active }),
+      });
+      const data = await response.json() as ApiResponse;
+      if (!data.ok) throw new Error(data.error || "Falha ao atualizar canal interno.");
+      setNotice(channel.active ? "Canal interno desativado." : "Canal interno reativado para preparação.");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao atualizar canal interno.");
+    } finally {
+      setUpdatingChannelId(null);
     }
   }
 
@@ -146,6 +209,10 @@ export function InternalChannelsPanel() {
     if (filters.status !== "all" && channel.status !== filters.status) return false;
     return true;
   });
+  const selectedOrganization = organizations.find((organization) => organization.id === form.organizationId);
+  const selectedNextSession = selectedOrganization?.nextSessions.find((session) => session.gatewayId === form.gatewayId);
+  const whatsappWebSelected = form.channelType === "whatsapp_web";
+  const plannedByBusiness = plannedChannels.filter((item) => item.businessKey === selectedOrganization?.businessKey);
 
   return (
     <div className="space-y-8">
@@ -157,14 +224,14 @@ export function InternalChannelsPanel() {
         </div>
         <h1 className="mt-3 text-3xl font-black md:text-4xl">Canais internos Allan/Moriah</h1>
         <p className="mt-3 max-w-4xl text-sm leading-6 text-slate-200">
-          Cadastre números, contas e origens internas sem misturar clientes SaaS. Segredos ficam fora desta tela.
+          Cadastre canais, gateways e origens internas sem misturar clientes SaaS. Segredos ficam fora desta tela e nenhuma conexão real é iniciada aqui.
         </p>
         <div className="mt-5 flex flex-wrap gap-3">
           <Button asChild className="rounded-full bg-[#2ABFAB] px-5 font-black text-white hover:bg-[#229d8e]">
             <Link href="/operations">Voltar ao Centro</Link>
           </Button>
           <Button asChild variant="outline" className="rounded-full border-white/20 bg-transparent px-5 font-black text-white hover:bg-white/10">
-            <Link href="/whatsapp-messages">Abrir inbox</Link>
+            <Link href="/whatsapp-messages">Abrir inbox geral</Link>
           </Button>
         </div>
       </header>
@@ -202,6 +269,14 @@ export function InternalChannelsPanel() {
                   {channelTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
                 </select>
               </label>
+              {whatsappWebSelected && (
+                <label className="block text-sm font-bold text-slate-700">
+                  Gateway
+                  <select className="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" value={form.gatewayId} onChange={(event) => setForm({ ...form, gatewayId: event.target.value })}>
+                    {gateways.map((gateway) => <option key={gateway.id} value={gateway.id}>{gateway.name} · {gateway.environment}</option>)}
+                  </select>
+                </label>
+              )}
               <label className="block text-sm font-bold text-slate-700">
                 Nome de exibição
                 <input className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm" value={form.accountLabel} onChange={(event) => setForm({ ...form, accountLabel: event.target.value })} placeholder="Ex.: Shamar Kids Pais" />
@@ -212,10 +287,17 @@ export function InternalChannelsPanel() {
                   {purposes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
                 </select>
               </label>
-              <label className="block text-sm font-bold text-slate-700">
-                Session ID ou identificador da sessão
-                <input className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm" value={form.sessionId} onChange={(event) => setForm({ ...form, sessionId: event.target.value })} placeholder="Ex.: viciados-01" />
-              </label>
+              {whatsappWebSelected && (
+                <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm">
+                  <p className="font-black text-slate-700">Próxima sessão gerada</p>
+                  {selectedNextSession?.ok ? (
+                    <p className="mt-1 text-lg font-black text-[#1B2F5B]">{selectedNextSession.sessionId}</p>
+                  ) : (
+                    <p className="mt-1 font-bold text-red-700">{selectedNextSession?.error || "Selecione empresa e gateway."}</p>
+                  )}
+                  <p className="mt-2 text-xs text-slate-500">Operadores não digitam session ID livremente. O padrão é sempre empresa-01 até empresa-09 por gateway.</p>
+                </div>
+              )}
               <label className="block text-sm font-bold text-slate-700">
                 Identificador externo não secreto
                 <input className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm" value={form.externalAccountId} onChange={(event) => setForm({ ...form, externalAccountId: event.target.value })} placeholder="Page ID, phone_number_id ou conta" />
@@ -223,6 +305,16 @@ export function InternalChannelsPanel() {
               <Button type="submit" disabled={saving || !organizations.length} className="w-full rounded-full bg-[#2ABFAB] font-black text-white hover:bg-[#229d8e]">
                 {saving ? "Salvando..." : "Cadastrar canal interno"}
               </Button>
+              {plannedByBusiness.length > 0 && (
+                <div className="rounded-2xl border border-dashed border-slate-200 p-4 text-xs text-slate-500">
+                  <p className="font-black uppercase tracking-wide text-slate-600">Preparação prevista</p>
+                  <div className="mt-2 space-y-1">
+                    {plannedByBusiness.map((item) => (
+                      <p key={`${item.gatewayId}-${item.sessionId}`}>{item.sessionId} · {purposeLabel(item.purpose)} · {item.gatewayId}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
             </form>
           </CardContent>
         </Card>
@@ -274,19 +366,46 @@ export function InternalChannelsPanel() {
                     <div>
                       <p className="font-black text-[#1B2F5B]">{channel.accountLabel}</p>
                       <p className="mt-1 text-xs text-slate-500">{channel.businessLabel} · {channelTypeLabel(String(channel.channelType))} · {purposeLabel(channel.purpose)}</p>
-                      <p className="mt-1 text-xs text-slate-400">Sessão/conta: {channel.sessionId || channel.externalAccountId || "a configurar"}</p>
+                      <p className="mt-1 text-xs text-slate-400">Sessão/conta: {channel.sessionId || channel.externalAccountId || "a configurar"} · Gateway: {channel.gatewayName}</p>
+                      <p className="mt-1 text-xs text-slate-400">Última atividade: {channel.lastEventAt || "sem evento registrado"}</p>
+                      {channel.lastError && <p className="mt-1 text-xs font-bold text-red-600">Último erro: {channel.lastError}</p>}
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <Badge className={statusClass(channel.status)}>{channel.status}</Badge>
                       <Badge variant="outline">{channel.featureStage}</Badge>
                     </div>
                   </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Button asChild size="sm" variant="outline" className="rounded-full">
+                      <Link href={channel.inboxUrl}>
+                        Inbox filtrada
+                      </Link>
+                    </Button>
+                    <Button type="button" size="sm" variant="outline" className="rounded-full" disabled={updatingChannelId === channel.id} onClick={() => toggleChannel(channel)}>
+                      {channel.active ? "Desativar" : "Ativar"}
+                    </Button>
+                  </div>
                 </div>
               ))}
-              {!channels.length && <p className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-500">Nenhum canal interno cadastrado ainda.</p>}
+              {!channels.length && <p className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-500">Nenhum canal interno cadastrado. Cadastre o primeiro canal para começar a centralizar as comunicações das empresas da Moriah.</p>}
               {channels.length > 0 && !filteredChannels.length && <p className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-500">Nenhum canal corresponde aos filtros selecionados.</p>}
             </div>
           </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="rounded-[2rem]">
+          <CardHeader><CardTitle className="text-base font-black text-[#1B2F5B]">Grupos</CardTitle></CardHeader>
+          <CardContent className="text-sm text-slate-500">Modelo preparado com identificador, canal, sessão, participantes, administradores, último evento e leitura. Envio real desabilitado.</CardContent>
+        </Card>
+        <Card className="rounded-[2rem]">
+          <CardHeader><CardTitle className="text-base font-black text-[#1B2F5B]">Comunidades</CardTitle></CardHeader>
+          <CardContent className="text-sm text-slate-500">Modelo preparado para comunidade, grupo de anúncios, grupos vinculados, administradores, metadata e limitações do provider.</CardContent>
+        </Card>
+        <Card className="rounded-[2rem]">
+          <CardHeader><CardTitle className="text-base font-black text-[#1B2F5B]">Redes sociais</CardTitle></CardHeader>
+          <CardContent className="text-sm text-slate-500">Instagram, Facebook e TikTok exibem Não conectado, Conectado, Token expirado ou Erro de conexão sem retornar tokens ao frontend.</CardContent>
         </Card>
       </div>
     </div>

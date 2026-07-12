@@ -1,18 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 import { canAccessCommandCenter, getTenantFeatureMetadata } from "@/lib/features/feature-flags";
 import {
   buildInternalChannelMetadata,
+  getChannelGatewayId,
   getInternalBusinessLabel,
+  getMigrationReadinessReport,
+  getNextInternalSessionId,
+  INTERNAL_CHANNEL_PURPOSES,
+  INTERNAL_CHANNEL_STATUSES,
+  INTERNAL_CHANNEL_TYPES,
+  INTERNAL_COMMUNITY_MODEL,
+  INTERNAL_FEATURE_STAGE_CONFIG,
+  INTERNAL_FEATURE_STAGES,
+  INTERNAL_GATEWAYS,
+  INTERNAL_GROUP_MODEL,
+  INTERNAL_SOCIAL_CONNECTION_MODEL,
   isAllowedInternalChannelType,
   isAllowedInternalFeatureStage,
+  isAllowedInternalGateway,
   isAllowedInternalPurpose,
   isAllowedInternalStatus,
   isValidInternalWhatsappSessionId,
   makeInternalChannelSlug,
+  PLANNED_INTERNAL_CHANNELS,
   resolveInternalBusinessKey,
   resolveProviderForInternalChannel,
+  validateInternalSessionRegistration,
   type InternalChannelStatus,
 } from "@/lib/operations/internal-channels";
 
@@ -48,6 +64,23 @@ type ChannelRow = {
   updated_at: string | null;
 };
 
+const createChannelSchema = z.object({
+  organizationId: z.string().uuid(),
+  gatewayId: z.string().default("gateway-01"),
+  accountLabel: z.string().trim().min(2).max(80),
+  channelType: z.enum(INTERNAL_CHANNEL_TYPES),
+  purpose: z.enum(INTERNAL_CHANNEL_PURPOSES),
+  status: z.enum(INTERNAL_CHANNEL_STATUSES).default("draft"),
+  featureStage: z.enum(INTERNAL_FEATURE_STAGES).default("internal_alpha"),
+  sessionId: z.string().trim().optional(),
+  externalAccountId: z.string().trim().max(120).optional(),
+});
+
+const updateChannelSchema = z.object({
+  channelId: z.string().uuid(),
+  active: z.boolean(),
+});
+
 async function requireCommandCenterApi() {
   const context = await getRequiredAppContext();
   const db = createSupabaseWriteClient();
@@ -75,28 +108,48 @@ function channelSummary(channel: ChannelRow, organization: OrganizationRow) {
   const metadataPurpose = typeof metadata.purpose === "string" ? metadata.purpose : null;
   const metadataStage = typeof metadata.featureStage === "string" ? metadata.featureStage : null;
   const metadataLabel = typeof metadata.accountLabel === "string" ? metadata.accountLabel : null;
+  const gatewayId = getChannelGatewayId(metadata);
+  const lastEventAt = typeof metadata.lastEventAt === "string" ? metadata.lastEventAt : null;
+  const lastError = typeof metadata.lastError === "string" ? metadata.lastError : null;
+  const sessionId = channel.session_id;
 
   return {
     id: channel.id,
-    tenantId: channel.tenant_id,
     organizationId: channel.organization_id,
     businessKey,
     businessLabel: businessKey ? getInternalBusinessLabel(businessKey) : organization.name,
-    organizationName: organization.name,
     channelType: channel.channel_type || metadata.channelType || channel.provider || "whatsapp_web",
-    provider: channel.provider,
-    providerType: channel.provider_type,
     accountLabel: metadataLabel || channel.display_name || channel.name,
     displayName: channel.display_name || channel.name,
-    sessionId: channel.session_id,
+    sessionId,
+    gatewayId,
+    gatewayName: INTERNAL_GATEWAYS.find((gateway) => gateway.id === gatewayId)?.name || gatewayId,
     externalAccountId: metadata.externalAccountId || channel.phone_number_id || channel.external_instance || null,
     purpose: metadataPurpose || "other",
     status: normalizeStatus(channel.status, channel.is_active ?? channel.active),
     featureStage: metadataStage || "internal_alpha",
     active: channel.is_active ?? channel.active ?? false,
+    inboxUrl: sessionId ? `/whatsapp-messages?channelId=${channel.id}` : `/whatsapp-messages`,
+    originContext: {
+      business: businessKey ? getInternalBusinessLabel(businessKey) : organization.name,
+      channel: channel.channel_type || metadata.channelType || channel.provider || "whatsapp_web",
+      account: sessionId || metadata.externalAccountId || channel.display_name || channel.name,
+      sessionId,
+      gateway: gatewayId,
+      purpose: metadataPurpose || "other",
+    },
+    lastEventAt,
+    lastError,
     createdAt: channel.created_at,
     updatedAt: channel.updated_at,
   };
+}
+
+function existingSessions(channels: ChannelRow[]) {
+  return channels.map((channel) => ({
+    sessionId: channel.session_id,
+    gatewayId: getChannelGatewayId(channel.metadata),
+  }));
 }
 
 async function loadInternalOrganizations(db: ReturnType<typeof createSupabaseWriteClient>, tenantId: string) {
@@ -142,17 +195,35 @@ export async function GET() {
         return organization ? channelSummary(channel as ChannelRow, organization) : null;
       })
       .filter(Boolean);
+    const sessions = existingSessions((channels || []) as ChannelRow[]);
 
     return NextResponse.json({
       ok: true,
+      gateways: INTERNAL_GATEWAYS,
       organizations: organizations.map((organization) => ({
         id: organization.id,
         name: organization.name,
         slug: organization.slug,
         businessKey: organization.businessKey,
         businessLabel: getInternalBusinessLabel(String(organization.businessKey)),
+        nextSessions: INTERNAL_GATEWAYS.map((gateway) => {
+          const next = getNextInternalSessionId({
+            businessKey: organization.businessKey as NonNullable<typeof organization.businessKey>,
+            gatewayId: gateway.id,
+            existingSessions: sessions,
+          });
+          return { gatewayId: gateway.id, ...next };
+        }),
       })),
       channels: safeChannels,
+      plannedChannels: PLANNED_INTERNAL_CHANNELS,
+      models: {
+        groups: INTERNAL_GROUP_MODEL,
+        communities: INTERNAL_COMMUNITY_MODEL,
+        socialConnections: INTERNAL_SOCIAL_CONNECTION_MODEL,
+      },
+      featureStages: INTERNAL_FEATURE_STAGE_CONFIG,
+      migration: getMigrationReadinessReport(),
     });
   } catch (error) {
     if (isUnauthorizedError(error)) {
@@ -167,23 +238,15 @@ export async function POST(request: NextRequest) {
     const auth = await requireCommandCenterApi();
     if (!auth.ok) return auth.response;
 
-    const body = await request.json() as Record<string, unknown>;
-    const organizationId = String(body.organizationId || "");
-    const accountLabel = String(body.accountLabel || "").trim();
-    const channelType = String(body.channelType || "");
-    const purpose = String(body.purpose || "other");
-    const status = String(body.status || "draft");
-    const featureStage = String(body.featureStage || "internal_alpha");
-    const sessionId = String(body.sessionId || "").trim() || null;
-    const externalAccountId = String(body.externalAccountId || "").trim() || null;
+    const parsed = createChannelSchema.safeParse(await request.json());
+    if (!parsed.success) {
+      return NextResponse.json({ ok: false, error: "Dados do canal interno inválidos." }, { status: 400 });
+    }
 
-    if (!organizationId || !accountLabel) {
-      return NextResponse.json({ ok: false, error: "Empresa interna e nome de exibição são obrigatórios." }, { status: 400 });
-    }
-    if (!isAllowedInternalChannelType(channelType)) {
-      return NextResponse.json({ ok: false, error: "Tipo de canal inválido." }, { status: 400 });
-    }
-    if (!isAllowedInternalPurpose(purpose) || !isAllowedInternalStatus(status) || !isAllowedInternalFeatureStage(featureStage)) {
+    const { organizationId, accountLabel, channelType, purpose, status, featureStage } = parsed.data;
+    const gatewayId = parsed.data.gatewayId;
+    const externalAccountId = parsed.data.externalAccountId || null;
+    if (!isAllowedInternalChannelType(channelType) || !isAllowedInternalPurpose(purpose) || !isAllowedInternalStatus(status) || !isAllowedInternalFeatureStage(featureStage)) {
       return NextResponse.json({ ok: false, error: "Finalidade, status ou estágio inválido." }, { status: 400 });
     }
     const organizations = await loadInternalOrganizations(auth.db, auth.context.tenantId);
@@ -192,8 +255,36 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "Empresa não pertence ao Centro de Comando interno." }, { status: 403 });
     }
 
-    if (channelType === "whatsapp_web" && (!sessionId || !isValidInternalWhatsappSessionId(sessionId, organization.businessKey))) {
-      return NextResponse.json({ ok: false, error: "WhatsApp Web interno exige session ID no padrão <empresa>-01 até <empresa>-09." }, { status: 400 });
+    if (channelType === "whatsapp_web" && !isAllowedInternalGateway(gatewayId)) {
+      return NextResponse.json({ ok: false, error: "Gateway interno inválido." }, { status: 400 });
+    }
+
+    const { data: existingChannels, error: existingError } = await auth.db
+      .from("channels")
+      .select("id, tenant_id, organization_id, name, slug, provider, provider_type, channel_type, display_name, session_id, phone_number, phone_number_id, external_instance, status, active, is_active, metadata, created_at, updated_at")
+      .eq("tenant_id", auth.context.tenantId)
+      .eq("organization_id", organizationId);
+    if (existingError) throw existingError;
+
+    let sessionId: string | null = null;
+    if (channelType === "whatsapp_web") {
+      const sessions = existingSessions((existingChannels || []) as ChannelRow[]);
+      if (parsed.data.sessionId && !isValidInternalWhatsappSessionId(parsed.data.sessionId, organization.businessKey)) {
+        return NextResponse.json({ ok: false, error: "WhatsApp Web interno exige session ID no padrão <empresa>-01 até <empresa>-09." }, { status: 400 });
+      }
+      const nextSession = parsed.data.sessionId
+        ? { ok: true as const, sessionId: parsed.data.sessionId }
+        : getNextInternalSessionId({ businessKey: organization.businessKey, gatewayId, existingSessions: sessions });
+      if (!nextSession.ok) return NextResponse.json({ ok: false, error: nextSession.error }, { status: 400 });
+
+      const registration = validateInternalSessionRegistration({
+        businessKey: organization.businessKey,
+        gatewayId,
+        sessionId: nextSession.sessionId,
+        existingSessions: sessions,
+      });
+      if (!registration.ok) return NextResponse.json({ ok: false, error: registration.error }, { status: 400 });
+      sessionId = nextSession.sessionId;
     }
 
     const { provider, providerType } = resolveProviderForInternalChannel(channelType);
@@ -205,6 +296,7 @@ export async function POST(request: NextRequest) {
       externalAccountId,
       purpose,
       featureStage,
+      gatewayId: channelType === "whatsapp_web" ? gatewayId : null,
     });
 
     const { data: existingSlugs } = await auth.db
@@ -253,5 +345,49 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
     }
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Falha ao cadastrar canal interno." }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const auth = await requireCommandCenterApi();
+    if (!auth.ok) return auth.response;
+
+    const parsed = updateChannelSchema.safeParse(await request.json());
+    if (!parsed.success) {
+      return NextResponse.json({ ok: false, error: "Dados de atualização inválidos." }, { status: 400 });
+    }
+
+    const { data: channel, error: channelError } = await auth.db
+      .from("channels")
+      .select("id, tenant_id, organization_id, metadata")
+      .eq("tenant_id", auth.context.tenantId)
+      .eq("id", parsed.data.channelId)
+      .maybeSingle();
+    if (channelError) throw channelError;
+    if (!channel) return NextResponse.json({ ok: false, error: "Canal interno não encontrado." }, { status: 404 });
+
+    const organizations = await loadInternalOrganizations(auth.db, auth.context.tenantId);
+    if (!organizations.some((organization) => organization.id === channel.organization_id)) {
+      return NextResponse.json({ ok: false, error: "Canal não pertence a uma empresa interna." }, { status: 403 });
+    }
+
+    const { error } = await auth.db
+      .from("channels")
+      .update({
+        active: parsed.data.active,
+        is_active: parsed.data.active,
+        status: parsed.data.active ? "draft" : "disabled",
+      })
+      .eq("tenant_id", auth.context.tenantId)
+      .eq("id", parsed.data.channelId);
+    if (error) throw error;
+
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    if (isUnauthorizedError(error)) {
+      return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
+    }
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Falha ao atualizar canal interno." }, { status: 500 });
   }
 }
