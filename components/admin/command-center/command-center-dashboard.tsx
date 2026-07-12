@@ -123,6 +123,7 @@ export function CommandCenterDashboard() {
         </div>
         <div className="mt-6 flex flex-wrap gap-3">
           <Link href="/inbox" className="rounded-full bg-[#2ABFAB] px-5 py-3 text-sm font-black text-white hover:bg-[#229d8e]">Abrir atendimento</Link>
+          <Link href="/operations/channels" className="rounded-full border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Canais internos</Link>
           <Link href="/admin" className="rounded-full border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Administração Shamar Connect</Link>
           <Link href="/settings/whatsapp" className="rounded-full border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">WhatsApp Conectado</Link>
           <Link href="/settings/whatsapp-cloud" className="rounded-full border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">WhatsApp Oficial</Link>
