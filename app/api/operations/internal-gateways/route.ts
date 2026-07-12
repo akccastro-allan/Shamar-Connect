@@ -3,9 +3,13 @@ import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-conte
 import { canAccessCommandCenter, getTenantFeatureMetadata } from "@/lib/features/feature-flags";
 import {
   createInternalGatewaySchema,
+  gatewayListFiltersSchema,
+  isUniqueConstraintError,
   normalizeGatewayHealth,
   publicGatewaySummary,
+  sanitizeGatewayError,
   updateInternalGatewaySchema,
+  validateGatewayBaseUrl,
   type InternalGatewayRow,
 } from "@/lib/operations/internal-gateways";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
@@ -31,7 +35,10 @@ async function countActiveSessions(db: ReturnType<typeof createSupabaseWriteClie
     .eq("tenant_id", tenantId)
     .not("gateway_id", "is", null)
     .eq("channel_type", "whatsapp_web")
-    .neq("status", "disabled");
+    .eq("provider_type", "web_gateway")
+    .neq("status", "disabled")
+    .neq("active", false)
+    .neq("is_active", false);
 
   const counts = new Map<string, number>();
   for (const row of data || []) {
@@ -41,40 +48,74 @@ async function countActiveSessions(db: ReturnType<typeof createSupabaseWriteClie
   return counts;
 }
 
+async function auditGatewayAction(input: {
+  db: ReturnType<typeof createSupabaseWriteClient>;
+  userId: string;
+  tenantId: string;
+  gatewayId: string | null;
+  action: string;
+  result: string;
+}) {
+  await input.db.from("audit_logs").insert({
+    actor: input.userId,
+    action: input.action,
+    entity_type: "internal_messaging_gateway",
+    entity_id: input.gatewayId,
+    metadata: { tenant_id: input.tenantId, result: input.result },
+  });
+}
+
 async function runHealthCheck(gateway: InternalGatewayRow) {
   const controller = new AbortController();
-  const timeout = windowlessTimeout(() => controller.abort(), 4000);
+  const timeout = setTimeout(() => controller.abort(), 4000);
   const started = Date.now();
 
   try {
-    const baseUrl = gateway.base_url.replace(/\/$/, "");
-    const first = await fetch(`${baseUrl}/api/health/ready`, { cache: "no-store", signal: controller.signal });
-    let response = first;
-    if (first.status === 404) response = await fetch(`${baseUrl}/api/health`, { cache: "no-store", signal: controller.signal });
-    const contentType = response.headers.get("content-type") || "";
-    const body = contentType.includes("application/json") ? await response.json() : { status: response.ok ? "ok" : "error" };
-    return normalizeGatewayHealth({ ok: response.ok, status: response.status, body, latencyMs: Date.now() - started });
+    const validation = validateGatewayBaseUrl(gateway.base_url, gateway.environment);
+    if (!validation.ok) {
+      return normalizeGatewayHealth({ ok: false, latencyMs: Date.now() - started, error: validation.error });
+    }
+    const baseUrl = validation.url;
+    const health = await fetch(`${baseUrl}/api/health`, { cache: "no-store", signal: controller.signal });
+    const ready = await fetch(`${baseUrl}/api/health/ready`, { cache: "no-store", signal: controller.signal });
+    const readyContentType = ready.headers.get("content-type") || "";
+    const body = readyContentType.includes("application/json") ? await ready.json() : { status: ready.ok ? "ready" : "error" };
+    return normalizeGatewayHealth({
+      ok: health.ok,
+      status: ready.status,
+      healthOk: health.ok,
+      healthStatus: health.status,
+      readyOk: ready.ok,
+      readyStatus: ready.status,
+      body,
+      latencyMs: Date.now() - started,
+    });
   } catch (error) {
-    return normalizeGatewayHealth({ ok: false, latencyMs: Date.now() - started, error: error instanceof Error ? error.message : "Falha no health check." });
+    return normalizeGatewayHealth({ ok: false, latencyMs: Date.now() - started, error: sanitizeGatewayError(error) });
   } finally {
     clearTimeout(timeout);
   }
 }
 
-function windowlessTimeout(callback: () => void, ms: number) {
-  return setTimeout(callback, ms);
-}
-
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const auth = await requireCommandCenterApi();
     if (!auth.ok) return auth.response;
 
-    const { data, error } = await auth.db
+    const parsed = gatewayListFiltersSchema.safeParse(Object.fromEntries(request.nextUrl.searchParams.entries()));
+    if (!parsed.success) return NextResponse.json({ ok: false, error: "Filtros inválidos." }, { status: 400 });
+
+    let query = auth.db
       .from("internal_messaging_gateways")
       .select("id, tenant_id, name, slug, provider, base_url, environment, status, version, max_sessions, last_health_check_at, last_error, metadata, created_at, updated_at")
       .eq("tenant_id", auth.context.tenantId)
       .order("name");
+    if (parsed.data.status) query = query.eq("status", parsed.data.status);
+    if (parsed.data.provider) query = query.eq("provider", parsed.data.provider);
+    if (parsed.data.environment) query = query.eq("environment", parsed.data.environment);
+    if (parsed.data.slug) query = query.eq("slug", parsed.data.slug);
+
+    const { data, error } = await query;
     if (error) throw error;
 
     const counts = await countActiveSessions(auth.db, auth.context.tenantId);
@@ -84,7 +125,7 @@ export async function GET() {
     });
   } catch (error) {
     if (isUnauthorizedError(error)) return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
-    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Falha ao carregar gateways." }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "Falha ao carregar gateways." }, { status: 500 });
   }
 }
 
@@ -96,6 +137,18 @@ export async function POST(request: NextRequest) {
     const parsed = createInternalGatewaySchema.safeParse(await request.json());
     if (!parsed.success) return NextResponse.json({ ok: false, error: "Dados do gateway inválidos." }, { status: 400 });
 
+    const baseUrl = validateGatewayBaseUrl(parsed.data.baseUrl, parsed.data.environment);
+    if (!baseUrl.ok) return NextResponse.json({ ok: false, error: baseUrl.error }, { status: 400 });
+
+    const { data: existing, error: existingError } = await auth.db
+      .from("internal_messaging_gateways")
+      .select("id")
+      .eq("tenant_id", auth.context.tenantId)
+      .eq("slug", parsed.data.slug)
+      .maybeSingle();
+    if (existingError) throw existingError;
+    if (existing) return NextResponse.json({ ok: false, error: "gateway_slug_conflict" }, { status: 409 });
+
     const { data, error } = await auth.db
       .from("internal_messaging_gateways")
       .insert({
@@ -103,21 +156,25 @@ export async function POST(request: NextRequest) {
         name: parsed.data.name,
         slug: parsed.data.slug,
         provider: parsed.data.provider,
-        base_url: parsed.data.baseUrl,
+        base_url: baseUrl.url,
         environment: parsed.data.environment,
-        status: parsed.data.status,
-        version: parsed.data.version || null,
+        status: parsed.data.status || "inactive",
         max_sessions: parsed.data.maxSessions,
         metadata: {},
       })
       .select("id")
       .single();
-    if (error) throw error;
+    if (error) {
+      if (isUniqueConstraintError(error)) return NextResponse.json({ ok: false, error: "gateway_slug_conflict" }, { status: 409 });
+      throw error;
+    }
+
+    await auditGatewayAction({ db: auth.db, userId: auth.context.appUserId, tenantId: auth.context.tenantId, gatewayId: data.id, action: "gateway_created", result: "success" });
 
     return NextResponse.json({ ok: true, gatewayId: data.id }, { status: 201 });
   } catch (error) {
     if (isUnauthorizedError(error)) return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
-    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Falha ao cadastrar gateway." }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "Falha ao cadastrar gateway." }, { status: 500 });
   }
 }
 
@@ -140,28 +197,44 @@ export async function PATCH(request: NextRequest) {
 
     if (parsed.data.action === "health_check") {
       const health = await runHealthCheck(gateway as InternalGatewayRow);
-      const nextStatus = health.state === "ready" || health.state === "online" ? "active" : health.state === "offline" ? "error" : "maintenance";
+      const nextStatus = health.state === "ready" || health.state === "online" ? "active" : health.state === "offline" || health.state === "configuration" ? "error" : "maintenance";
       const { error } = await auth.db
         .from("internal_messaging_gateways")
         .update({
           status: nextStatus,
           version: health.version || gateway.version || null,
           last_health_check_at: new Date().toISOString(),
-          last_error: health.error,
+          last_error: health.error ? sanitizeGatewayError(health.error) : null,
         })
         .eq("tenant_id", auth.context.tenantId)
         .eq("id", parsed.data.id);
       if (error) throw error;
+      await auditGatewayAction({ db: auth.db, userId: auth.context.appUserId, tenantId: auth.context.tenantId, gatewayId: parsed.data.id, action: health.error ? "gateway_health_check_failed" : "gateway_health_check", result: health.state });
       return NextResponse.json({ ok: true, health });
     }
 
     const update: Record<string, unknown> = {};
     if (parsed.data.name !== undefined) update.name = parsed.data.name;
-    if (parsed.data.baseUrl !== undefined) update.base_url = parsed.data.baseUrl;
-    if (parsed.data.environment !== undefined) update.environment = parsed.data.environment;
+    const nextEnvironment = parsed.data.environment || gateway.environment;
+    if (parsed.data.baseUrl !== undefined) {
+      const baseUrl = validateGatewayBaseUrl(parsed.data.baseUrl, nextEnvironment);
+      if (!baseUrl.ok) return NextResponse.json({ ok: false, error: baseUrl.error }, { status: 400 });
+      update.base_url = baseUrl.url;
+    }
+    if (parsed.data.environment !== undefined) {
+      const baseUrl = validateGatewayBaseUrl(String(update.base_url || gateway.base_url), parsed.data.environment);
+      if (!baseUrl.ok) return NextResponse.json({ ok: false, error: baseUrl.error }, { status: 400 });
+      update.base_url = baseUrl.url;
+      update.environment = parsed.data.environment;
+    }
     if (parsed.data.status !== undefined) update.status = parsed.data.status;
-    if (parsed.data.version !== undefined) update.version = parsed.data.version;
-    if (parsed.data.maxSessions !== undefined) update.max_sessions = parsed.data.maxSessions;
+    if (parsed.data.maxSessions !== undefined) {
+      const activeSessions = (await countActiveSessions(auth.db, auth.context.tenantId)).get(parsed.data.id) || 0;
+      if (parsed.data.maxSessions < activeSessions) {
+        return NextResponse.json({ ok: false, error: "max_sessions_below_active_sessions" }, { status: 409 });
+      }
+      update.max_sessions = parsed.data.maxSessions;
+    }
 
     const { error } = await auth.db
       .from("internal_messaging_gateways")
@@ -170,9 +243,12 @@ export async function PATCH(request: NextRequest) {
       .eq("id", parsed.data.id);
     if (error) throw error;
 
+    const action = parsed.data.status === "active" ? "gateway_activated" : parsed.data.status === "inactive" ? "gateway_deactivated" : "gateway_updated";
+    await auditGatewayAction({ db: auth.db, userId: auth.context.appUserId, tenantId: auth.context.tenantId, gatewayId: parsed.data.id, action, result: "success" });
+
     return NextResponse.json({ ok: true });
   } catch (error) {
     if (isUnauthorizedError(error)) return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
-    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Falha ao atualizar gateway." }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "Falha ao atualizar gateway." }, { status: 500 });
   }
 }

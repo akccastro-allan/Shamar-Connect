@@ -4,13 +4,14 @@ import { isValidSessionId, parseSessionId } from "../providers/session-id.ts";
 export const INTERNAL_GATEWAY_PROVIDERS = ["openwa"] as const;
 export const INTERNAL_GATEWAY_ENVIRONMENTS = ["test", "production"] as const;
 export const INTERNAL_GATEWAY_STATUSES = ["active", "inactive", "error", "maintenance"] as const;
+export const WRITABLE_INTERNAL_GATEWAY_STATUSES = ["active", "inactive", "maintenance"] as const;
 export const INTERNAL_SESSION_STATUSES = ["draft", "starting", "qr_required", "connecting", "connected", "disconnected", "error", "disabled"] as const;
 
 export type InternalGatewayProvider = (typeof INTERNAL_GATEWAY_PROVIDERS)[number];
 export type InternalGatewayEnvironment = (typeof INTERNAL_GATEWAY_ENVIRONMENTS)[number];
 export type InternalGatewayStatus = (typeof INTERNAL_GATEWAY_STATUSES)[number];
 export type InternalSessionStatus = (typeof INTERNAL_SESSION_STATUSES)[number];
-export type GatewayHealthState = "online" | "ready" | "degraded" | "offline";
+export type GatewayHealthState = "online" | "ready" | "degraded" | "offline" | "configuration";
 
 export type InternalGatewayRow = {
   id: string;
@@ -42,27 +43,113 @@ export type InternalChannelGatewayRow = {
   metadata?: unknown;
 };
 
+export const gatewayListFiltersSchema = z.object({
+  status: z.enum(INTERNAL_GATEWAY_STATUSES).optional(),
+  provider: z.enum(INTERNAL_GATEWAY_PROVIDERS).optional(),
+  environment: z.enum(INTERNAL_GATEWAY_ENVIRONMENTS).optional(),
+  slug: z.string().trim().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(60).optional(),
+});
+
 export const createInternalGatewaySchema = z.object({
   name: z.string().trim().min(2).max(80),
   slug: z.string().trim().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(60),
   provider: z.enum(INTERNAL_GATEWAY_PROVIDERS).default("openwa"),
   baseUrl: z.string().trim().url().max(500),
   environment: z.enum(INTERNAL_GATEWAY_ENVIRONMENTS),
-  status: z.enum(INTERNAL_GATEWAY_STATUSES).default("inactive"),
-  version: z.string().trim().max(80).optional(),
-  maxSessions: z.number().int().min(1).max(99).default(9),
-});
+  status: z.enum(WRITABLE_INTERNAL_GATEWAY_STATUSES).default("inactive"),
+  maxSessions: z.number().int().min(1).max(9).default(9),
+}).strict();
 
 export const updateInternalGatewaySchema = z.object({
   id: z.string().uuid(),
   name: z.string().trim().min(2).max(80).optional(),
   baseUrl: z.string().trim().url().max(500).optional(),
   environment: z.enum(INTERNAL_GATEWAY_ENVIRONMENTS).optional(),
-  status: z.enum(INTERNAL_GATEWAY_STATUSES).optional(),
-  version: z.string().trim().max(80).nullable().optional(),
-  maxSessions: z.number().int().min(1).max(99).optional(),
+  status: z.enum(WRITABLE_INTERNAL_GATEWAY_STATUSES).optional(),
+  maxSessions: z.number().int().min(1).max(9).optional(),
   action: z.enum(["health_check"]).optional(),
-});
+}).strict();
+
+const SENSITIVE_QUERY_KEYS = new Set([
+  "api_key",
+  "apikey",
+  "authorization",
+  "auth",
+  "key",
+  "password",
+  "secret",
+  "token",
+  "access_token",
+  "refresh_token",
+]);
+
+const BLOCKED_HOSTS = new Set(["0.0.0.0", "127.0.0.1", "::1", "localhost", "169.254.169.254"]);
+
+function isPrivateIpv4(hostname: string) {
+  const parts = hostname.split(".").map((part) => Number(part));
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false;
+  const [a, b] = parts;
+  return a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254) || a === 0;
+}
+
+function localhostAllowed(environment: string) {
+  return environment === "test" && process.env.INTERNAL_GATEWAY_ALLOW_LOCALHOST === "true";
+}
+
+function configuredAllowedHosts() {
+  return new Set(
+    (process.env.INTERNAL_GATEWAY_ALLOWED_HOSTS || "")
+      .split(",")
+      .map((host) => host.trim().toLowerCase())
+      .filter(Boolean),
+  );
+}
+
+export function validateGatewayBaseUrl(value: string, environment: string): { ok: true; url: string } | { ok: false; error: string } {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return { ok: false, error: "baseUrl inválida." };
+  }
+
+  if (url.protocol !== "https:") return { ok: false, error: "baseUrl deve usar HTTPS." };
+  if (url.username || url.password) return { ok: false, error: "baseUrl não pode conter credenciais." };
+
+  for (const key of url.searchParams.keys()) {
+    if (SENSITIVE_QUERY_KEYS.has(key.toLowerCase())) return { ok: false, error: "baseUrl não pode conter query sensível." };
+  }
+
+  const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  const localAllowed = localhostAllowed(environment);
+  if ((BLOCKED_HOSTS.has(hostname) || hostname.endsWith(".localhost") || isPrivateIpv4(hostname)) && !localAllowed) {
+    return { ok: false, error: "Host privado ou local não autorizado para gateway." };
+  }
+  if (hostname.includes(":")) return { ok: false, error: "IPv6 não autorizado para gateway nesta fase." };
+
+  const allowedHosts = configuredAllowedHosts();
+  if (allowedHosts.size > 0 && !allowedHosts.has(hostname)) {
+    return { ok: false, error: "Host não está na lista server-side de gateways autorizados." };
+  }
+
+  url.username = "";
+  url.password = "";
+  return { ok: true, url: url.toString().replace(/\/$/, "") };
+}
+
+export function sanitizeGatewayError(value: unknown) {
+  const raw = value instanceof Error ? value.message : String(value || "Falha no gateway.");
+  return raw
+    .replace(/Bearer\s+[A-Za-z0-9._~+/-]+/gi, "Bearer [redacted]")
+    .replace(/(token|secret|api[_-]?key|authorization)=([^\s&]+)/gi, "$1=[redacted]")
+    .slice(0, 300);
+}
+
+export function isUniqueConstraintError(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  const record = error as Record<string, unknown>;
+  return record.code === "23505" || String(record.message || "").toLowerCase().includes("duplicate key");
+}
 
 export function maskGatewayBaseUrl(value: string) {
   try {
@@ -79,7 +166,7 @@ export function publicGatewaySummary(gateway: InternalGatewayRow, activeSessions
     name: gateway.name,
     slug: gateway.slug,
     provider: gateway.provider,
-    baseUrl: maskGatewayBaseUrl(gateway.base_url),
+    baseUrlMasked: maskGatewayBaseUrl(gateway.base_url),
     environment: gateway.environment,
     status: gateway.status,
     version: gateway.version,
@@ -87,6 +174,8 @@ export function publicGatewaySummary(gateway: InternalGatewayRow, activeSessions
     activeSessions,
     lastHealthCheckAt: gateway.last_health_check_at,
     lastError: gateway.last_error,
+    createdAt: gateway.created_at ?? null,
+    updatedAt: gateway.updated_at ?? null,
   };
 }
 
@@ -154,14 +243,24 @@ export function validateGatewaySessionUniqueness(input: {
 export function normalizeGatewayHealth(input: {
   ok: boolean;
   status?: number;
+  readyOk?: boolean;
+  readyStatus?: number;
+  healthOk?: boolean;
+  healthStatus?: number;
   body?: unknown;
   latencyMs: number;
   error?: string | null;
 }): { state: GatewayHealthState; version: string | null; latencyMs: number; error: string | null } {
-  if (!input.ok) return { state: "offline", version: null, latencyMs: input.latencyMs, error: input.error || `HTTP ${input.status || "erro"}` };
+  if (input.status === 401 || input.status === 403 || input.healthStatus === 401 || input.healthStatus === 403 || input.readyStatus === 401 || input.readyStatus === 403) {
+    return { state: "configuration", version: null, latencyMs: input.latencyMs, error: "Gateway recusou autenticação do health check." };
+  }
+  if ((input.status && input.status >= 500) || (input.healthStatus && input.healthStatus >= 500) || (input.readyStatus && input.readyStatus >= 500)) {
+    return { state: "degraded", version: null, latencyMs: input.latencyMs, error: "Gateway respondeu com erro interno." };
+  }
+  if (!input.ok) return { state: "offline", version: null, latencyMs: input.latencyMs, error: sanitizeGatewayError(input.error || `HTTP ${input.status || "erro"}`) };
   const body = input.body && typeof input.body === "object" ? input.body as Record<string, unknown> : {};
   const rawStatus = String(body.status || body.state || "").toLowerCase();
-  const ready = body.ready === true || rawStatus === "ready" || rawStatus === "ok";
+  const ready = input.readyOk === true || body.ready === true || rawStatus === "ready" || rawStatus === "ok";
   const version = typeof body.version === "string" ? body.version : null;
   if (ready) return { state: "ready", version, latencyMs: input.latencyMs, error: null };
   return { state: "degraded", version, latencyMs: input.latencyMs, error: "Gateway respondeu, mas não confirmou prontidão." };

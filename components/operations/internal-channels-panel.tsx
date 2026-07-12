@@ -21,7 +21,7 @@ type InternalGateway = {
   name: string;
   slug: string;
   provider: string;
-  baseUrl: string;
+  baseUrlMasked: string;
   environment: string;
   status: string;
   version: string | null;
@@ -351,7 +351,7 @@ export function InternalChannelsPanel() {
                 {gateways.map((gateway) => (
                   <div key={gateway.id} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
                     <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div><p className="font-black text-[#1B2F5B]">{gateway.name}</p><p className="mt-1 text-xs text-slate-500">{gateway.provider} · {gateway.environment} · {gateway.activeSessions}/{gateway.maxSessions} sessões</p><p className="mt-1 text-xs text-slate-400">{gateway.baseUrl}</p>{gateway.lastError && <p className="mt-1 text-xs font-bold text-red-600">{gateway.lastError}</p>}</div>
+                      <div><p className="font-black text-[#1B2F5B]">{gateway.name}</p><p className="mt-1 text-xs text-slate-500">{gateway.provider} · {gateway.environment} · {gateway.activeSessions}/{gateway.maxSessions} sessões</p><p className="mt-1 text-xs text-slate-400">{gateway.baseUrlMasked}</p>{gateway.lastError && <p className="mt-1 text-xs font-bold text-red-600">{gateway.lastError}</p>}</div>
                       <div className="flex flex-wrap gap-2"><Badge className={statusClass(gateway.status)}>{gateway.status}</Badge><Button type="button" size="sm" variant="outline" className="rounded-full" disabled={updatingChannelId === gateway.id} onClick={() => checkGateway(gateway)}>Health check</Button></div>
                     </div>
                   </div>

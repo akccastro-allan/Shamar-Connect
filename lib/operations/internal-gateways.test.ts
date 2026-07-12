@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   getChannelGatewayId,
+  createInternalGatewaySchema,
   normalizeGatewayHealth,
+  publicGatewaySummary,
+  updateInternalGatewaySchema,
+  validateGatewayBaseUrl,
   validateGatewayCanConnect,
   validateGatewaySessionLimit,
   validateGatewaySessionUniqueness,
@@ -63,5 +67,48 @@ test("gateway_id dedicado tem prioridade sobre metadata durante transição", ()
 test("health diferencia ready, degraded e offline", () => {
   assert.equal(normalizeGatewayHealth({ ok: true, body: { ready: true, version: "1.0" }, latencyMs: 10 }).state, "ready");
   assert.equal(normalizeGatewayHealth({ ok: true, body: { status: "booting" }, latencyMs: 10 }).state, "degraded");
-  assert.equal(normalizeGatewayHealth({ ok: false, status: 500, latencyMs: 10 }).state, "offline");
+  assert.equal(normalizeGatewayHealth({ ok: false, status: 500, latencyMs: 10 }).state, "degraded");
+  assert.equal(normalizeGatewayHealth({ ok: false, latencyMs: 10, error: "timeout" }).state, "offline");
+});
+
+test("payload de gateway valida slug, status e maxSessions", () => {
+  assert.equal(createInternalGatewaySchema.safeParse({ name: "Gateway", slug: "gateway-01", provider: "openwa", baseUrl: "https://gateway.example.com", environment: "production", maxSessions: 9 }).success, true);
+  assert.equal(createInternalGatewaySchema.safeParse({ name: "Gateway", slug: "Gateway 01", provider: "openwa", baseUrl: "https://gateway.example.com", environment: "production" }).success, false);
+  assert.equal(createInternalGatewaySchema.safeParse({ name: "Gateway", slug: "gateway-01", provider: "openwa", baseUrl: "https://gateway.example.com", environment: "production", maxSessions: 10 }).success, false);
+  assert.equal(createInternalGatewaySchema.safeParse({ name: "Gateway", slug: "gateway-01", provider: "openwa", baseUrl: "https://gateway.example.com", environment: "production", status: "error" }).success, false);
+});
+
+test("PATCH bloqueia slug, tenant_id, version e campos não alteráveis", () => {
+  assert.equal(updateInternalGatewaySchema.safeParse({ id: gateway.id, name: "Novo nome" }).success, true);
+  assert.equal(updateInternalGatewaySchema.safeParse({ id: gateway.id, slug: "novo" }).success, false);
+  assert.equal(updateInternalGatewaySchema.safeParse({ id: gateway.id, tenant_id: "tenant-client" }).success, false);
+  assert.equal(updateInternalGatewaySchema.safeParse({ id: gateway.id, version: "1.2.3" }).success, false);
+});
+
+test("baseUrl bloqueia SSRF, credenciais, HTTP e queries sensíveis", () => {
+  assert.equal(validateGatewayBaseUrl("https://gateway.example.com", "production").ok, true);
+  assert.equal(validateGatewayBaseUrl("http://gateway.example.com", "production").ok, false);
+  assert.equal(validateGatewayBaseUrl("https://user:pass@gateway.example.com", "production").ok, false);
+  assert.equal(validateGatewayBaseUrl("https://gateway.example.com?token=abc", "production").ok, false);
+  assert.equal(validateGatewayBaseUrl("https://localhost", "production").ok, false);
+  assert.equal(validateGatewayBaseUrl("https://127.0.0.1", "production").ok, false);
+  assert.equal(validateGatewayBaseUrl("https://169.254.169.254", "production").ok, false);
+  assert.equal(validateGatewayBaseUrl("ftp://gateway.example.com", "production").ok, false);
+});
+
+test("health classifica configuração e erro 500 sem vazar corpo", () => {
+  assert.equal(normalizeGatewayHealth({ ok: false, status: 401, latencyMs: 10 }).state, "configuration");
+  assert.equal(normalizeGatewayHealth({ ok: false, healthStatus: 500, latencyMs: 10 }).state, "degraded");
+  assert.equal(normalizeGatewayHealth({ ok: false, latencyMs: 10, error: "timeout token=abc" }).error, "timeout token=[redacted]");
+});
+
+test("summary público mascara URL e não retorna secrets ou metadata", () => {
+  const summary = publicGatewaySummary({ ...gateway, base_url: "https://gateway.example.com/api?x=1", metadata: { token: "secret" }, created_at: "2026-01-01", updated_at: "2026-01-02" }, 2);
+  assert.equal(summary.baseUrlMasked, "https://gateway.example.com");
+  assert.equal(Object.hasOwn(summary, "baseUrl"), false);
+  assert.equal(Object.hasOwn(summary, "metadata"), false);
+  assert.equal(Object.hasOwn(summary, "token"), false);
+  assert.equal(summary.activeSessions, 2);
+  assert.equal(summary.createdAt, "2026-01-01");
+  assert.equal(summary.updatedAt, "2026-01-02");
 });
