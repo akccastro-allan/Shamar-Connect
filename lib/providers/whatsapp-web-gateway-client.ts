@@ -7,16 +7,22 @@ import type {
   ProviderStatus,
   ProviderSyncedMessage,
 } from "@/types/messaging-provider";
+import { isValidSessionId } from "@/lib/providers/session-id";
 
-function getGatewayBaseUrl() {
-  const rawBaseUrl = process.env.WHATSAPP_WEB_GATEWAY_URL?.replace(/\/$/, "") || "";
+type GatewayClientOptions = {
+  baseUrl?: string | null;
+  token?: string | null;
+};
+
+function getGatewayBaseUrl(baseUrl?: string | null) {
+  const rawBaseUrl = (baseUrl || process.env.WHATSAPP_WEB_GATEWAY_URL || "").replace(/\/$/, "");
 
   if (!rawBaseUrl) return "";
   return rawBaseUrl.endsWith("/api") ? rawBaseUrl : `${rawBaseUrl}/api`;
 }
 
-function getGatewayToken() {
-  return process.env.WHATSAPP_WEB_GATEWAY_TOKEN || "";
+function getGatewayToken(token?: string | null) {
+  return token || process.env.WHATSAPP_WEB_GATEWAY_TOKEN || "";
 }
 
 function getDefaultSessionId() {
@@ -164,16 +170,17 @@ function normalizeMessage(message: OpenWaMessage, fallbackChatId: string): Provi
   };
 }
 
-async function openWaFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const baseUrl = getGatewayBaseUrl();
+async function openWaFetch<T>(path: string, init?: RequestInit, options?: GatewayClientOptions): Promise<T> {
+  const baseUrl = getGatewayBaseUrl(options?.baseUrl);
   if (!baseUrl) throw new Error("WHATSAPP_WEB_GATEWAY_URL is not configured.");
+  const token = getGatewayToken(options?.token);
 
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   const response = await fetch(`${baseUrl}${normalizedPath}`, {
     ...init,
     headers: {
       "content-type": "application/json",
-      ...(getGatewayToken() ? { "x-api-key": getGatewayToken(), authorization: `Bearer ${getGatewayToken()}` } : {}),
+      ...(token ? { "x-api-key": token, authorization: `Bearer ${token}` } : {}),
       ...(init?.headers || {}),
     },
     cache: "no-store",
@@ -185,14 +192,15 @@ async function openWaFetch<T>(path: string, init?: RequestInit): Promise<T> {
   throw new Error(`OpenWA error ${response.status}: ${errorBody}`);
 }
 
-async function resolveOpenWaSessionId(sessionName: string) {
-  const cached = sessionIdCache.get(sessionName);
+async function resolveOpenWaSessionId(sessionName: string, options?: GatewayClientOptions) {
+  const cacheKey = `${getGatewayBaseUrl(options?.baseUrl) || "default"}:${sessionName}`;
+  const cached = sessionIdCache.get(cacheKey);
   if (cached) return cached;
 
-  const sessions = asArray<OpenWaSession>(await openWaFetch<unknown>("/sessions"));
+  const sessions = asArray<OpenWaSession>(await openWaFetch<unknown>("/sessions", undefined, options));
   const existing = sessions.find((session) => session.name === sessionName || session.id === sessionName);
   if (existing?.id) {
-    sessionIdCache.set(sessionName, existing.id);
+    sessionIdCache.set(cacheKey, existing.id);
     return existing.id;
   }
 
@@ -200,59 +208,59 @@ async function resolveOpenWaSessionId(sessionName: string) {
     const created = await openWaFetch<OpenWaSession>("/sessions", {
       method: "POST",
       body: JSON.stringify({ name: sessionName }),
-    });
+    }, options);
     const id = created.id || created.name || sessionName;
-    sessionIdCache.set(sessionName, id);
+    sessionIdCache.set(cacheKey, id);
     return id;
   } catch (error) {
     if (!(error instanceof Error) || !error.message.includes("409")) throw error;
-    const refreshed = asArray<OpenWaSession>(await openWaFetch<unknown>("/sessions"));
+    const refreshed = asArray<OpenWaSession>(await openWaFetch<unknown>("/sessions", undefined, options));
     const session = refreshed.find((item) => item.name === sessionName || item.id === sessionName);
     if (session?.id) {
-      sessionIdCache.set(sessionName, session.id);
+      sessionIdCache.set(cacheKey, session.id);
       return session.id;
     }
     throw error;
   }
 }
 
-async function openWaSessionFetch<T>(sessionName: string, path: string, init?: RequestInit): Promise<T> {
-  const sessionId = await resolveOpenWaSessionId(sessionName);
+async function openWaSessionFetch<T>(sessionName: string, path: string, init?: RequestInit, options?: GatewayClientOptions): Promise<T> {
+  const sessionId = await resolveOpenWaSessionId(sessionName, options);
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  return openWaFetch<T>(`/sessions/${encodeURIComponent(sessionId)}${normalizedPath}`, init);
+  return openWaFetch<T>(`/sessions/${encodeURIComponent(sessionId)}${normalizedPath}`, init, options);
 }
 
-async function getSessionStatus(sessionName: string) {
-  const session = await openWaSessionFetch<OpenWaSession>(sessionName, "");
+async function getSessionStatus(sessionName: string, options?: GatewayClientOptions) {
+  const session = await openWaSessionFetch<OpenWaSession>(sessionName, "", undefined, options);
   return normalizeStatus(session);
 }
 
-async function startSession(sessionName: string) {
+async function startSession(sessionName: string, options?: GatewayClientOptions) {
   try {
-    const session = await openWaSessionFetch<OpenWaSession>(sessionName, "/start", { method: "POST" });
+    const session = await openWaSessionFetch<OpenWaSession>(sessionName, "/start", { method: "POST" }, options);
     return normalizeStatus(session);
   } catch (error) {
     if (!(error instanceof Error) || !error.message.includes("400")) throw error;
-    return getSessionStatus(sessionName);
+    return getSessionStatus(sessionName, options);
   }
 }
 
-async function getSessionQr(sessionName: string) {
-  const qr = await openWaSessionFetch<OpenWaQrResponse>(sessionName, "/qr");
+async function getSessionQr(sessionName: string, options?: GatewayClientOptions) {
+  const qr = await openWaSessionFetch<OpenWaQrResponse>(sessionName, "/qr", undefined, options);
   return normalizeStatus(qr, qr.qrCode || qr.qr);
 }
 
-async function sendSessionMessage(sessionName: string, payload: ProviderMessagePayload) {
+async function sendSessionMessage(sessionName: string, payload: ProviderMessagePayload, options?: GatewayClientOptions) {
   const response = await openWaSessionFetch<OpenWaMessageResponse>(sessionName, "/messages/send-text", {
     method: "POST",
     body: JSON.stringify({ chatId: normalizeChatId(payload.to), text: payload.body }),
-  });
+  }, options);
 
   return { id: String(response.messageId || response.id || `openwa_${Date.now()}`), status: "sent" as const };
 }
 
-async function stopSession(sessionName: string) {
-  const session = await openWaSessionFetch<OpenWaSession>(sessionName, "/stop", { method: "POST" });
+async function stopSession(sessionName: string, options?: GatewayClientOptions) {
+  const session = await openWaSessionFetch<OpenWaSession>(sessionName, "/stop", { method: "POST" }, options);
   return normalizeStatus(session);
 }
 
@@ -298,32 +306,32 @@ export type AllowedSessionId = (typeof ALLOWED_SESSION_IDS)[number];
 const ALLOWED_SESSION_ID_SET = new Set<string>(ALLOWED_SESSION_IDS);
 
 export function isAllowedSessionId(value: unknown): value is AllowedSessionId {
-  return typeof value === "string" && ALLOWED_SESSION_ID_SET.has(value);
+  return typeof value === "string" && (ALLOWED_SESSION_ID_SET.has(value) || isValidSessionId(value));
 }
 
 // Factory: creates a gateway client scoped to a specific session.
 // The default export (whatsappWebGatewayClient) uses the env-configured session.
-export function createWhatsappGatewayClient(sessionId: AllowedSessionId): MessagingProviderClient {
+export function createWhatsappGatewayClient(sessionId: string, options?: GatewayClientOptions): MessagingProviderClient {
   return {
-    getStatus: () => getSessionStatus(sessionId),
-    connect: () => startSession(sessionId),
-    getQr: () => getSessionQr(sessionId),
-    sendMessage: (payload: ProviderMessagePayload) => sendSessionMessage(sessionId, payload),
-    listChats: async () => asArray<OpenWaChat>(await openWaSessionFetch<unknown>(sessionId, "/chats")).map(normalizeChat).filter((chat) => chat.id),
+    getStatus: () => getSessionStatus(sessionId, options),
+    connect: () => startSession(sessionId, options),
+    getQr: () => getSessionQr(sessionId, options),
+    sendMessage: (payload: ProviderMessagePayload) => sendSessionMessage(sessionId, payload, options),
+    listChats: async () => asArray<OpenWaChat>(await openWaSessionFetch<unknown>(sessionId, "/chats", undefined, options)).map(normalizeChat).filter((chat) => chat.id),
     listGroups: async () =>
-      asArray<OpenWaChat>(await openWaSessionFetch<unknown>(sessionId, "/groups"))
+      asArray<OpenWaChat>(await openWaSessionFetch<unknown>(sessionId, "/groups", undefined, options))
         .map((group) => {
           const chat = normalizeChat(group);
           return { id: chat.id, name: chat.name, participantCount: undefined };
         })
         .filter((group) => group.id),
     listGroupParticipants: (groupId: string) =>
-      openWaSessionFetch<ProviderGroupParticipant[]>(sessionId, `/groups/${encodeURIComponent(groupId)}/participants`),
+      openWaSessionFetch<ProviderGroupParticipant[]>(sessionId, `/groups/${encodeURIComponent(groupId)}/participants`, undefined, options),
     listChatMessages: (chatId: string, limit = 50) =>
-      openWaSessionFetch<unknown>(sessionId, `/messages/${encodeURIComponent(chatId)}/history?limit=${limit}`).then((payload) =>
+      openWaSessionFetch<unknown>(sessionId, `/messages/${encodeURIComponent(chatId)}/history?limit=${limit}`, undefined, options).then((payload) =>
         asArray<OpenWaMessage>(payload).map((message) => normalizeMessage(message, chatId)),
       ),
-    logout: () => stopSession(sessionId),
+    logout: () => stopSession(sessionId, options),
   };
 }
 

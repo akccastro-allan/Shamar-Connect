@@ -31,7 +31,7 @@ export async function sendMessageByChannel(
 ): Promise<{ providerMessageId: string }> {
   const { data: channel } = await db
     .from("channels")
-    .select("id, provider, external_instance, phone_number_id, session_id")
+    .select("id, tenant_id, provider, external_instance, phone_number_id, session_id, gateway_id, status, metadata")
     .eq("id", channelId)
     .maybeSingle();
 
@@ -70,6 +70,25 @@ export async function sendMessageByChannel(
 
   // whatsapp_web_legacy (gateway por sessão do canal).
   const sessionId = channel.session_id;
+  if (channel.gateway_id) {
+    const metadata = channel.metadata && typeof channel.metadata === "object" && !Array.isArray(channel.metadata)
+      ? channel.metadata as Record<string, unknown>
+      : {};
+    if (metadata.commandCenterInternal === true && channel.status !== "connected") {
+      throw new Error("Sessão interna não está conectada.");
+    }
+    const { data: gateway } = await db
+      .from("internal_messaging_gateways")
+      .select("id, tenant_id, base_url, status")
+      .eq("tenant_id", channel.tenant_id)
+      .eq("id", channel.gateway_id)
+      .maybeSingle();
+    if (!gateway || gateway.status !== "active") throw new Error("Gateway interno não está ativo.");
+    if (!sessionId || !isAllowedSessionId(sessionId)) throw new Error("Canal interno sem session ID válido.");
+    const r = await createWhatsappGatewayClient(sessionId, { baseUrl: gateway.base_url }).sendMessage({ to: toExternalId, body });
+    return { providerMessageId: r.id };
+  }
+
   const client =
     sessionId && isAllowedSessionId(sessionId)
       ? createWhatsappGatewayClient(sessionId)
