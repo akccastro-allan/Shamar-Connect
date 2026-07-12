@@ -143,16 +143,25 @@ Estrutura interna prevista para Instagram, Facebook e TikTok:
 
 Tokens não retornam ao frontend. Estados exibidos: Não conectado, Conectado, Token expirado e Erro de conexão.
 
-## Migration Necessária
+## Gateways Persistidos
 
-Ainda não criar migration sem revisão do schema real. Relatório preparado:
+Gateways internos agora usam `internal_messaging_gateways` e `channels.gateway_id`.
 
-- tabela `internal_messaging_gateways`;
-- coluna dedicada `channels.gateway_id` ou migração de `channels.metadata.gatewayId`;
+- `internal_messaging_gateways` é service-role only;
+- `channels.gateway_id` segue nullable durante transição;
 - constraint `unique(tenant_id, gateway_id, session_id)`;
-- check de `session_id` para canais `whatsapp_web` internos.
+- fallback de `metadata.gatewayId` existe apenas para canais antigos da branch.
 
-Enquanto isso, a validação usa `metadata.gatewayId` e service role na API de Operations.
+Não aplicar migration em produção sem revisão operacional.
+
+## QR e Status
+
+Rotas internas:
+
+- `POST /api/operations/internal-channels/:id/qr`;
+- `GET /api/operations/internal-channels/:id/status`.
+
+As rotas resolvem `channel -> gateway_id -> session_id -> gateway`. Não aceitam `sessionId` livre.
 
 ## Diagnóstico
 

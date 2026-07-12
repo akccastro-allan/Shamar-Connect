@@ -38,7 +38,7 @@ Operadores não digitam `session_id` livremente em `/operations/channels`; a pr�
 
 ## Gateways
 
-Modelo preparado:
+Modelo persistido em `internal_messaging_gateways`:
 
 - `id`;
 - `name`;
@@ -53,6 +53,8 @@ Modelo preparado:
 - `last_error`.
 
 Credenciais e API keys não entram no frontend e não devem ser salvas em metadata pública.
+
+`channels.gateway_id` é a referência principal. `metadata.gatewayId` é apenas fallback de transição.
 
 ## Limite
 
@@ -90,12 +92,15 @@ Fluxo seguro:
 1. cadastrar canal interno em `/operations/channels`;
 2. confirmar empresa, gateway, finalidade e `session_id` gerado;
 3. iniciar sessão no gateway autorizado;
-4. escanear QR com o número correto;
-5. confirmar status conectado;
-6. enviar mensagem externa de teste;
-7. confirmar inbound no canal correto;
-8. responder manualmente pela inbox;
-9. confirmar outbound pela mesma sessão.
+4. solicitar QR pela rota protegida do canal;
+5. escanear QR com o número correto;
+6. confirmar status conectado pela rota protegida do canal;
+7. enviar mensagem externa de teste;
+8. confirmar inbound no canal correto;
+9. responder manualmente pela inbox;
+10. confirmar outbound pela mesma sessão.
+
+Nunca responder uma conversa escolhendo sessão manualmente. A resposta deve usar sempre o `channel_id` da conversa.
 
 ## Grupos
 
