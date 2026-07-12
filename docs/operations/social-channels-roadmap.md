@@ -1,6 +1,6 @@
 # Social Channels Roadmap
 
-Data: 2026-07-11
+Data: 2026-07-12
 
 Escopo: redes sociais internas no Centro de Comando. Não liberar para clientes comerciais nesta fase.
 
@@ -9,6 +9,32 @@ Escopo: redes sociais internas no Centro de Comando. Não liberar para clientes 
 Redes sociais entram primeiro como `internal_alpha`, atrás de `social_channels_internal`.
 
 Não implementar respostas automáticas nesta etapa.
+
+Não criar integração falsa: uma conta só deve aparecer como conectada quando houver conexão real validada.
+
+## Modelo Seguro
+
+Campos não secretos para a interface interna:
+
+- `provider`;
+- `account_label`;
+- `external_account_id`;
+- `page_id`;
+- `business_id`;
+- `status`;
+- `token_status`;
+- `token_expires_at`;
+- `last_event_at`;
+- `last_error`.
+
+Tokens, refresh tokens, client secrets e API keys não entram em objetos retornados ao frontend.
+
+Estados exibidos:
+
+- Não conectado;
+- Conectado;
+- Token expirado;
+- Erro de conexão.
 
 ## Instagram
 
