@@ -1,3 +1,5 @@
+import { buildSessionId, isValidSessionId, parseSessionId } from "../providers/session-id.ts";
+
 export const INTERNAL_BUSINESSES = [
   { key: "moriah", label: "Moriah Systems", aliases: ["moriah", "moriah-systems"] },
   { key: "allan", label: "Allan / Pessoal", aliases: ["allan", "allan-pessoal", "pessoal"] },
@@ -36,12 +38,77 @@ export const INTERNAL_CHANNEL_PURPOSES = [
 
 export const INTERNAL_CHANNEL_STATUSES = ["draft", "connecting", "connected", "disconnected", "error", "disabled"] as const;
 export const INTERNAL_FEATURE_STAGES = ["hidden", "internal_alpha", "internal_active", "internal_approved", "disabled"] as const;
+export const INTERNAL_SOCIAL_CONNECTION_STATUSES = ["not_connected", "connected", "token_expired", "connection_error"] as const;
+
+export const INTERNAL_GATEWAYS = [
+  {
+    id: "gateway-01",
+    name: "Gateway 01",
+    slug: "gateway-01",
+    baseUrl: null,
+    environment: "production",
+    status: "planned",
+    version: null,
+    maxSessions: 9,
+    activeSessions: 0,
+    lastHealthCheck: null,
+    lastError: null,
+  },
+  {
+    id: "gateway-02",
+    name: "Gateway 02",
+    slug: "gateway-02",
+    baseUrl: null,
+    environment: "production",
+    status: "planned",
+    version: null,
+    maxSessions: 9,
+    activeSessions: 0,
+    lastHealthCheck: null,
+    lastError: null,
+  },
+] as const;
+
+export const INTERNAL_FEATURE_STAGE_CONFIG = {
+  whatsapp_individual_internal: "internal_alpha",
+  whatsapp_groups_internal: "internal_alpha",
+  whatsapp_communities_internal: "internal_alpha",
+  social_channels_internal: "internal_alpha",
+  ai_internal: "hidden",
+} as const;
+
+export const INTERNAL_GROUP_MODEL = {
+  fields: ["identifier", "name", "channelId", "sessionId", "participants", "administrators", "lastEventAt", "readStatus", "manualReplyReady"],
+  sendingEnabled: false,
+} as const;
+
+export const INTERNAL_COMMUNITY_MODEL = {
+  fields: ["community", "announcementGroup", "linkedGroups", "administrators", "metadata", "providerLimitations"],
+  sendingEnabled: false,
+} as const;
+
+export const INTERNAL_SOCIAL_CONNECTION_MODEL = {
+  fields: ["provider", "accountLabel", "externalAccountId", "pageId", "businessId", "status", "tokenStatus", "tokenExpiresAt", "lastEventAt", "lastError"],
+  returnedSecrets: false,
+} as const;
+
+export const PLANNED_INTERNAL_CHANNELS = [
+  { businessKey: "oriahfin", sessionId: "oriahfin-01", purpose: "support", channelType: "whatsapp_web", gatewayId: "gateway-01" },
+  { businessKey: "viciados", sessionId: "viciados-01", purpose: "sales", channelType: "whatsapp_web", gatewayId: "gateway-01" },
+  { businessKey: "mkshalom", sessionId: "mkshalom-01", purpose: "support", channelType: "whatsapp_web", gatewayId: "gateway-01" },
+  { businessKey: "moriah", sessionId: "moriah-01", purpose: "operations", channelType: "whatsapp_web", gatewayId: "gateway-01" },
+  { businessKey: "allan", sessionId: "allan-01", purpose: "personal", channelType: "whatsapp_web", gatewayId: "gateway-01" },
+  { businessKey: "shamar-kids", sessionId: "shamar-kids-01", purpose: "parents", channelType: "whatsapp_web", gatewayId: "gateway-01" },
+  { businessKey: "shamar-kids", sessionId: "shamar-kids-02", purpose: "support", channelType: "whatsapp_web", gatewayId: "gateway-01" },
+] as const;
 
 export type InternalBusinessKey = (typeof INTERNAL_BUSINESSES)[number]["key"];
 export type InternalChannelType = (typeof INTERNAL_CHANNEL_TYPES)[number];
 export type InternalChannelPurpose = (typeof INTERNAL_CHANNEL_PURPOSES)[number];
 export type InternalChannelStatus = (typeof INTERNAL_CHANNEL_STATUSES)[number];
 export type InternalFeatureStage = (typeof INTERNAL_FEATURE_STAGES)[number];
+export type InternalGatewayId = (typeof INTERNAL_GATEWAYS)[number]["id"];
+export type InternalSocialConnectionStatus = (typeof INTERNAL_SOCIAL_CONNECTION_STATUSES)[number];
 
 type OrganizationLike = {
   id: string;
@@ -98,6 +165,9 @@ export function buildInternalChannelMetadata(input: {
   externalAccountId?: string | null;
   purpose: InternalChannelPurpose;
   featureStage: InternalFeatureStage;
+  gatewayId?: string | null;
+  lastEventAt?: string | null;
+  lastError?: string | null;
 }) {
   return {
     commandCenterInternal: true,
@@ -107,6 +177,16 @@ export function buildInternalChannelMetadata(input: {
     externalAccountId: input.externalAccountId || null,
     purpose: input.purpose,
     featureStage: input.featureStage,
+    gatewayId: input.gatewayId || null,
+    originContext: {
+      businessKey: input.businessKey,
+      channelType: input.channelType,
+      accountLabel: input.accountLabel,
+      gatewayId: input.gatewayId || null,
+      purpose: input.purpose,
+    },
+    lastEventAt: input.lastEventAt || null,
+    lastError: input.lastError || null,
     environment: "internal",
   };
 }
@@ -123,7 +203,97 @@ export function makeInternalChannelSlug(input: { businessKey: string; channelTyp
 }
 
 export function isValidInternalWhatsappSessionId(sessionId: string, businessKey: InternalBusinessKey) {
-  return new RegExp(`^${businessKey}-0[1-9]$`).test(sessionId);
+  const parsed = parseSessionId(sessionId);
+  return parsed?.companySlug === businessKey && isValidSessionId(sessionId);
+}
+
+export function isAllowedInternalGateway(value: string): value is InternalGatewayId {
+  return INTERNAL_GATEWAYS.some((gateway) => gateway.id === value);
+}
+
+type ExistingSession = {
+  sessionId: string | null;
+  gatewayId: string | null;
+};
+
+export function getNextInternalSessionId(input: {
+  businessKey: InternalBusinessKey;
+  gatewayId: string;
+  existingSessions: ExistingSession[];
+}): { ok: true; sessionId: string; sequence: number } | { ok: false; error: string } {
+  if (!isAllowedInternalGateway(input.gatewayId)) {
+    return { ok: false, error: "Gateway interno inválido." };
+  }
+
+  const usedSequences = new Set<number>();
+  for (const existing of input.existingSessions) {
+    if (existing.gatewayId !== input.gatewayId || !existing.sessionId) continue;
+    const parsed = parseSessionId(existing.sessionId);
+    if (parsed?.companySlug === input.businessKey) usedSequences.add(parsed.sequence);
+  }
+
+  for (let sequence = 1; sequence <= 9; sequence += 1) {
+    if (!usedSequences.has(sequence)) {
+      return { ok: true, sessionId: buildSessionId(input.businessKey, sequence), sequence };
+    }
+  }
+
+  return {
+    ok: false,
+    error: "Este gateway atingiu o limite de nove sessões para esta empresa. Selecione outro gateway.",
+  };
+}
+
+export function validateInternalSessionRegistration(input: {
+  businessKey: InternalBusinessKey;
+  gatewayId: string;
+  sessionId: string;
+  existingSessions: ExistingSession[];
+}): { ok: true } | { ok: false; error: string } {
+  if (!isAllowedInternalGateway(input.gatewayId)) return { ok: false, error: "Gateway interno inválido." };
+  if (!isValidInternalWhatsappSessionId(input.sessionId, input.businessKey)) {
+    return { ok: false, error: "WhatsApp Web interno exige session ID no padrão <empresa>-01 até <empresa>-09." };
+  }
+  if (input.existingSessions.some((existing) => existing.gatewayId === input.gatewayId && existing.sessionId === input.sessionId)) {
+    return { ok: false, error: "Este session ID já está cadastrado neste gateway." };
+  }
+
+  const sameCompanyOnGateway = input.existingSessions.filter((existing) => {
+    if (existing.gatewayId !== input.gatewayId || !existing.sessionId) return false;
+    return parseSessionId(existing.sessionId)?.companySlug === input.businessKey;
+  });
+  if (sameCompanyOnGateway.length >= 9) {
+    return {
+      ok: false,
+      error: "Este gateway atingiu o limite de nove sessões para esta empresa. Selecione outro gateway.",
+    };
+  }
+
+  return { ok: true };
+}
+
+export function getChannelGatewayId(metadata: unknown) {
+  const record = metadataRecord(metadata);
+  return typeof record.gatewayId === "string" ? record.gatewayId : "gateway-01";
+}
+
+export function getMigrationReadinessReport() {
+  return {
+    required: true,
+    summary: "Persistir gateways internos e unicidade de session_id por gateway.",
+    tables: [
+      "internal_messaging_gateways",
+      "channels.gateway_id ou channels.metadata.gatewayId migrado para coluna dedicada",
+    ],
+    constraints: [
+      "unique(tenant_id, gateway_id, session_id)",
+      "check session_id matches ^[a-z0-9]+(?:-[a-z0-9]+)*-0[1-9]$ for whatsapp_web internal",
+    ],
+    notes: [
+      "channels tem leitura pública em RLS; secrets devem continuar fora de channels/metadata.",
+      "A etapa atual usa metadata.gatewayId apenas para validação e planejamento, sem criar migration.",
+    ],
+  };
 }
 
 export function isAllowedInternalChannelType(value: string): value is InternalChannelType {
