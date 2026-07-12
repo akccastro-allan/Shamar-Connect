@@ -37,6 +37,7 @@ test("command center requires platform admin and explicit command_center flag", 
   assert.equal(canAccessCommandCenter(context({ isPlatformTenant: true, role: "owner" }), metadata), true);
   assert.equal(canAccessCommandCenter(context({ isPlatformTenant: true, role: "admin" }), metadata), true);
   assert.equal(canAccessCommandCenter(context({ isPlatformTenant: true, role: "attendant" }), metadata), false);
+  assert.equal(canAccessCommandCenter(context({ isPlatformTenant: true, role: "viewer" }), metadata), false);
   assert.equal(canAccessCommandCenter(context({ isPlatformTenant: false, role: "owner" }), metadata), false);
   assert.equal(canAccessCommandCenter(context({ isPlatformTenant: true, role: "owner" }), { features: {} }), false);
 });
