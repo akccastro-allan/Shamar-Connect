@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AppContext } from "../auth/app-context.ts";
-import { canAccessCommandCenter, canAccessMetaChannels, canAccessPlatformAdmin, canUseFeature, hasTenantFeature, toFeatureContext } from "./feature-flags.ts";
+import { canAccessCommandCenter, canAccessInternalFeature, canAccessMetaChannels, canAccessPlatformAdmin, canUseFeature, hasTenantFeature, toFeatureContext } from "./feature-flags.ts";
 
 function context(overrides: Partial<AppContext> = {}): AppContext {
   return {
@@ -39,6 +39,15 @@ test("command center requires platform admin and explicit command_center flag", 
   assert.equal(canAccessCommandCenter(context({ isPlatformTenant: true, role: "attendant" }), metadata), false);
   assert.equal(canAccessCommandCenter(context({ isPlatformTenant: false, role: "owner" }), metadata), false);
   assert.equal(canAccessCommandCenter(context({ isPlatformTenant: true, role: "owner" }), { features: {} }), false);
+});
+
+test("internal channel flags require command center access", () => {
+  const metadata = { features: { command_center: true, whatsapp_groups_internal: true, social_channels_internal: true } };
+
+  assert.equal(canAccessInternalFeature("whatsapp_groups_internal", context({ isPlatformTenant: true, role: "owner" }), metadata), true);
+  assert.equal(canAccessInternalFeature("social_channels_internal", context({ isPlatformTenant: true, role: "admin" }), metadata), true);
+  assert.equal(canAccessInternalFeature("whatsapp_communities_internal", context({ isPlatformTenant: true, role: "owner" }), metadata), false);
+  assert.equal(canAccessInternalFeature("whatsapp_groups_internal", context({ isPlatformTenant: false, role: "owner" }), metadata), false);
 });
 
 test("meta channels remain hidden during WhatsApp-only commercial release", () => {

@@ -28,7 +28,12 @@ export type FeatureContext = {
   metadata?: TenantMetadata;
 };
 
-export type FeatureFlag = FeatureKey | "meta_channels";
+export type FeatureFlag = FeatureKey | "meta_channels" | InternalFeatureFlag;
+export type InternalFeatureFlag =
+  | "whatsapp_groups_internal"
+  | "whatsapp_communities_internal"
+  | "social_channels_internal"
+  | "ai_internal";
 export type TenantMetadata = Record<string, unknown> | null;
 
 const platformAdminRoles = new Set<AppContext["role"]>(["owner", "admin"]);
@@ -114,4 +119,8 @@ export function canAccessMetaChannels(context: AppContext, metadata: TenantMetad
   void context;
   void metadata;
   return false;
+}
+
+export function canAccessInternalFeature(flag: InternalFeatureFlag, context: AppContext, metadata: TenantMetadata): boolean {
+  return canAccessCommandCenter(context, metadata) && hasTenantFeature(metadata, flag);
 }
