@@ -25,6 +25,20 @@ Campos principais:
 
 RLS: service-role only. A administração passa por `/api/operations/internal-gateways`, com sessão, tenant plataforma e role owner/admin.
 
+Migration: `supabase/migrations/0032_internal_messaging_gateways.sql`. Criada e revisada, mas não aplicada em produção nesta etapa.
+
+## Schema Auditado
+
+Base real usada pela migration:
+
+- `channels.id`: `uuid`;
+- `channels.tenant_id`: `uuid not null`;
+- `channels.organization_id`: `uuid not null`;
+- `channels.session_id`: `text not null`;
+- `channels` já possui RLS com `service_all_channels` e `public_read_channels`;
+- `tenants.id`: `uuid`;
+- `organizations.tenant_id`: `uuid references tenants(id)`.
+
 ## Segurança
 
 Não salvar na tabela:
@@ -43,14 +57,15 @@ Ação manual via `PATCH /api/operations/internal-gateways` com `action: "health
 
 O backend consulta:
 
+- `/api/health`;
 - `/api/health/ready`;
-- fallback `/api/health` se necessário.
 
 Estados normalizados:
 
 - `ready` quando o gateway confirma prontidão;
 - `degraded` quando responde mas não confirma prontidão;
 - `offline` quando falha;
+- `configuration` quando o health retorna 401/403;
 - `online` reservado para resposta saudável sem sessão pronta.
 
 O health check não roda em cada renderização.
@@ -69,13 +84,44 @@ Permitido:
 
 ```text
 gateway-01 / moriah-01
+gateway-02 / moriah-01
 ```
 
 Bloqueado:
 
 ```text
 gateway-01 / moriah-01
+gateway-01 / moriah-01
 ```
+
+## Rollback Manual Seguro
+
+Não executar automaticamente. Se a migration precisar ser revertida antes de uso real:
+
+```sql
+drop index if exists public.channels_tenant_gateway_session_uniq;
+drop index if exists public.channels_tenant_gateway_id_idx;
+drop index if exists public.channels_gateway_id_idx;
+alter table public.channels drop column if exists gateway_id;
+drop trigger if exists internal_messaging_gateways_touch_updated_at on public.internal_messaging_gateways;
+drop function if exists public.touch_internal_messaging_gateways_updated_at();
+drop table if exists public.internal_messaging_gateways;
+```
+
+Esse rollback não apaga `channels`, mensagens, conversas ou dados da Lips. Só deve ser usado antes de existir gateway interno real em uso.
+
+## Operação Visual
+
+Na tela `/operations/channels`, a seção Gateways de comunicação permite:
+
+- cadastrar gateway;
+- editar nome, URL base, ambiente, status e limite;
+- manter slug imutável após criação;
+- ativar;
+- colocar em manutenção;
+- desativar;
+- verificar saúde manualmente;
+- filtrar canais WhatsApp relacionados.
 
 ## Conexão WhatsApp
 
