@@ -27,7 +27,7 @@ type InternalGateway = {
   version: string | null;
   maxSessions: number;
   activeSessions: number;
-  lastHealthCheck: string | null;
+  lastHealthCheckAt: string | null;
   lastError: string | null;
 };
 
@@ -125,9 +125,10 @@ export function InternalChannelsPanel() {
   const [savingGateway, setSavingGateway] = useState(false);
   const [updatingChannelId, setUpdatingChannelId] = useState<string | null>(null);
   const [qrByChannel, setQrByChannel] = useState<Record<string, string | null>>({});
+  const [editingGatewayId, setEditingGatewayId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [filters, setFilters] = useState({ businessKey: "all", channelType: "all", purpose: "all", status: "all" });
+  const [filters, setFilters] = useState({ businessKey: "all", channelType: "all", gatewayId: "all", purpose: "all", status: "all" });
   const [form, setForm] = useState({
     organizationId: "",
     gatewayId: "",
@@ -201,14 +202,15 @@ export function InternalChannelsPanel() {
     setNotice(null);
     try {
       const response = await fetch("/api/operations/internal-gateways", {
-        method: "POST",
+        method: editingGatewayId ? "PATCH" : "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(gatewayForm),
+        body: JSON.stringify(editingGatewayId ? { id: editingGatewayId, name: gatewayForm.name, baseUrl: gatewayForm.baseUrl, environment: gatewayForm.environment, status: gatewayForm.status, maxSessions: Number(gatewayForm.maxSessions) } : gatewayForm),
       });
       const data = await response.json() as ApiResponse;
       if (!data.ok) throw new Error(data.error || "Falha ao cadastrar gateway interno.");
-      setNotice("Gateway interno cadastrado.");
-      setGatewayForm((current) => ({ ...current, baseUrl: "" }));
+      setNotice(editingGatewayId ? "Gateway interno atualizado." : "Gateway interno cadastrado.");
+      setEditingGatewayId(null);
+      setGatewayForm({ name: "Gateway 01", slug: "gateway-01", provider: "openwa", baseUrl: "", environment: "production", status: "inactive", maxSessions: 9 });
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao cadastrar gateway interno.");
@@ -236,6 +238,41 @@ export function InternalChannelsPanel() {
     } finally {
       setUpdatingChannelId(null);
     }
+  }
+
+  async function setGatewayStatus(gateway: InternalGateway, status: "active" | "inactive" | "maintenance") {
+    setUpdatingChannelId(gateway.id);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch("/api/operations/internal-gateways", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: gateway.id, status }),
+      });
+      const data = await response.json() as ApiResponse;
+      if (!data.ok) throw new Error(data.error || "Falha ao atualizar gateway.");
+      setNotice("Status do gateway atualizado.");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao atualizar gateway.");
+    } finally {
+      setUpdatingChannelId(null);
+    }
+  }
+
+  function editGateway(gateway: InternalGateway) {
+    setEditingGatewayId(gateway.id);
+    setGatewayForm({
+      name: gateway.name,
+      slug: gateway.slug,
+      provider: gateway.provider,
+      baseUrl: "",
+      environment: gateway.environment,
+      status: gateway.status === "error" ? "maintenance" : gateway.status,
+      maxSessions: gateway.maxSessions,
+    });
+    setNotice("Informe novamente a URL base para editar este gateway. O identificador não é alterado.");
   }
 
   async function requestQr(channel: InternalChannel) {
@@ -282,6 +319,7 @@ export function InternalChannelsPanel() {
   const filteredChannels = channels.filter((channel) => {
     if (filters.businessKey !== "all" && channel.businessKey !== filters.businessKey) return false;
     if (filters.channelType !== "all" && String(channel.channelType) !== filters.channelType) return false;
+    if (filters.gatewayId !== "all" && channel.gatewayId !== filters.gatewayId) return false;
     if (filters.purpose !== "all" && channel.purpose !== filters.purpose) return false;
     if (filters.status !== "all" && channel.status !== filters.status) return false;
     return true;
@@ -337,22 +375,26 @@ export function InternalChannelsPanel() {
               <form onSubmit={submitGateway} className="space-y-3">
                 <div className="grid gap-3 md:grid-cols-2">
                   <label className="block text-sm font-bold text-slate-700">Nome<input className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm" value={gatewayForm.name} onChange={(event) => setGatewayForm({ ...gatewayForm, name: event.target.value })} /></label>
-                  <label className="block text-sm font-bold text-slate-700">Slug<input className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm" value={gatewayForm.slug} onChange={(event) => setGatewayForm({ ...gatewayForm, slug: event.target.value })} /></label>
+                  <label className="block text-sm font-bold text-slate-700">Slug<input className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm disabled:bg-slate-100" value={gatewayForm.slug} disabled={Boolean(editingGatewayId)} onChange={(event) => setGatewayForm({ ...gatewayForm, slug: event.target.value })} /></label>
                 </div>
                 <label className="block text-sm font-bold text-slate-700">Base URL<input className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm" value={gatewayForm.baseUrl} onChange={(event) => setGatewayForm({ ...gatewayForm, baseUrl: event.target.value })} placeholder="https://gateway.exemplo.com" /></label>
                 <div className="grid gap-3 md:grid-cols-2">
                   <label className="block text-sm font-bold text-slate-700">Ambiente<select className="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" value={gatewayForm.environment} onChange={(event) => setGatewayForm({ ...gatewayForm, environment: event.target.value })}><option value="production">Produção</option><option value="test">Teste</option></select></label>
-                  <label className="block text-sm font-bold text-slate-700">Status<select className="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" value={gatewayForm.status} onChange={(event) => setGatewayForm({ ...gatewayForm, status: event.target.value })}><option value="inactive">Inativo</option><option value="active">Ativo</option><option value="maintenance">Manutenção</option><option value="error">Erro</option></select></label>
+                  <label className="block text-sm font-bold text-slate-700">Status<select className="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" value={gatewayForm.status} onChange={(event) => setGatewayForm({ ...gatewayForm, status: event.target.value })}><option value="inactive">Inativo</option><option value="active">Ativo</option><option value="maintenance">Manutenção</option></select></label>
                 </div>
-                <Button type="submit" disabled={savingGateway} className="w-full rounded-full bg-[#1B2F5B] font-black text-white hover:bg-[#16284d]">{savingGateway ? "Salvando..." : "Cadastrar gateway"}</Button>
+                <label className="block text-sm font-bold text-slate-700">Limite de sessões<input type="number" min={1} max={9} className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm" value={gatewayForm.maxSessions} onChange={(event) => setGatewayForm({ ...gatewayForm, maxSessions: Number(event.target.value) })} /></label>
+                <div className="flex gap-2">
+                  <Button type="submit" disabled={savingGateway} className="flex-1 rounded-full bg-[#1B2F5B] font-black text-white hover:bg-[#16284d]">{savingGateway ? "Salvando..." : editingGatewayId ? "Salvar edição" : "Cadastrar gateway"}</Button>
+                  {editingGatewayId && <Button type="button" variant="outline" className="rounded-full" onClick={() => { setEditingGatewayId(null); setGatewayForm({ name: "Gateway 01", slug: "gateway-01", provider: "openwa", baseUrl: "", environment: "production", status: "inactive", maxSessions: 9 }); }}>Cancelar</Button>}
+                </div>
                 <p className="text-xs text-slate-500">Não cadastre API key, secret, token ou cookie. Credenciais ficam no ambiente do gateway.</p>
               </form>
               <div className="space-y-3">
                 {gateways.map((gateway) => (
                   <div key={gateway.id} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
                     <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div><p className="font-black text-[#1B2F5B]">{gateway.name}</p><p className="mt-1 text-xs text-slate-500">{gateway.provider} · {gateway.environment} · {gateway.activeSessions}/{gateway.maxSessions} sessões</p><p className="mt-1 text-xs text-slate-400">{gateway.baseUrlMasked}</p>{gateway.lastError && <p className="mt-1 text-xs font-bold text-red-600">{gateway.lastError}</p>}</div>
-                      <div className="flex flex-wrap gap-2"><Badge className={statusClass(gateway.status)}>{gateway.status}</Badge><Button type="button" size="sm" variant="outline" className="rounded-full" disabled={updatingChannelId === gateway.id} onClick={() => checkGateway(gateway)}>Health check</Button></div>
+                      <div><p className="font-black text-[#1B2F5B]">{gateway.name}</p><p className="mt-1 text-xs text-slate-500">{gateway.provider} · {gateway.environment} · {gateway.activeSessions}/{gateway.maxSessions} sessões</p><p className="mt-1 text-xs text-slate-400">{gateway.baseUrlMasked}</p><p className="mt-1 text-xs text-slate-400">Última verificação: {gateway.lastHealthCheckAt || "nunca"}</p>{gateway.lastError && <p className="mt-1 text-xs font-bold text-red-600">{gateway.lastError}</p>}</div>
+                      <div className="flex flex-wrap justify-end gap-2"><Badge className={statusClass(gateway.status)}>{gateway.status}</Badge><Button type="button" size="sm" variant="outline" className="rounded-full" onClick={() => editGateway(gateway)}>Editar</Button><Button type="button" size="sm" variant="outline" className="rounded-full" disabled={updatingChannelId === gateway.id} onClick={() => setGatewayStatus(gateway, "active")}>Ativar</Button><Button type="button" size="sm" variant="outline" className="rounded-full" disabled={updatingChannelId === gateway.id} onClick={() => setGatewayStatus(gateway, "maintenance")}>Manutenção</Button><Button type="button" size="sm" variant="outline" className="rounded-full" disabled={updatingChannelId === gateway.id} onClick={() => setGatewayStatus(gateway, "inactive")}>Desativar</Button><Button type="button" size="sm" variant="outline" className="rounded-full" disabled={updatingChannelId === gateway.id} onClick={() => checkGateway(gateway)}>Verificar saúde</Button><Button type="button" size="sm" variant="outline" className="rounded-full" onClick={() => setFilters({ ...filters, channelType: "whatsapp_web", gatewayId: gateway.id })}>Ver canais</Button></div>
                     </div>
                   </div>
                 ))}
@@ -435,7 +477,7 @@ export function InternalChannelsPanel() {
             <CardTitle className="text-lg font-black text-[#1B2F5B]">Canais cadastrados</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="mb-4 grid gap-3 md:grid-cols-4">
+            <div className="mb-4 grid gap-3 md:grid-cols-5">
               <label className="block text-xs font-black uppercase tracking-wide text-slate-500">
                 Empresa
                 <select className="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-700" value={filters.businessKey} onChange={(event) => setFilters({ ...filters, businessKey: event.target.value })}>
@@ -448,6 +490,13 @@ export function InternalChannelsPanel() {
                 <select className="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-700" value={filters.channelType} onChange={(event) => setFilters({ ...filters, channelType: event.target.value })}>
                   <option value="all">Todos</option>
                   {channelTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                </select>
+              </label>
+              <label className="block text-xs font-black uppercase tracking-wide text-slate-500">
+                Gateway
+                <select className="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-700" value={filters.gatewayId} onChange={(event) => setFilters({ ...filters, gatewayId: event.target.value })}>
+                  <option value="all">Todos</option>
+                  {gateways.map((gateway) => <option key={gateway.id} value={gateway.id}>{gateway.name}</option>)}
                 </select>
               </label>
               <label className="block text-xs font-black uppercase tracking-wide text-slate-500">
