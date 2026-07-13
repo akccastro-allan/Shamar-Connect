@@ -66,6 +66,27 @@ type ContactNote = {
   created_at: string;
 };
 
+type CommercialAnalysis = {
+  intent: string;
+  stage: string;
+  temperature: string;
+  confidence: number;
+  objections: string[];
+  missingInformation: string[];
+  recommendedNextAction: string;
+  recommendedDepartment?: string;
+  requiresHuman: boolean;
+  riskFlags: string[];
+  summary: string;
+};
+
+type CommercialSuggestion = {
+  text: string;
+  callToAction?: string;
+  requiresApproval: true;
+  warnings: string[];
+};
+
 async function readJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, { ...init, cache: "no-store" });
   const data = await response.json();
@@ -121,6 +142,10 @@ export function InboxPanel() {
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [commercialAnalysis, setCommercialAnalysis] = useState<CommercialAnalysis | null>(null);
+  const [commercialSuggestion, setCommercialSuggestion] = useState<CommercialSuggestion | null>(null);
+  const [commercialSuggestionId, setCommercialSuggestionId] = useState<string | null>(null);
+  const [commercialDraft, setCommercialDraft] = useState("");
 
   const selectedConversation = useMemo(
     () => conversations.find((conversation) => conversation.id === selectedConversationId) || null,
@@ -198,6 +223,10 @@ export function InboxPanel() {
 
   async function selectConversation(conversationId: string) {
     setSelectedConversationId(conversationId);
+    setCommercialAnalysis(null);
+    setCommercialSuggestion(null);
+    setCommercialSuggestionId(null);
+    setCommercialDraft("");
     const conversation = conversations.find((item) => item.id === conversationId) || null;
     hydrateForms(conversation);
     await loadMessages(conversationId);
@@ -316,6 +345,76 @@ export function InboxPanel() {
       await loadNotes(selectedConversation);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao salvar nota");
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  async function analyzeCommercialConversation() {
+    if (!selectedConversation) return;
+    setLoading("commercial-analysis");
+    setError(null);
+    setSuccess(null);
+    try {
+      const data = await readJson<{ ok: boolean; analysis: CommercialAnalysis }>("/api/commercial-agent/analyze", {
+        method: "POST",
+        body: JSON.stringify({ conversationId: selectedConversation.id }),
+      });
+      setCommercialAnalysis(data.analysis);
+      setSuccess("Análise comercial atualizada. Nenhuma mensagem foi enviada.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao analisar conversa");
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  async function suggestCommercialResponse() {
+    if (!selectedConversation) return;
+    setLoading("commercial-suggestion");
+    setError(null);
+    setSuccess(null);
+    try {
+      const data = await readJson<{ ok: boolean; analysis: CommercialAnalysis; suggestion: CommercialSuggestion; suggestionId?: string | null }>("/api/commercial-agent/suggest", {
+        method: "POST",
+        body: JSON.stringify({ conversationId: selectedConversation.id }),
+      });
+      setCommercialAnalysis(data.analysis);
+      setCommercialSuggestion(data.suggestion);
+      setCommercialSuggestionId(data.suggestionId ?? null);
+      setCommercialDraft(data.suggestion.text);
+      setSuccess("Sugestão criada para revisão manual. Nenhuma mensagem foi enviada.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao sugerir resposta");
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  async function updateCommercialSuggestion(status: "approved" | "edited" | "rejected") {
+    if (!commercialSuggestion) return;
+    if (!commercialSuggestionId) {
+      if (status !== "rejected") setReplyBody(commercialDraft || commercialSuggestion.text);
+      setSuccess("Sugestão preparada para uso manual. Nenhuma mensagem foi enviada.");
+      return;
+    }
+
+    setLoading("commercial-approval");
+    setError(null);
+    setSuccess(null);
+    try {
+      await readJson<{ ok: boolean }>(`/api/commercial-agent/suggestions/${commercialSuggestionId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status,
+          editedText: status === "edited" ? commercialDraft : undefined,
+          rejectionReason: status === "rejected" ? "Rejeitada pelo atendente no Inbox" : undefined,
+        }),
+      });
+      if (status !== "rejected") setReplyBody(commercialDraft || commercialSuggestion.text);
+      setSuccess(status === "rejected" ? "Sugestão rejeitada." : "Sugestão aprovada para uso manual. Revise antes de enviar.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao atualizar sugestão");
     } finally {
       setLoading(null);
     }
@@ -452,6 +551,52 @@ export function InboxPanel() {
         </Card>
 
         <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Análise comercial</CardTitle>
+              <CardDescription>Copiloto supervisionado. Não envia WhatsApp automaticamente.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {!selectedConversation ? (
+                <p className="text-sm text-muted-foreground">Selecione uma conversa.</p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button onClick={analyzeCommercialConversation} disabled={Boolean(loading)} variant="outline" size="sm">Analisar</Button>
+                    <Button onClick={suggestCommercialResponse} disabled={Boolean(loading)} variant="outline" size="sm">Sugerir</Button>
+                  </div>
+
+                  {commercialAnalysis ? (
+                    <div className="space-y-2 rounded-2xl border bg-slate-50 p-3 text-sm">
+                      <p><span className="font-black">Intenção:</span> {commercialAnalysis.intent}</p>
+                      <p><span className="font-black">Estágio:</span> {commercialAnalysis.stage}</p>
+                      <p><span className="font-black">Temperatura:</span> {commercialAnalysis.temperature}</p>
+                      <p><span className="font-black">Resumo:</span> {commercialAnalysis.summary}</p>
+                      <p><span className="font-black">Objeções:</span> {commercialAnalysis.objections.join(", ") || "nenhuma"}</p>
+                      <p><span className="font-black">Dados faltantes:</span> {commercialAnalysis.missingInformation.join(", ") || "nenhum"}</p>
+                      <p><span className="font-black">Próxima ação:</span> {commercialAnalysis.recommendedNextAction}</p>
+                    </div>
+                  ) : null}
+
+                  {commercialSuggestion ? (
+                    <div className="space-y-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-3">
+                      <textarea value={commercialDraft} onChange={(event) => setCommercialDraft(event.target.value)} className="min-h-28 w-full rounded-xl border bg-white px-3 py-2 text-sm" />
+                      {commercialSuggestion.warnings.length > 0 ? (
+                        <p className="text-xs font-semibold text-amber-700">Avisos: {commercialSuggestion.warnings.join(", ")}</p>
+                      ) : null}
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button type="button" variant="outline" size="sm" onClick={() => navigator.clipboard?.writeText(commercialDraft)}>Copiar</Button>
+                        <Button type="button" variant="outline" size="sm" onClick={() => updateCommercialSuggestion("edited")}>Editar</Button>
+                        <Button type="button" variant="outline" size="sm" onClick={() => updateCommercialSuggestion("approved")}>Aprovar uso manual</Button>
+                        <Button type="button" variant="outline" size="sm" onClick={() => updateCommercialSuggestion("rejected")}>Rejeitar</Button>
+                      </div>
+                    </div>
+                  ) : null}
+                </>
+              )}
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2"><UserRound className="h-5 w-5" />Contato</CardTitle>
