@@ -31,6 +31,7 @@ const navigationGroups: NavGroup[] = [
       { href: "/inbox", label: "Inbox", icon: Inbox },
       { href: "/social-inbox", label: "Social Inbox", icon: AtSign, metaOnly: true },
       { href: "/operations", label: "Operações", icon: Activity, platformOnly: true, commandCenterOnly: true },
+      { href: "/operations/commercial", label: "Comercial interno", icon: TrendingUp, platformOnly: true, commandCenterOnly: true },
       { href: "/reports/team", label: "Relatório da equipe", icon: TrendingUp },
     ],
   },
