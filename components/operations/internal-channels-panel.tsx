@@ -6,6 +6,7 @@ import { RefreshCcw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { INTERNAL_CHANNEL_PURPOSE_LABELS, INTERNAL_CHANNEL_PURPOSES } from "@/lib/operations/internal-channels";
 
 type InternalOrganization = {
   id: string;
@@ -89,16 +90,7 @@ const channelTypes = [
   { value: "website_chat", label: "Chat do site" },
 ];
 
-const purposes = [
-  { value: "support", label: "Atendimento" },
-  { value: "sales", label: "Vendas" },
-  { value: "parents", label: "Pais" },
-  { value: "operations", label: "Operações" },
-  { value: "personal", label: "Pessoal" },
-  { value: "marketing", label: "Marketing" },
-  { value: "community", label: "Comunidade" },
-  { value: "other", label: "Outro" },
-];
+const purposes = INTERNAL_CHANNEL_PURPOSES.map((value) => ({ value, label: INTERNAL_CHANNEL_PURPOSE_LABELS[value] }));
 
 function statusClass(status: string) {
   if (status === "connected") return "border-emerald-200 bg-emerald-50 text-emerald-700";
@@ -393,7 +385,7 @@ export function InternalChannelsPanel() {
                 {gateways.map((gateway) => (
                   <div key={gateway.id} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
                     <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div><p className="font-black text-[#1B2F5B]">{gateway.name}</p><p className="mt-1 text-xs text-slate-500">{gateway.provider} · {gateway.environment} · {gateway.activeSessions}/{gateway.maxSessions} sessões</p><p className="mt-1 text-xs text-slate-400">{gateway.baseUrlMasked}</p><p className="mt-1 text-xs text-slate-400">Última verificação: {gateway.lastHealthCheckAt || "nunca"}</p>{gateway.lastError && <p className="mt-1 text-xs font-bold text-red-600">{gateway.lastError}</p>}</div>
+                      <div><p className="font-black text-[#1B2F5B]">{gateway.name}</p><p className="mt-1 text-xs text-slate-500">{gateway.provider} · {gateway.environment} · {gateway.activeSessions} canais cadastrados · limite {gateway.maxSessions} por empresa</p><p className="mt-1 text-xs text-slate-400">{gateway.baseUrlMasked}</p><p className="mt-1 text-xs text-slate-400">Última verificação: {gateway.lastHealthCheckAt || "nunca"}</p>{gateway.lastError && <p className="mt-1 text-xs font-bold text-red-600">{gateway.lastError}</p>}</div>
                       <div className="flex flex-wrap justify-end gap-2"><Badge className={statusClass(gateway.status)}>{gateway.status}</Badge><Button type="button" size="sm" variant="outline" className="rounded-full" onClick={() => editGateway(gateway)}>Editar</Button><Button type="button" size="sm" variant="outline" className="rounded-full" disabled={updatingChannelId === gateway.id} onClick={() => setGatewayStatus(gateway, "active")}>Ativar</Button><Button type="button" size="sm" variant="outline" className="rounded-full" disabled={updatingChannelId === gateway.id} onClick={() => setGatewayStatus(gateway, "maintenance")}>Manutenção</Button><Button type="button" size="sm" variant="outline" className="rounded-full" disabled={updatingChannelId === gateway.id} onClick={() => setGatewayStatus(gateway, "inactive")}>Desativar</Button><Button type="button" size="sm" variant="outline" className="rounded-full" disabled={updatingChannelId === gateway.id} onClick={() => checkGateway(gateway)}>Verificar saúde</Button><Button type="button" size="sm" variant="outline" className="rounded-full" onClick={() => setFilters({ ...filters, channelType: "whatsapp_web", gatewayId: gateway.id })}>Ver canais</Button></div>
                     </div>
                   </div>
@@ -448,7 +440,7 @@ export function InternalChannelsPanel() {
                   ) : (
                     <p className="mt-1 font-bold text-red-700">{selectedNextSession?.error || "Selecione empresa e gateway."}</p>
                   )}
-                  <p className="mt-2 text-xs text-slate-500">Operadores não digitam session ID livremente. O padrão é sempre empresa-01 até empresa-09 por gateway.</p>
+                  <p className="mt-2 text-xs text-slate-500">Operadores não digitam session ID livremente. O padrão é sempre empresa-01 até empresa-09 por gateway, contado por empresa.</p>
                 </div>
               )}
               <label className="block text-sm font-bold text-slate-700">

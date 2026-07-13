@@ -32,9 +32,22 @@ export const INTERNAL_CHANNEL_PURPOSES = [
   "operations",
   "personal",
   "marketing",
+  "notifications",
   "community",
   "other",
 ] as const;
+
+export const INTERNAL_CHANNEL_PURPOSE_LABELS = {
+  support: "Atendimento",
+  sales: "Vendas",
+  parents: "Pais",
+  operations: "Operações",
+  personal: "Pessoal",
+  marketing: "Marketing",
+  notifications: "Notificações",
+  community: "Comunidade",
+  other: "Outro",
+} as const satisfies Record<(typeof INTERNAL_CHANNEL_PURPOSES)[number], string>;
 
 export const INTERNAL_CHANNEL_STATUSES = ["draft", "connecting", "connected", "disconnected", "error", "disabled"] as const;
 export const INTERNAL_FEATURE_STAGES = ["hidden", "internal_alpha", "internal_active", "internal_approved", "disabled"] as const;
@@ -93,7 +106,7 @@ export const INTERNAL_SOCIAL_CONNECTION_MODEL = {
 } as const;
 
 export const PLANNED_INTERNAL_CHANNELS = [
-  { businessKey: "oriahfin", sessionId: "oriahfin-01", purpose: "support", channelType: "whatsapp_web", gatewayId: "gateway-01" },
+  { businessKey: "oriahfin", sessionId: "oriahfin-01", purpose: "notifications", channelType: "whatsapp_web", gatewayId: "gateway-01" },
   { businessKey: "viciados", sessionId: "viciados-01", purpose: "sales", channelType: "whatsapp_web", gatewayId: "gateway-01" },
   { businessKey: "mkshalom", sessionId: "mkshalom-01", purpose: "support", channelType: "whatsapp_web", gatewayId: "gateway-01" },
   { businessKey: "moriah", sessionId: "moriah-01", purpose: "operations", channelType: "whatsapp_web", gatewayId: "gateway-01" },
@@ -243,6 +256,17 @@ export function getNextInternalSessionId(input: {
     ok: false,
     error: "Este gateway atingiu o limite de nove sessões para esta empresa. Selecione outro gateway.",
   };
+}
+
+export function countGatewayChannels(input: { gatewayId: string; existingSessions: ExistingSession[] }) {
+  return input.existingSessions.filter((existing) => existing.gatewayId === input.gatewayId && existing.sessionId).length;
+}
+
+export function countBusinessSessionsOnGateway(input: { businessKey: InternalBusinessKey; gatewayId: string; existingSessions: ExistingSession[] }) {
+  return input.existingSessions.filter((existing) => {
+    if (existing.gatewayId !== input.gatewayId || !existing.sessionId) return false;
+    return parseSessionId(existing.sessionId)?.companySlug === input.businessKey;
+  }).length;
 }
 
 export function validateInternalSessionRegistration(input: {
