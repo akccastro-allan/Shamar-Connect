@@ -75,7 +75,7 @@ Não misturar conversas entre os dois números.
 
 ## Primeiros Cadastros Previstos
 
-- OriahFin: `oriahfin-01`, finalidade `support` ou `notifications` quando o enum for ampliado.
+- OriahFin: `oriahfin-01`, finalidade `notifications`.
 - Viciados em Trilhas: `viciados-01`, finalidade `sales`.
 - MK Shalom: `mkshalom-01`, finalidade `support`.
 - Moriah Systems: `moriah-01`, finalidade `operations`.

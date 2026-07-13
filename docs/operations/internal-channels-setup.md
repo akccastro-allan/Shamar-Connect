@@ -47,6 +47,7 @@ O cadastro preparatório não gera QR, não cria sessão no gateway e não ativa
 - `operations`: operação interna;
 - `personal`: pessoal;
 - `marketing`: marketing;
+- `notifications`: notificações financeiras e operacionais;
 - `community`: comunidade;
 - `other`: outro.
 
@@ -92,7 +93,7 @@ Exemplo exibido ao operador:
 OriahFin
 WhatsApp
 oriahfin-01
-Atendimento
+Notificações
 ```
 
 Não exibir `tenant_id`, `organization_id`, `provider_type`, API key, secret, payload bruto ou UUID sem contexto na tela principal.
@@ -154,6 +155,17 @@ Gateways internos agora usam `internal_messaging_gateways` e `channels.gateway_i
 
 Não aplicar migration em produção sem revisão operacional.
 
+A tela deve diferenciar dois indicadores:
+
+- total do gateway: quantidade de canais cadastrados no gateway;
+- uso por empresa: sequência `01` até `09` daquela empresa naquele gateway.
+
+Exemplo após os primeiros drafts:
+
+- Gateway 01: 2 canais cadastrados;
+- OriahFin: sessão 01 de até 09;
+- Viciados em Trilhas: sessão 01 de até 09.
+
 ## QR e Status
 
 Rotas internas:
@@ -186,3 +198,12 @@ Para conexão real, coletar apenas:
 - gateway escolhido;
 - conta Instagram/Facebook/TikTok quando aplicável;
 - página ou business associado quando aplicável.
+
+## Canais Iniciais em Draft
+
+Primeiros canais internos previstos no Gateway 01:
+
+- OriahFin: `oriahfin-01`, WhatsApp Web, finalidade `notifications`, status `draft`, sem telefone, sem QR e sem sessão iniciada;
+- Viciados em Trilhas: `viciados-01`, WhatsApp Web, finalidade `sales`, status `draft`, sem telefone, sem QR e sem sessão iniciada.
+
+Esses cadastros não alteram a Lips e não preenchem `gateway_id` do canal `lips-main`.
