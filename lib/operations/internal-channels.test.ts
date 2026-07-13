@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildInternalChannelMetadata,
+  countBusinessSessionsOnGateway,
+  countGatewayChannels,
+  INTERNAL_CHANNEL_PURPOSE_LABELS,
+  INTERNAL_CHANNEL_PURPOSES,
   getNextInternalSessionId,
   isInternalBusinessOrganization,
   isValidInternalWhatsappSessionId,
@@ -10,6 +14,12 @@ import {
   resolveProviderForInternalChannel,
   validateInternalSessionRegistration,
 } from "./internal-channels.ts";
+
+test("purpose notifications é finalidade interna oficial", () => {
+  assert.equal((INTERNAL_CHANNEL_PURPOSES as readonly string[]).includes("notifications"), true);
+  assert.equal((INTERNAL_CHANNEL_PURPOSES as readonly string[]).indexOf("notifications") > (INTERNAL_CHANNEL_PURPOSES as readonly string[]).indexOf("marketing"), true);
+  assert.equal(INTERNAL_CHANNEL_PURPOSE_LABELS.notifications, "Notificações");
+});
 
 test("internal business resolver allows only Allan/Moriah operations", () => {
   assert.equal(resolveInternalBusinessKey({ id: "1", name: "Viciados em Trilhas", slug: "viciados" }), "viciados");
@@ -57,6 +67,50 @@ test("internal WhatsApp session ids use business dash number from 01 to 09", () 
   assert.equal(isValidInternalWhatsappSessionId("viciados-main", "viciados"), false);
   assert.equal(isValidInternalWhatsappSessionId("Viciados-01", "viciados"), false);
   assert.equal(isValidInternalWhatsappSessionId("viciados_01", "viciados"), false);
+});
+
+test("OriahFin aceita finalidade notifications sem secrets", () => {
+  const metadata = buildInternalChannelMetadata({
+    businessKey: "oriahfin",
+    channelType: "whatsapp_web",
+    accountLabel: "Notificações financeiras",
+    purpose: "notifications",
+    featureStage: "internal_alpha",
+    gatewayId: "11111111-1111-4111-8111-111111111111",
+  });
+
+  assert.equal(metadata.businessKey, "oriahfin");
+  assert.equal(metadata.purpose, "notifications");
+  assert.equal(metadata.originContext.purpose, "notifications");
+  assert.equal(Object.hasOwn(metadata, "token"), false);
+});
+
+test("canal draft preparatório não carrega QR, telefone ou sessão iniciada", () => {
+  const metadata = buildInternalChannelMetadata({
+    businessKey: "oriahfin",
+    channelType: "whatsapp_web",
+    accountLabel: "Notificações financeiras",
+    purpose: "notifications",
+    featureStage: "internal_alpha",
+    gatewayId: "11111111-1111-4111-8111-111111111111",
+  });
+
+  assert.equal(Object.hasOwn(metadata, "qrCode"), false);
+  assert.equal(Object.hasOwn(metadata, "phoneNumber"), false);
+  assert.equal(Object.hasOwn(metadata, "sessionStarted"), false);
+  assert.equal(metadata.lastEventAt, null);
+});
+
+test("contagem diferencia total do gateway e uso por empresa", () => {
+  const existingSessions = [
+    { gatewayId: "gateway-01", sessionId: "oriahfin-01" },
+    { gatewayId: "gateway-01", sessionId: "viciados-01" },
+    { gatewayId: "gateway-02", sessionId: "oriahfin-01" },
+  ];
+
+  assert.equal(countGatewayChannels({ gatewayId: "gateway-01", existingSessions }), 2);
+  assert.equal(countBusinessSessionsOnGateway({ businessKey: "oriahfin", gatewayId: "gateway-01", existingSessions }), 1);
+  assert.equal(countBusinessSessionsOnGateway({ businessKey: "viciados", gatewayId: "gateway-01", existingSessions }), 1);
 });
 
 test("next internal session uses first available sequence on selected gateway", () => {
