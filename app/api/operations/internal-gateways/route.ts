@@ -2,9 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
 import { canAccessCommandCenter, getTenantFeatureMetadata } from "@/lib/features/feature-flags";
 import {
+  countGatewaySessions,
+  createInternalGateway,
+  findInternalGatewayById,
+  listInternalGateways,
+  recordGatewayHealth,
+  updateInternalGateway,
+} from "@/lib/operations/internal-gateways-repository";
+import {
   createInternalGatewaySchema,
   gatewayListFiltersSchema,
-  isUniqueConstraintError,
   normalizeGatewayHealth,
   publicGatewaySummary,
   sanitizeGatewayError,
@@ -26,26 +33,6 @@ async function requireCommandCenterApi() {
   }
 
   return { ok: true as const, context, db };
-}
-
-async function countActiveSessions(db: ReturnType<typeof createSupabaseWriteClient>, tenantId: string) {
-  const { data } = await db
-    .from("channels")
-    .select("gateway_id")
-    .eq("tenant_id", tenantId)
-    .not("gateway_id", "is", null)
-    .eq("channel_type", "whatsapp_web")
-    .eq("provider_type", "web_gateway")
-    .neq("status", "disabled")
-    .neq("active", false)
-    .neq("is_active", false);
-
-  const counts = new Map<string, number>();
-  for (const row of data || []) {
-    const gatewayId = String(row.gateway_id || "");
-    if (gatewayId) counts.set(gatewayId, (counts.get(gatewayId) || 0) + 1);
-  }
-  return counts;
 }
 
 async function auditGatewayAction(input: {
@@ -105,20 +92,8 @@ export async function GET(request: NextRequest) {
     const parsed = gatewayListFiltersSchema.safeParse(Object.fromEntries(request.nextUrl.searchParams.entries()));
     if (!parsed.success) return NextResponse.json({ ok: false, error: "Filtros inválidos." }, { status: 400 });
 
-    let query = auth.db
-      .from("internal_messaging_gateways")
-      .select("id, tenant_id, name, slug, provider, base_url, environment, status, version, max_sessions, last_health_check_at, last_error, metadata, created_at, updated_at")
-      .eq("tenant_id", auth.context.tenantId)
-      .order("name");
-    if (parsed.data.status) query = query.eq("status", parsed.data.status);
-    if (parsed.data.provider) query = query.eq("provider", parsed.data.provider);
-    if (parsed.data.environment) query = query.eq("environment", parsed.data.environment);
-    if (parsed.data.slug) query = query.eq("slug", parsed.data.slug);
-
-    const { data, error } = await query;
-    if (error) throw error;
-
-    const counts = await countActiveSessions(auth.db, auth.context.tenantId);
+    const data = await listInternalGateways(auth.db, auth.context.tenantId, parsed.data);
+    const counts = await countGatewaySessions(auth.db, auth.context.tenantId);
     return NextResponse.json({
       ok: true,
       gateways: ((data || []) as InternalGatewayRow[]).map((gateway) => publicGatewaySummary(gateway, counts.get(gateway.id) || 0)),
@@ -140,38 +115,21 @@ export async function POST(request: NextRequest) {
     const baseUrl = validateGatewayBaseUrl(parsed.data.baseUrl, parsed.data.environment);
     if (!baseUrl.ok) return NextResponse.json({ ok: false, error: baseUrl.error }, { status: 400 });
 
-    const { data: existing, error: existingError } = await auth.db
-      .from("internal_messaging_gateways")
-      .select("id")
-      .eq("tenant_id", auth.context.tenantId)
-      .eq("slug", parsed.data.slug)
-      .maybeSingle();
-    if (existingError) throw existingError;
-    if (existing) return NextResponse.json({ ok: false, error: "gateway_slug_conflict" }, { status: 409 });
+    const created = await createInternalGateway(auth.db, {
+      tenantId: auth.context.tenantId,
+      name: parsed.data.name,
+      slug: parsed.data.slug,
+      provider: parsed.data.provider,
+      baseUrl: baseUrl.url,
+      environment: parsed.data.environment,
+      status: parsed.data.status || "inactive",
+      maxSessions: parsed.data.maxSessions,
+    });
+    if (!created.ok) return NextResponse.json({ ok: false, error: "gateway_slug_conflict" }, { status: 409 });
 
-    const { data, error } = await auth.db
-      .from("internal_messaging_gateways")
-      .insert({
-        tenant_id: auth.context.tenantId,
-        name: parsed.data.name,
-        slug: parsed.data.slug,
-        provider: parsed.data.provider,
-        base_url: baseUrl.url,
-        environment: parsed.data.environment,
-        status: parsed.data.status || "inactive",
-        max_sessions: parsed.data.maxSessions,
-        metadata: {},
-      })
-      .select("id")
-      .single();
-    if (error) {
-      if (isUniqueConstraintError(error)) return NextResponse.json({ ok: false, error: "gateway_slug_conflict" }, { status: 409 });
-      throw error;
-    }
+    await auditGatewayAction({ db: auth.db, userId: auth.context.appUserId, tenantId: auth.context.tenantId, gatewayId: created.gatewayId, action: "gateway_created", result: "success" });
 
-    await auditGatewayAction({ db: auth.db, userId: auth.context.appUserId, tenantId: auth.context.tenantId, gatewayId: data.id, action: "gateway_created", result: "success" });
-
-    return NextResponse.json({ ok: true, gatewayId: data.id }, { status: 201 });
+    return NextResponse.json({ ok: true, gatewayId: created.gatewayId }, { status: 201 });
   } catch (error) {
     if (isUnauthorizedError(error)) return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
     return NextResponse.json({ ok: false, error: "Falha ao cadastrar gateway." }, { status: 500 });
@@ -186,62 +144,46 @@ export async function PATCH(request: NextRequest) {
     const parsed = updateInternalGatewaySchema.safeParse(await request.json());
     if (!parsed.success) return NextResponse.json({ ok: false, error: "Dados de atualização inválidos." }, { status: 400 });
 
-    const { data: gateway, error: loadError } = await auth.db
-      .from("internal_messaging_gateways")
-      .select("id, tenant_id, name, slug, provider, base_url, environment, status, version, max_sessions, last_health_check_at, last_error, metadata, created_at, updated_at")
-      .eq("tenant_id", auth.context.tenantId)
-      .eq("id", parsed.data.id)
-      .maybeSingle();
-    if (loadError) throw loadError;
+    const gateway = await findInternalGatewayById(auth.db, auth.context.tenantId, parsed.data.id);
     if (!gateway) return NextResponse.json({ ok: false, error: "Gateway não encontrado." }, { status: 404 });
 
     if (parsed.data.action === "health_check") {
       const health = await runHealthCheck(gateway as InternalGatewayRow);
       const nextStatus = health.state === "ready" || health.state === "online" ? "active" : health.state === "offline" || health.state === "configuration" ? "error" : "maintenance";
-      const { error } = await auth.db
-        .from("internal_messaging_gateways")
-        .update({
-          status: nextStatus,
-          version: health.version || gateway.version || null,
-          last_health_check_at: new Date().toISOString(),
-          last_error: health.error ? sanitizeGatewayError(health.error) : null,
-        })
-        .eq("tenant_id", auth.context.tenantId)
-        .eq("id", parsed.data.id);
-      if (error) throw error;
+      await recordGatewayHealth(auth.db, auth.context.tenantId, parsed.data.id, {
+        status: nextStatus,
+        version: health.version || gateway.version || null,
+        lastHealthCheckAt: new Date().toISOString(),
+        lastError: health.error ? sanitizeGatewayError(health.error) : null,
+      });
       await auditGatewayAction({ db: auth.db, userId: auth.context.appUserId, tenantId: auth.context.tenantId, gatewayId: parsed.data.id, action: health.error ? "gateway_health_check_failed" : "gateway_health_check", result: health.state });
       return NextResponse.json({ ok: true, health });
     }
 
-    const update: Record<string, unknown> = {};
+    const update: { name?: string; baseUrl?: string; environment?: string; status?: string; maxSessions?: number } = {};
     if (parsed.data.name !== undefined) update.name = parsed.data.name;
     const nextEnvironment = parsed.data.environment || gateway.environment;
     if (parsed.data.baseUrl !== undefined) {
       const baseUrl = validateGatewayBaseUrl(parsed.data.baseUrl, nextEnvironment);
       if (!baseUrl.ok) return NextResponse.json({ ok: false, error: baseUrl.error }, { status: 400 });
-      update.base_url = baseUrl.url;
+      update.baseUrl = baseUrl.url;
     }
     if (parsed.data.environment !== undefined) {
-      const baseUrl = validateGatewayBaseUrl(String(update.base_url || gateway.base_url), parsed.data.environment);
+      const baseUrl = validateGatewayBaseUrl(String(update.baseUrl || gateway.base_url), parsed.data.environment);
       if (!baseUrl.ok) return NextResponse.json({ ok: false, error: baseUrl.error }, { status: 400 });
-      update.base_url = baseUrl.url;
+      update.baseUrl = baseUrl.url;
       update.environment = parsed.data.environment;
     }
     if (parsed.data.status !== undefined) update.status = parsed.data.status;
     if (parsed.data.maxSessions !== undefined) {
-      const activeSessions = (await countActiveSessions(auth.db, auth.context.tenantId)).get(parsed.data.id) || 0;
+      const activeSessions = (await countGatewaySessions(auth.db, auth.context.tenantId)).get(parsed.data.id) || 0;
       if (parsed.data.maxSessions < activeSessions) {
         return NextResponse.json({ ok: false, error: "max_sessions_below_active_sessions" }, { status: 409 });
       }
-      update.max_sessions = parsed.data.maxSessions;
+      update.maxSessions = parsed.data.maxSessions;
     }
 
-    const { error } = await auth.db
-      .from("internal_messaging_gateways")
-      .update(update)
-      .eq("tenant_id", auth.context.tenantId)
-      .eq("id", parsed.data.id);
-    if (error) throw error;
+    await updateInternalGateway(auth.db, auth.context.tenantId, parsed.data.id, update);
 
     const action = parsed.data.status === "active" ? "gateway_activated" : parsed.data.status === "inactive" ? "gateway_deactivated" : "gateway_updated";
     await auditGatewayAction({ db: auth.db, userId: auth.context.appUserId, tenantId: auth.context.tenantId, gatewayId: parsed.data.id, action, result: "success" });
