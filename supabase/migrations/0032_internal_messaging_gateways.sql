@@ -25,7 +25,8 @@ create table if not exists public.internal_messaging_gateways (
   constraint internal_messaging_gateways_provider_check check (provider in ('openwa')),
   constraint internal_messaging_gateways_environment_check check (environment in ('test', 'production')),
   constraint internal_messaging_gateways_status_check check (status in ('active', 'inactive', 'error', 'maintenance')),
-  constraint internal_messaging_gateways_max_sessions_check check (max_sessions between 1 and 99),
+  constraint internal_messaging_gateways_max_sessions_check check (max_sessions between 1 and 9),
+  constraint internal_messaging_gateways_slug_check check (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
   constraint internal_messaging_gateways_metadata_no_secrets_check check (
     not (metadata ?| array['api_key', 'apikey', 'secret', 'token', 'cookie', 'access_token', 'refresh_token'])
   )
@@ -33,6 +34,9 @@ create table if not exists public.internal_messaging_gateways (
 
 create unique index if not exists internal_messaging_gateways_tenant_slug_uniq
   on public.internal_messaging_gateways (tenant_id, slug);
+
+create index if not exists internal_messaging_gateways_tenant_idx
+  on public.internal_messaging_gateways (tenant_id);
 
 create index if not exists internal_messaging_gateways_tenant_status_idx
   on public.internal_messaging_gateways (tenant_id, status);
@@ -63,6 +67,9 @@ comment on column public.channels.gateway_id is
 create index if not exists channels_gateway_id_idx
   on public.channels (gateway_id);
 
+create index if not exists channels_tenant_gateway_id_idx
+  on public.channels (tenant_id, gateway_id);
+
 create unique index if not exists channels_tenant_gateway_session_uniq
   on public.channels (tenant_id, gateway_id, session_id)
   where gateway_id is not null and session_id is not null;
@@ -70,6 +77,7 @@ create unique index if not exists channels_tenant_gateway_session_uniq
 create or replace function public.touch_internal_messaging_gateways_updated_at()
 returns trigger
 language plpgsql
+set search_path = public
 as $$
 begin
   new.updated_at = now();
