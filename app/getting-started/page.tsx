@@ -101,6 +101,8 @@ export default async function GettingStartedPage() {
     throw err;
   }
 
+  if (!context.organizationId) redirect("/admin");
+
   const data = await getChecklistData(context.tenantId, context.organizationId);
   const doneCount = [data.loggedIn, data.hasChannel, data.hasSynced, data.hasContacts].filter(Boolean).length;
   const total = 6;

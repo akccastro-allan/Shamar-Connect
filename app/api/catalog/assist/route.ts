@@ -247,6 +247,8 @@ export async function POST(request: NextRequest) {
       shouldAskMoreInfo = missingFields.length > 0;
 
       if (!shouldAskMoreInfo && productTerm) {
+        if (!ctx.organizationId) return NextResponse.json({ ok: false, error: "Organização obrigatória." }, { status: 403 });
+
         const db = createSupabaseWriteClient();
         catalogHits = await searchCatalogForAssist(
           db,

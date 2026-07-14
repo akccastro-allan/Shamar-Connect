@@ -1,12 +1,12 @@
 import { redirect } from "next/navigation";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
-import { canAccessCommandCenter, canAccessPlatformAdmin, getTenantFeatureMetadata } from "@/lib/features/feature-flags";
+import { canAccessCommandCenter, canAccessGlobalPlatformAdmin, getTenantFeatureMetadata } from "@/lib/features/feature-flags";
 
 export async function assertPlatformAdminRoute() {
   try {
     const context = await getRequiredAppContext();
-    if (!canAccessPlatformAdmin(context)) redirect("/dashboard");
+    if (!canAccessGlobalPlatformAdmin(context)) redirect("/dashboard");
     return context;
   } catch (error) {
     if (isUnauthorizedError(error)) redirect("/login");

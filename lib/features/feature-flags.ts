@@ -29,6 +29,7 @@ export type FeatureContext = {
 };
 
 export type FeatureFlag = FeatureKey | "meta_channels";
+export type FeatureStageFlag = "commercial_agent" | "commercial_agent_lips" | "commercial_agent_suggestions" | "commercial_agent_automation";
 export type TenantMetadata = Record<string, unknown> | null;
 
 const platformAdminRoles = new Set<AppContext["role"]>(["owner", "admin"]);
@@ -79,6 +80,16 @@ export function hasTenantFeature(metadata: TenantMetadata, flag: FeatureFlag): b
   );
 }
 
+export function hasTenantFeatureStage(metadata: TenantMetadata, flag: FeatureStageFlag): boolean {
+  const features = metadata?.features;
+  return Boolean(
+    features &&
+      typeof features === "object" &&
+      !Array.isArray(features) &&
+      [true, "internal_alpha", "private_beta", "public_beta", "stable"].includes((features as Record<string, unknown>)[flag] as never),
+  );
+}
+
 export function canUseFeature(feature: FeatureKey, context: FeatureContext): boolean {
   if (context.tenantType === "platform") {
     if (["owner", "admin"].includes(context.role)) return platformFeatures.has(feature);
@@ -94,7 +105,7 @@ export function toFeatureContext(context: AppContext, metadata?: TenantMetadata)
   return {
     tenantType: context.isPlatformTenant ? "platform" : "client",
     role: context.role,
-    organizationId: context.organizationId,
+    organizationId: context.organizationId ?? undefined,
     userId: context.appUserId,
     metadata,
   };
@@ -104,8 +115,16 @@ export function canAccessPlatformAdmin(context: AppContext): boolean {
   return context.isPlatformTenant && platformAdminRoles.has(context.role);
 }
 
+export function canAccessGlobalPlatformAdmin(context: AppContext): boolean {
+  return canAccessPlatformAdmin(context) && context.organizationId === null;
+}
+
+export function canAccessCommercialAgentLips(context: AppContext, metadata: TenantMetadata): boolean {
+  return canAccessGlobalPlatformAdmin(context) && hasTenantFeatureStage(metadata, "commercial_agent_lips");
+}
+
 export function canAccessCommandCenter(context: AppContext, metadata: TenantMetadata): boolean {
-  return canAccessPlatformAdmin(context) &&
+  return canAccessGlobalPlatformAdmin(context) &&
     hasTenantFeature(metadata, "command_center") &&
     canUseFeature("command_center", toFeatureContext(context, metadata));
 }

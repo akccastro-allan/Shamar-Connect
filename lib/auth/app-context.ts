@@ -3,7 +3,7 @@ import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 
 export type AppContext = {
   tenantId: string;
-  organizationId: string;
+  organizationId: string | null;
   appUserId: string;
   tenantUserId: string;
   role: "owner" | "admin" | "attendant" | "viewer";
@@ -53,8 +53,32 @@ export async function getRequiredAppContext(): Promise<AppContext> {
     tenantUsers?.find((item: any) => item.tenant_id === session.companyId) ||
     tenantUsers?.[0];
 
-  if (!tenantUser?.tenant_id || !tenantUser?.organization_id) {
+  if (!tenantUser?.tenant_id) {
     throw new Error("UNAUTHORIZED");
+  }
+
+  const { data: tenant } = await db
+    .from("tenants")
+    .select("is_platform")
+    .eq("id", tenantUser.tenant_id)
+    .maybeSingle();
+  const isPlatformTenant = tenant?.is_platform === true;
+
+  if (!tenantUser.organization_id && !isPlatformTenant) {
+    throw new Error("UNAUTHORIZED");
+  }
+
+  if (!tenantUser.organization_id) {
+    return {
+      tenantId: tenantUser.tenant_id,
+      organizationId: null,
+      appUserId: appUser.id,
+      tenantUserId: tenantUser.id,
+      role: normalizeRole(tenantUser.role || appUser.role),
+      email: appUser.email,
+      name: appUser.name || appUser.email,
+      isPlatformTenant,
+    };
   }
 
   const { data: organization, error: organizationError } = await db
@@ -68,12 +92,6 @@ export async function getRequiredAppContext(): Promise<AppContext> {
   if (organizationError) throw organizationError;
   if (!organization) throw new Error("UNAUTHORIZED");
 
-  const { data: tenant } = await db
-    .from("tenants")
-    .select("is_platform")
-    .eq("id", tenantUser.tenant_id)
-    .maybeSingle();
-
   return {
     tenantId: tenantUser.tenant_id,
     organizationId: tenantUser.organization_id,
@@ -82,7 +100,7 @@ export async function getRequiredAppContext(): Promise<AppContext> {
     role: normalizeRole(tenantUser.role || appUser.role),
     email: appUser.email,
     name: appUser.name || appUser.email,
-    isPlatformTenant: tenant?.is_platform === true,
+    isPlatformTenant,
   };
 }
 

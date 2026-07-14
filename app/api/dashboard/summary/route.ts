@@ -38,6 +38,7 @@ export async function GET() {
   try {
     const context = await getRequiredAppContext();
     const orgId = context.organizationId;
+    if (!orgId) return NextResponse.json({ ok: false, error: "Organização obrigatória." }, { status: 403 });
 
     const [contacts, conversations, messages, lists, listItems, whatsapp] = await Promise.all([
       countTable("crm_contacts", orgId),

@@ -101,7 +101,7 @@ export default async function AuthDiagnosticsPage() {
           ) : context ? (
             <>
               <Row label="tenantId" value={context.tenantId} highlight="ok" />
-              <Row label="organizationId" value={context.organizationId} highlight="ok" />
+              <Row label="organizationId" value={context.organizationId ?? "null"} highlight="ok" />
               <Row label="appUserId" value={context.appUserId} />
               <Row label="tenantUserId" value={context.tenantUserId} />
               <Row label="role" value={context.role} highlight="ok" />

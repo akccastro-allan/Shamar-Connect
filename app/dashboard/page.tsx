@@ -87,6 +87,8 @@ export default async function DashboardPage() {
     throw err;
   }
 
+  if (!context.organizationId) redirect("/admin");
+
   const metrics = await getDashboardMetrics(context.tenantId, context.organizationId);
   const firstName = (context.name || "").trim().split(" ")[0];
 

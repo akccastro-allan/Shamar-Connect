@@ -55,6 +55,7 @@ export async function GET(request: NextRequest) {
     const context = await getRequiredAppContext();
     const contactId = request.nextUrl.searchParams.get("contactId");
     const conversationId = request.nextUrl.searchParams.get("conversationId");
+    if (!context.organizationId) return NextResponse.json({ ok: false, error: "Organização obrigatória." }, { status: 403 });
 
     if (!contactId && !conversationId) {
       return NextResponse.json({ ok: false, error: "contactId or conversationId is required" }, { status: 400 });
@@ -105,6 +106,7 @@ export async function POST(request: NextRequest) {
   try {
     const context = await getRequiredAppContext();
     const body = await request.json();
+    if (!context.organizationId) return NextResponse.json({ ok: false, error: "Organização obrigatória." }, { status: 403 });
 
     const contactId = body?.contactId ? String(body.contactId) : null;
     const conversationId = body?.conversationId ? String(body.conversationId) : null;
