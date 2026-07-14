@@ -39,8 +39,10 @@ function channel(overrides: Partial<InternalWhatsappChannel> = {}): InternalWhat
 
 test("QR e status exigem canal interno autorizado com gateway ativo", () => {
   assert.equal(validateInternalChannelForGatewayAction({ channel: channel(), gateway, tenantId: "tenant-platform" }).ok, true);
+  assert.equal(validateInternalChannelForGatewayAction({ channel: channel({ session_id: "shamar-main" }), gateway, tenantId: "tenant-platform" }).ok, true);
   assert.equal(validateInternalChannelForGatewayAction({ channel: channel(), gateway: { ...gateway, status: "inactive" }, tenantId: "tenant-platform" }).ok, false);
   assert.equal(validateInternalChannelForGatewayAction({ channel: channel({ tenant_id: "tenant-client" }), gateway, tenantId: "tenant-platform" }).ok, false);
+  assert.equal(validateInternalChannelForGatewayAction({ channel: channel({ metadata: { commandCenterInternal: false }, session_id: "lips-main" }), gateway, tenantId: "tenant-platform" }).ok, false);
 });
 
 test("envio manual usa o channel da conversa e bloqueia sessão desconectada", () => {

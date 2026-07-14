@@ -19,6 +19,19 @@ export type InternalWhatsappConversation = {
   is_group: boolean | null;
 };
 
+const INTERNAL_LEGACY_SESSION_IDS = new Set([
+  "viciados-main",
+  "mkshalom-main",
+  "oriahfin-main",
+  "shamar-main",
+  "shamarerp-main",
+  "shamarkids-main",
+]);
+
+function isAllowedInternalSessionId(value: string) {
+  return isValidSessionId(value) || INTERNAL_LEGACY_SESSION_IDS.has(value);
+}
+
 export function isInternalWhatsappChannel(channel: Pick<InternalWhatsappChannel, "provider" | "channel_type" | "metadata"> | null) {
   if (!channel) return false;
   const metadata = channel.metadata && typeof channel.metadata === "object" && !Array.isArray(channel.metadata)
@@ -37,7 +50,7 @@ export function validateInternalChannelForGatewayAction(input: {
   if (input.channel.tenant_id !== input.tenantId) return { ok: false as const, error: "Canal não pertence ao tenant atual." };
   if (input.organizationId && input.channel.organization_id !== input.organizationId) return { ok: false as const, error: "Canal não pertence à organização atual." };
   if (!isInternalWhatsappChannel(input.channel)) return { ok: false as const, error: "Canal não é WhatsApp interno." };
-  if (!input.channel.session_id || !isValidSessionId(input.channel.session_id)) return { ok: false as const, error: "Canal interno sem session ID válido." };
+  if (!input.channel.session_id || !isAllowedInternalSessionId(input.channel.session_id)) return { ok: false as const, error: "Canal interno sem session ID válido." };
   if (!getChannelGatewayId(input.channel)) return { ok: false as const, error: "Canal interno sem gateway." };
   const gateway = validateGatewayCanConnect(input.gateway, input.tenantId);
   if (!gateway.ok) return gateway;
