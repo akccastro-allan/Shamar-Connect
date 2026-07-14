@@ -16,7 +16,7 @@ export async function POST(request: NextRequest, ctxParams: Params) {
 
     const { data: conversation, error: convError } = await db
       .from("whatsapp_conversations")
-      .select("id, assigned_to, department_id")
+      .select("id, assigned_user_id, assigned_to, department_id, queue_status")
       .eq("id", conversationId)
       .eq("tenant_id", ctx.tenantId)
       .eq("organization_id", ctx.organizationId)
@@ -36,7 +36,24 @@ export async function POST(request: NextRequest, ctxParams: Params) {
       if (!isSupervisor && target && target !== ctx.appUserId) {
         return NextResponse.json({ ok: false, error: "Você só pode pegar a conversa para si." }, { status: 403 });
       }
+      const targetDepartmentId = body?.departmentId !== undefined ? (body.departmentId || null) : conversation.department_id;
+      if (target && targetDepartmentId) {
+        const { data: membership, error: membershipError } = await db
+          .from("department_memberships")
+          .select("id")
+          .eq("tenant_id", ctx.tenantId)
+          .eq("organization_id", ctx.organizationId)
+          .eq("department_id", targetDepartmentId)
+          .eq("app_user_id", target)
+          .eq("status", "active")
+          .maybeSingle();
+        if (membershipError) throw membershipError;
+        if (!membership) return NextResponse.json({ ok: false, error: "Usuário não pertence ao departamento." }, { status: 403 });
+      }
+      patch.assigned_user_id = target;
       patch.assigned_to = target;
+      patch.assigned_at = target ? new Date().toISOString() : null;
+      patch.queue_status = target ? "in_progress" : "waiting";
       events.push({
         type: target ? "assigned_to_user" : "unassigned",
         description: target ? (target === ctx.appUserId ? `${ctx.name} pegou a conversa.` : "Conversa atribuída.") : "Conversa liberada da fila.",

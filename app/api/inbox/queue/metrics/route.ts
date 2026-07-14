@@ -11,7 +11,7 @@ export async function GET() {
 
     const { data: conversations, error } = await db
       .from("whatsapp_conversations")
-      .select("id, status, department_id, assigned_to, sla_status, requires_human, queue_entered_at, first_human_response_at, resolved_at, departments:department_id(name)")
+      .select("id, queue_status, department_id, assigned_user_id, assigned_to, sla_status, requires_human, queue_entered_at, first_human_response_at, resolved_at, departments:department_id(name)")
       .eq("tenant_id", context.tenantId)
       .eq("organization_id", context.organizationId)
       .gte("updated_at", today.toISOString());
@@ -29,8 +29,8 @@ export async function GET() {
       ok: true,
       metrics: {
         received: rows.length,
-        queued: rows.filter((row) => row.status === "queued" || row.status === "new").length,
-        unassigned: rows.filter((row) => !row.assigned_to && !["resolved", "closed"].includes(row.status)).length,
+        waiting: rows.filter((row) => row.queue_status === "waiting").length,
+        unassigned: rows.filter((row) => !(row.assigned_user_id ?? row.assigned_to) && row.queue_status === "waiting").length,
         slaBreached: rows.filter((row) => row.sla_status === "breached").length,
         slaCompleted: rows.filter((row) => row.sla_status === "completed").length,
         requiresHuman: rows.filter((row) => row.requires_human).length,

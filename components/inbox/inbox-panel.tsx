@@ -24,6 +24,7 @@ type Conversation = {
   name?: string | null;
   is_group: boolean;
   status: string;
+  queue_status?: string | null;
   stage?: string | null;
   priority?: string | null;
   unread_count: number;
@@ -34,6 +35,7 @@ type Conversation = {
   pending_reason?: string | null;
   queue_reason?: string | null;
   requires_human?: boolean | null;
+  assigned_user_id?: string | null;
   assigned_to?: string | null;
   assigned_name?: string | null;
   department_id?: string | null;
@@ -77,6 +79,12 @@ type ContactNote = {
   created_at: string;
 };
 
+type Availability = {
+  status: "available" | "paused" | "offline";
+  accepting_new_conversations: boolean;
+  current_load?: number | null;
+};
+
 async function readJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, { ...init, cache: "no-store" });
   const data = await response.json();
@@ -108,6 +116,24 @@ function getConversationPhone(conversation: Conversation | null) {
   return conversation.external_chat_id || "";
 }
 
+function queueStatusToLabel(status?: string | null) {
+  if (status === "waiting") return "Aguardando atendimento";
+  if (status === "in_progress") return "Em atendimento";
+  if (status === "awaiting_customer") return "Aguardando cliente";
+  if (status === "resolved") return "Resolvida";
+  if (status === "closed") return "Encerrada";
+  if (status === "open") return "Aberta";
+  if (status === "pending") return "Pendente";
+  if (status === "archived") return "Arquivada";
+  return "Aguardando atendimento";
+}
+
+function availabilityLabel(status?: string | null) {
+  if (status === "available") return "Disponível";
+  if (status === "paused") return "Pausado";
+  return "Offline";
+}
+
 function tagsToInput(tags?: string[] | null) {
   return (tags || []).join(", ");
 }
@@ -117,6 +143,7 @@ export function InboxPanel() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [quickReplies, setQuickReplies] = useState<QuickReply[]>([]);
   const [notes, setNotes] = useState<ContactNote[]>([]);
+  const [availability, setAvailability] = useState<Availability>({ status: "offline", accepting_new_conversations: false, current_load: 0 });
   const [selectedConversationId, setSelectedConversationId] = useState("");
   const [replyBody, setReplyBody] = useState("");
   const [noteBody, setNoteBody] = useState("");
@@ -141,10 +168,10 @@ export function InboxPanel() {
   );
 
   const queueStats = useMemo(() => ({
-    unassigned: conversations.filter((conversation) => !conversation.assigned_to && !["resolved", "closed"].includes(conversation.status)).length,
+    unassigned: conversations.filter((conversation) => !(conversation.assigned_user_id ?? conversation.assigned_to) && conversation.queue_status === "waiting").length,
     critical: conversations.filter((conversation) => conversation.sla_status === "breached").length,
-    active: conversations.filter((conversation) => ["queued", "assigned", "in_progress", "pending_internal"].includes(conversation.status)).length,
-    resolved: conversations.filter((conversation) => conversation.status === "resolved").length,
+    active: conversations.filter((conversation) => ["waiting", "in_progress", "awaiting_customer"].includes(conversation.queue_status || "")).length,
+    resolved: conversations.filter((conversation) => conversation.queue_status === "resolved").length,
   }), [conversations]);
 
   function hydrateForms(conversation: Conversation | null) {
@@ -154,7 +181,7 @@ export function InboxPanel() {
     setContactCompany(contact?.company || "");
     setContactConsent(contact?.consent_status || "unknown");
     setContactTags(tagsToInput(contact?.tags));
-    setConversationStatus(conversation?.status || "open");
+    setConversationStatus(conversation?.queue_status || "waiting");
     setConversationStage(conversation?.stage || "novo");
     setConversationPriority(conversation?.priority || "normal");
   }
@@ -201,6 +228,33 @@ export function InboxPanel() {
       setQuickReplies(data.quickReplies || []);
     } catch {
       setQuickReplies([]);
+    }
+  }
+
+  async function loadAvailability() {
+    try {
+      const data = await readJson<{ ok: boolean; availability: Availability }>("/api/inbox/availability");
+      setAvailability(data.availability || { status: "offline", accepting_new_conversations: false, current_load: 0 });
+    } catch {
+      setAvailability({ status: "offline", accepting_new_conversations: false, current_load: 0 });
+    }
+  }
+
+  async function updateAvailability(status: Availability["status"]) {
+    setLoading("availability");
+    setError(null);
+    setSuccess(null);
+    try {
+      const data = await readJson<{ ok: boolean; availability: Availability }>("/api/inbox/availability", {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      });
+      setAvailability(data.availability);
+      setSuccess(`Disponibilidade alterada para ${availabilityLabel(status)}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao atualizar disponibilidade");
+    } finally {
+      setLoading(null);
     }
   }
 
@@ -287,19 +341,19 @@ export function InboxPanel() {
     }
   }
 
-  async function queueAction(action: "claim" | "resolve" | "reopen" | "awaiting_customer" | "pending_internal") {
+  async function queueAction(action: "claim" | "resolve" | "reopen" | "awaiting_customer" | "closed") {
     if (!selectedConversation) return;
     setLoading(action);
     setError(null);
     setSuccess(null);
     try {
-      if (action === "awaiting_customer" || action === "pending_internal") {
-        await readJson<{ ok: boolean }>(`/api/conversations/${selectedConversation.id}/status`, {
+      if (action === "awaiting_customer" || action === "closed") {
+        await readJson<{ ok: boolean }>(`/api/inbox/conversations/${selectedConversation.id}/status`, {
           method: "POST",
           body: JSON.stringify({ status: action }),
         });
       } else {
-        await readJson<{ ok: boolean }>(`/api/conversations/${selectedConversation.id}/${action}`, { method: "POST" });
+        await readJson<{ ok: boolean }>(`/api/inbox/conversations/${selectedConversation.id}/${action}`, { method: "POST" });
       }
       setSuccess("Fila atualizada.");
       await loadConversations(true);
@@ -316,7 +370,7 @@ export function InboxPanel() {
     setError(null);
     setSuccess(null);
     try {
-      await readJson<{ ok: boolean }>(`/api/conversations/${selectedConversation.id}/transfer`, {
+      await readJson<{ ok: boolean }>(`/api/inbox/conversations/${selectedConversation.id}/transfer`, {
         method: "POST",
         body: JSON.stringify({ departmentId: selectedConversation.department_id || null, assignTo: null, reason: transferReason.trim() }),
       });
@@ -387,6 +441,7 @@ export function InboxPanel() {
   useEffect(() => {
     loadConversations(false);
     loadQuickReplies();
+    loadAvailability();
   }, [queueFilter]);
 
   return (
@@ -398,7 +453,13 @@ export function InboxPanel() {
               <CardTitle className="flex items-center gap-2"><Inbox className="h-5 w-5" />Inbox completo</CardTitle>
               <CardDescription>Atendimento manual com leitura, resposta, sincronização, CRM, notas, tags, consentimento e status.</CardDescription>
             </div>
-            <Button onClick={() => loadConversations(true)} disabled={Boolean(loading)} variant="outline" size="sm"><RefreshCcw className="mr-2 h-4 w-4" />Atualizar</Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant={availability.status === "available" ? "default" : "outline"}>{availabilityLabel(availability.status)}</Badge>
+              <Button onClick={() => updateAvailability("available")} disabled={Boolean(loading)} variant={availability.status === "available" ? "default" : "outline"} size="sm">Disponível</Button>
+              <Button onClick={() => updateAvailability("paused")} disabled={Boolean(loading)} variant={availability.status === "paused" ? "default" : "outline"} size="sm">Pausado</Button>
+              <Button onClick={() => updateAvailability("offline")} disabled={Boolean(loading)} variant={availability.status === "offline" ? "default" : "outline"} size="sm">Offline</Button>
+              <Button onClick={() => loadConversations(true)} disabled={Boolean(loading)} variant="outline" size="sm"><RefreshCcw className="mr-2 h-4 w-4" />Atualizar</Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -413,7 +474,6 @@ export function InboxPanel() {
               ["unassigned", "Não atribuídas"],
               ["critical", "SLA crítico"],
               ["awaiting_customer", "Aguardando cliente"],
-              ["pending_internal", "Pendências internas"],
               ["resolved", "Resolvidas"],
             ].map(([value, label]) => (
               <Button key={value} size="sm" variant={queueFilter === value ? "default" : "outline"} onClick={() => setQueueFilter(value)}>{label}</Button>
@@ -456,7 +516,7 @@ export function InboxPanel() {
                       </div>
                       <div className="mt-2 flex flex-wrap gap-2">
                         <Badge variant={conversation.is_group ? "secondary" : "outline"}>{conversation.is_group ? "Grupo" : "Contato"}</Badge>
-                        <Badge variant="outline">{conversation.status}</Badge>
+                        <Badge variant="outline">{queueStatusToLabel(conversation.queue_status || conversation.status)}</Badge>
                         <Badge variant="secondary">{conversation.priority || "normal"}</Badge>
                         <Badge variant={conversation.sla_status === "breached" ? "destructive" : "outline"}>SLA {conversation.sla_status || "on_time"}</Badge>
                         {conversation.requires_human ? <Badge variant="destructive">humano</Badge> : null}
@@ -571,12 +631,9 @@ export function InboxPanel() {
             </CardHeader>
             <CardContent className="space-y-3">
               <select value={conversationStatus} onChange={(event) => setConversationStatus(event.target.value)} className="w-full rounded-xl border bg-white px-3 py-2 text-sm">
-                <option value="new">Nova</option>
-                <option value="queued">Na fila</option>
-                <option value="assigned">Atribuída</option>
+                <option value="waiting">Aguardando atendimento</option>
                 <option value="in_progress">Em atendimento</option>
                 <option value="awaiting_customer">Aguardando cliente</option>
-                <option value="pending_internal">Pendência interna</option>
                 <option value="resolved">Resolvida</option>
                 <option value="closed">Encerrada</option>
               </select>
@@ -589,14 +646,14 @@ export function InboxPanel() {
                 <option value="perdido">Perdido</option>
               </select>
               <select value={conversationPriority} onChange={(event) => setConversationPriority(event.target.value)} className="w-full rounded-xl border bg-white px-3 py-2 text-sm">
-                <option value="baixa">Baixa</option>
+                <option value="low">Baixa</option>
                 <option value="normal">Normal</option>
                 <option value="high">Alta</option>
                 <option value="urgent">Urgente</option>
               </select>
               <Button onClick={saveConversationStatus} disabled={Boolean(loading) || !selectedConversation} className="w-full">Atualizar status</Button>
               <Button onClick={() => queueAction("awaiting_customer")} disabled={Boolean(loading) || !selectedConversation} variant="outline" className="w-full">Marcar aguardando cliente</Button>
-              <Button onClick={() => queueAction("pending_internal")} disabled={Boolean(loading) || !selectedConversation} variant="outline" className="w-full">Marcar pendência interna</Button>
+              <Button onClick={() => queueAction("closed")} disabled={Boolean(loading) || !selectedConversation} variant="outline" className="w-full">Encerrar conversa</Button>
               <input value={transferReason} onChange={(event) => setTransferReason(event.target.value)} className="w-full rounded-xl border px-3 py-2 text-sm" placeholder="Motivo da transferência" />
               <Button onClick={transferToQueue} disabled={Boolean(loading) || !selectedConversation || transferReason.trim().length < 3} variant="outline" className="w-full">Transferir para fila</Button>
             </CardContent>

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 import { assertConversationAccess, recordQueueEvent, userCanAccessDepartment } from "@/lib/queues/lips-queue";
+import { assertQueueTransition } from "@/lib/queues/lips-routing";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -14,23 +15,27 @@ export async function POST(_: Request, { params }: Params) {
     if (!(await userCanAccessDepartment(db, context, conversation.department_id))) {
       return NextResponse.json({ ok: false, error: "Você não pertence a este departamento." }, { status: 403 });
     }
+    assertQueueTransition({ from: conversation.queue_status, to: "in_progress", hasAssignee: true });
 
     const now = new Date().toISOString();
     const { data, error } = await db
       .from("whatsapp_conversations")
       .update({
+        assigned_user_id: context.appUserId,
         assigned_to: context.appUserId,
         last_assigned_user_id: context.appUserId,
         last_assigned_at: now,
-        status: "in_progress",
+        assigned_at: now,
+        queue_status: "in_progress",
         updated_at: now,
       })
       .eq("id", id)
       .eq("tenant_id", context.tenantId)
       .eq("organization_id", context.organizationId)
+      .is("assigned_user_id", null)
       .is("assigned_to", null)
-      .in("status", ["new", "queued", "assigned"])
-      .select("id, assigned_to, status")
+      .eq("queue_status", "waiting")
+      .select("id, assigned_user_id, assigned_to, queue_status")
       .maybeSingle();
     if (error) throw error;
     if (!data) return NextResponse.json({ ok: false, error: "Conversa já foi assumida por outra pessoa." }, { status: 409 });
@@ -41,8 +46,8 @@ export async function POST(_: Request, { params }: Params) {
       conversationId: id,
       actorType: "user",
       actorId: context.appUserId,
-      eventType: "assigned",
-      previousState: conversation.status,
+      eventType: "claimed",
+      previousState: conversation.queue_status,
       newState: "in_progress",
       description: "Atendente assumiu atendimento.",
       metadata: { assignedTo: context.appUserId },

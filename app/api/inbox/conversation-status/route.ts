@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
+import { assertQueueTransition, type QueueStatus } from "@/lib/queues/lips-routing";
+import { isSupervisorRole } from "@/lib/queues/lips-queue";
 
-const allowedStatuses = new Set(["open", "pending", "resolved", "archived", "new", "queued", "assigned", "in_progress", "awaiting_customer", "pending_internal", "closed"]);
-const allowedPriorities = new Set(["baixa", "normal", "alta", "urgente", "high", "urgent"]);
+const allowedStatuses = new Set(["waiting", "in_progress", "awaiting_customer", "resolved", "closed"]);
+const allowedPriorities = new Set(["low", "normal", "high", "urgent"]);
 
 export async function PATCH(request: NextRequest) {
   try {
@@ -27,12 +29,34 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "Invalid priority" }, { status: 400 });
     }
 
-    const updates: Record<string, string> = { updated_at: new Date().toISOString() };
-    if (status) updates.status = status;
+    const client = createSupabaseWriteClient();
+    const { data: current, error: currentError } = await client
+      .from("whatsapp_conversations")
+      .select("id, queue_status, assigned_user_id, assigned_to")
+      .eq("id", conversationId)
+      .eq("tenant_id", context.tenantId)
+      .eq("organization_id", context.organizationId)
+      .maybeSingle();
+    if (currentError) throw currentError;
+    if (!current) return NextResponse.json({ ok: false, error: "Conversa não encontrada." }, { status: 404 });
+
+    const updates: Record<string, string | null> = { updated_at: new Date().toISOString() };
+    if (status) {
+      assertQueueTransition({
+        from: current.queue_status,
+        to: status as QueueStatus,
+        actorRole: isSupervisorRole(context.role) ? "supervisor" : "agent",
+        hasAssignee: Boolean(current.assigned_user_id ?? current.assigned_to),
+      });
+      updates.queue_status = status;
+      if (status === "waiting") {
+        updates.assigned_user_id = null;
+        updates.assigned_to = null;
+        updates.assigned_at = null;
+      }
+    }
     if (stage) updates.stage = stage;
     if (priority) updates.priority = priority;
-
-    const client = createSupabaseWriteClient();
 
     const { data, error } = await client
       .from("whatsapp_conversations")
@@ -40,7 +64,7 @@ export async function PATCH(request: NextRequest) {
       .eq("id", conversationId)
       .eq("tenant_id", context.tenantId)
       .eq("organization_id", context.organizationId)
-      .select("id, status, stage, priority")
+      .select("id, queue_status, stage, priority")
       .maybeSingle();
 
     if (error) throw error;

@@ -4,6 +4,7 @@ import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-conte
 import { normalizeProvider } from "@/lib/providers/provider-aliases";
 import { dispatchOutboxItem } from "@/lib/outbox/send";
 import { recordQueueEvent } from "@/lib/queues/lips-queue";
+import { assertQueueTransition } from "@/lib/queues/lips-routing";
 
 type Params = { params: Promise<{ conversationId: string }> };
 
@@ -88,7 +89,7 @@ export async function POST(request: NextRequest, context: Params) {
 
     const { data: conversation, error: conversationError } = await db
       .from("whatsapp_conversations")
-      .select("id, tenant_id, organization_id, external_chat_id, contact_id, provider, is_group, channel_id, first_human_response_at")
+      .select("id, tenant_id, organization_id, external_chat_id, contact_id, provider, is_group, channel_id, queue_status, assigned_user_id, assigned_to, first_human_response_at, first_human_response_seconds, queue_entered_at")
       .eq("id", conversationId)
       .eq("tenant_id", appContext.tenantId)
       .eq("organization_id", appContext.organizationId)
@@ -104,6 +105,8 @@ export async function POST(request: NextRequest, context: Params) {
     if (conversation.is_group) {
       return NextResponse.json({ ok: false, error: "Não é possível enviar mensagens para grupos." }, { status: 400 });
     }
+    const assignee = conversation.assigned_user_id ?? conversation.assigned_to;
+    assertQueueTransition({ from: conversation.queue_status, to: "awaiting_customer", hasAssignee: Boolean(assignee) });
 
     // North Star: nada sai sem canal. Resolve/backfill o canal da conversa.
     const channelId = await resolveConversationChannel(db, conversation);
@@ -180,12 +183,16 @@ export async function POST(request: NextRequest, context: Params) {
         last_message_at: now,
         last_outbound_at: now,
         last_message_direction: "outbound",
-        status: "awaiting_customer",
+        queue_status: "awaiting_customer",
+        assigned_user_id: assignee,
+        assigned_to: assignee,
         requires_human: false,
         pending_reason: null,
         sla_status: "completed",
         sla_due_at: null,
         first_human_response_at: conversation.first_human_response_at ?? now,
+        first_human_response_seconds: conversation.first_human_response_seconds ?? (conversation.first_human_response_at || !conversation.queue_entered_at ? null : Math.max(0, Math.round((new Date(now).getTime() - new Date(conversation.queue_entered_at).getTime()) / 1000))),
+        last_human_message_at: now,
         updated_at: now,
       })
       .eq("id", conversation.id);

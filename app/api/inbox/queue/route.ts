@@ -24,7 +24,7 @@ export async function GET(request: Request) {
 
     let query = db
       .from("whatsapp_conversations")
-      .select("id, external_chat_id, name, is_group, status, stage, priority, unread_count, last_message_at, last_inbound_at, last_outbound_at, last_message_direction, requires_human, pending_reason, queue_reason, queue_entered_at, sla_started_at, sla_due_at, sla_status, first_human_response_at, assigned_to, last_assigned_at, last_assigned_user_id, department_id, channel_id, provider, crm_contacts(id, name, phone, company), channels(id, session_id, provider, name), departments:department_id(id, name, color)")
+      .select("id, external_chat_id, name, is_group, status, queue_status, stage, priority, unread_count, last_message_at, last_inbound_at, last_outbound_at, last_message_direction, requires_human, pending_reason, handoff_reason, queue_reason, queue_entered_at, assigned_at, sla_started_at, sla_due_at, sla_status, first_human_response_at, assigned_user_id, assigned_to, last_assigned_at, last_assigned_user_id, department_id, channel_id, provider, crm_contacts(id, name, phone, company), channels(id, session_id, provider, name), departments:department_id(id, name, color)")
       .eq("tenant_id", context.tenantId)
       .eq("organization_id", context.organizationId)
       .eq("is_group", false)
@@ -32,17 +32,16 @@ export async function GET(request: Request) {
       .order("last_message_at", { ascending: false, nullsFirst: false })
       .limit(150);
 
-    if (filter === "mine") query = query.eq("assigned_to", context.appUserId);
-    else if (filter === "unassigned") query = query.is("assigned_to", null).in("status", ["new", "queued"]);
+    if (filter === "mine") query = query.or(`assigned_user_id.eq.${context.appUserId},assigned_to.eq.${context.appUserId}`).in("queue_status", ACTIVE_QUEUE_STATUSES);
+    else if (filter === "unassigned") query = query.is("assigned_user_id", null).is("assigned_to", null).eq("queue_status", "waiting");
     else if (filter === "critical") query = query.eq("sla_status", "breached");
-    else if (filter === "awaiting_customer") query = query.eq("status", "awaiting_customer");
-    else if (filter === "pending_internal") query = query.eq("status", "pending_internal");
-    else if (filter === "resolved") query = query.eq("status", "resolved");
-    else query = query.in("status", [...ACTIVE_QUEUE_STATUSES, "new", "resolved"]);
+    else if (filter === "awaiting_customer") query = query.eq("queue_status", "awaiting_customer");
+    else if (filter === "resolved") query = query.eq("queue_status", "resolved");
+    else query = query.in("queue_status", [...ACTIVE_QUEUE_STATUSES, "resolved"]);
 
     if (departmentId) query = query.eq("department_id", departmentId);
     if (!isSupervisor) {
-      const clauses = [`assigned_to.eq.${context.appUserId}`, "department_id.is.null"];
+      const clauses = [`assigned_user_id.eq.${context.appUserId}`, `assigned_to.eq.${context.appUserId}`, "department_id.is.null"];
       for (const id of memberDepartmentIds) clauses.push(`department_id.eq.${id}`);
       query = query.or(clauses.join(","));
     }
@@ -68,7 +67,7 @@ export async function GET(request: Request) {
       }
     }
 
-    const assignedIds = Array.from(new Set((data ?? []).map((item) => item.assigned_to).filter(Boolean) as string[]));
+    const assignedIds = Array.from(new Set((data ?? []).map((item) => item.assigned_user_id ?? item.assigned_to).filter(Boolean) as string[]));
     const nameById = new Map<string, string>();
     if (assignedIds.length > 0) {
       const { data: users } = await db.from("app_users").select("id, name, email").in("id", assignedIds);
@@ -80,8 +79,9 @@ export async function GET(request: Request) {
       me: { appUserId: context.appUserId, role: context.role, isSupervisor, departmentIds: Array.from(memberDepartmentIds) },
       conversations: (data ?? []).map((conversation) => ({
         ...conversation,
-        sla_status: slaStatusFromDueAt(conversation.sla_due_at, conversation.sla_status),
-        assigned_name: conversation.assigned_to ? nameById.get(conversation.assigned_to) ?? null : null,
+        assigned_to: conversation.assigned_user_id ?? conversation.assigned_to,
+        sla_status: slaStatusFromDueAt(conversation.sla_due_at, conversation.sla_status, conversation.sla_started_at),
+        assigned_name: conversation.assigned_user_id || conversation.assigned_to ? nameById.get(conversation.assigned_user_id ?? conversation.assigned_to) ?? null : null,
         latest_message: latestByConversation.get(conversation.id) ?? null,
       })),
     });
