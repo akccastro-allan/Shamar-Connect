@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canClaimConversation, reopenAssignment, routeLipsConversation } from "./lips-routing.ts";
+import { canClaimConversation, canTransitionQueueStatus, normalizeDepartmentName, reopenAssignment, routeLipsConversation } from "./lips-routing.ts";
 
 function route(messageBody: string, requiresHuman = true) {
   return routeLipsConversation({ conversationId: "conv-1", messageBody, requiresHuman });
@@ -20,11 +20,13 @@ test("interesse em compra vai para balcão com prioridade alta", () => {
   assert.equal(decision.slaMinutes, 20);
 });
 
-test("pagamento pix e reserva vão para supervisão urgente", () => {
-  assert.deepEqual(route("manda pix").queueKey, "supervisao");
+test("pagamento pix vai para financeiro e reserva para balcão", () => {
+  assert.deepEqual(route("manda pix").queueKey, "financeiro");
   assert.deepEqual(route("manda pix").priority, "urgent");
-  assert.equal(route("separa essa").queueKey, "supervisao");
-  assert.equal(route("separa essa").slaMinutes, 0);
+  assert.equal(route("manda pix").slaMinutes, 5);
+  assert.equal(route("separa essa").queueKey, "balcao");
+  assert.equal(route("separa essa").priority, "urgent");
+  assert.equal(route("separa essa").slaMinutes, 20);
 });
 
 test("oficina e reclamação roteiam corretamente", () => {
@@ -34,6 +36,7 @@ test("oficina e reclamação roteiam corretamente", () => {
   const complaint = route("quero falar com o gerente");
   assert.equal(complaint.queueKey, "supervisao");
   assert.equal(complaint.priority, "urgent");
+  assert.equal(complaint.slaMinutes, 5);
 });
 
 test("preserva responsável em conversa ativa", () => {
@@ -48,9 +51,30 @@ test("preserva responsável em conversa ativa", () => {
 });
 
 test("claim concorrente só permite conversa sem responsável e em estado assumível", () => {
-  assert.equal(canClaimConversation({ assignedUserId: null, status: "queued" }), true);
-  assert.equal(canClaimConversation({ assignedUserId: "user-1", status: "queued" }), false);
+  assert.equal(canClaimConversation({ assignedUserId: null, status: "waiting" }), true);
+  assert.equal(canClaimConversation({ assignedUserId: "user-1", status: "waiting" }), false);
   assert.equal(canClaimConversation({ assignedUserId: null, status: "in_progress" }), false);
+});
+
+test("matriz oficial permite e bloqueia transições da fila", () => {
+  assert.equal(canTransitionQueueStatus({ from: "waiting", to: "in_progress", hasAssignee: true }), true);
+  assert.equal(canTransitionQueueStatus({ from: "in_progress", to: "awaiting_customer", hasAssignee: true }), true);
+  assert.equal(canTransitionQueueStatus({ from: "awaiting_customer", to: "in_progress", hasAssignee: true }), true);
+  assert.equal(canTransitionQueueStatus({ from: "in_progress", to: "resolved", hasAssignee: true }), true);
+  assert.equal(canTransitionQueueStatus({ from: "resolved", to: "waiting" }), true);
+  assert.equal(canTransitionQueueStatus({ from: "resolved", to: "in_progress", hasAssignee: true, reassigningResolved: true }), true);
+  assert.equal(canTransitionQueueStatus({ from: "resolved", to: "closed", actorRole: "supervisor" }), true);
+  assert.equal(canTransitionQueueStatus({ from: "waiting", to: "closed", actorRole: "agent" }), false);
+  assert.equal(canTransitionQueueStatus({ from: "closed", to: "in_progress", actorRole: "supervisor", hasAssignee: true }), false);
+  assert.equal(canTransitionQueueStatus({ from: "resolved", to: "awaiting_customer" }), false);
+  assert.equal(canTransitionQueueStatus({ from: "waiting", to: "awaiting_customer" }), false);
+});
+
+test("departamentos oficiais da Lips incluem financeiro", () => {
+  assert.equal(normalizeDepartmentName("Balcão"), "balcao");
+  assert.equal(normalizeDepartmentName("Oficina"), "oficina");
+  assert.equal(normalizeDepartmentName("Financeiro"), "financeiro");
+  assert.equal(normalizeDepartmentName("Supervisão"), "supervisao");
 });
 
 test("reabertura prefere último responsável dentro de 72 horas", () => {
