@@ -400,13 +400,13 @@ async function findDepartmentId(
   organizationId: string,
   department: 'Balcão' | 'Oficina' | 'Supervisor'
 ): Promise<string | null> {
-  if (department === 'Supervisor') return null;
+  const departmentName = department === 'Supervisor' ? 'Supervisão' : department;
 
   const { data } = await db
     .from('departments')
     .select('id')
     .eq('organization_id', organizationId)
-    .eq('name', department)
+    .eq('name', departmentName)
     .eq('is_active', true)
     .maybeSingle();
 
@@ -431,12 +431,16 @@ export async function applyLipsConversationState(
     await db
       .from('whatsapp_conversations')
       .update({
-        status: 'pending',
+        status: 'queued',
         department_id: departmentId,
+        priority: supervisor ? 'urgent' : 'high',
         requires_human: true,
         pending_reason: result.handoffReason || result.intent,
+        queue_reason: result.handoffReason || result.intent,
+        queue_entered_at: nowIso,
+        sla_started_at: nowIso,
         sla_due_at: slaDueAt,
-        sla_status: supervisor ? 'breached' : 'pending',
+        sla_status: supervisor ? 'breached' : 'on_time',
         updated_at: nowIso,
       })
       .eq('id', conversationId);
@@ -446,11 +450,11 @@ export async function applyLipsConversationState(
   await db
     .from('whatsapp_conversations')
     .update({
-      status: 'open',
+      status: 'awaiting_customer',
       requires_human: false,
       pending_reason: null,
       sla_due_at: null,
-      sla_status: 'ok',
+      sla_status: 'completed',
       updated_at: nowIso,
     })
     .eq('id', conversationId);
@@ -969,7 +973,7 @@ export async function sendAndSaveResponse(
       await db
         .from('whatsapp_conversations')
         .update({
-          status: 'pending',
+          status: 'queued',
           updated_at: new Date().toISOString(),
         })
         .eq('id', conversationId);
