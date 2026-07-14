@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
 import { updateCommercialSuggestionStatus } from "@/lib/ai/commercial-agent/repository";
-import { assertCommercialAgentApi } from "../../_guard";
+import { assertCommercialAgentApi, resolveLipsConversationContext } from "../../_guard";
 
 type Params = { params: Promise<{ id: string }> };
 const ALLOWED_STATUS = new Set(["approved", "edited", "rejected", "expired"]);
@@ -19,7 +19,17 @@ export async function PATCH(request: NextRequest, { params }: Params) {
       return NextResponse.json({ ok: false, error: "Status inválido." }, { status: 400 });
     }
 
-    const result = await updateCommercialSuggestionStatus(access.db, context, id, status as never, {
+    const { data: suggestionScope, error: scopeError } = await access.db
+      .from("commercial_response_suggestions")
+      .select("conversation_id")
+      .eq("id", id)
+      .maybeSingle();
+    if (scopeError) throw scopeError;
+    if (!suggestionScope) return NextResponse.json({ ok: false, error: "Sugestão não encontrada." }, { status: 404 });
+
+    const targetContext = await resolveLipsConversationContext(access.db, context, suggestionScope.conversation_id);
+
+    const result = await updateCommercialSuggestionStatus(access.db, targetContext, id, status as never, {
       editedText: body?.editedText ? String(body.editedText) : undefined,
       rejectionReason: body?.rejectionReason ? String(body.rejectionReason) : undefined,
     });

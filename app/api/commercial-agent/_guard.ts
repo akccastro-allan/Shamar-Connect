@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import type { AppContext } from "@/lib/auth/app-context";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
-import { getTenantFeatureMetadata, type TenantMetadata } from "@/lib/features/feature-flags";
+import { canAccessCommercialAgentLips, getTenantFeatureMetadata } from "@/lib/features/feature-flags";
 
 export async function assertCommercialAgentApi(context: AppContext) {
   const db = createSupabaseWriteClient();
   const metadata = await getTenantFeatureMetadata(db, context.tenantId);
-  const enabled = hasCommercialAgentFlag(metadata, "commercial_agent") || hasCommercialAgentFlag(metadata, "commercial_agent_lips");
+  const enabled = canAccessCommercialAgentLips(context, metadata);
 
   if (!enabled) {
     return {
@@ -18,14 +18,39 @@ export async function assertCommercialAgentApi(context: AppContext) {
   return { ok: true as const, db };
 }
 
-function hasCommercialAgentFlag(metadata: TenantMetadata, flag: string) {
-  const features = metadata?.features;
-  return Boolean(
-    features &&
-      typeof features === "object" &&
-      !Array.isArray(features) &&
-      (features as Record<string, unknown>)[flag] === true,
-  );
+export async function resolveLipsConversationContext(
+  db: ReturnType<typeof createSupabaseWriteClient>,
+  platformContext: AppContext,
+  conversationId: string,
+): Promise<AppContext> {
+  const { data: conversation, error } = await db
+    .from("whatsapp_conversations")
+    .select("id, tenant_id, organization_id, channel_id")
+    .eq("id", conversationId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!conversation) throw new Error("commercial_conversation_not_found");
+  if (!conversation.channel_id) throw new Error("commercial_agent_lips_scope_required");
+
+  const { data: lipsChannel, error: channelError } = await db
+    .from("channels")
+    .select("id")
+    .eq("id", conversation.channel_id)
+    .eq("tenant_id", conversation.tenant_id)
+    .eq("organization_id", conversation.organization_id)
+    .eq("session_id", "lips-main")
+    .maybeSingle();
+
+  if (channelError) throw channelError;
+  if (!lipsChannel) throw new Error("commercial_agent_lips_scope_required");
+
+  return {
+    ...platformContext,
+    tenantId: conversation.tenant_id,
+    organizationId: conversation.organization_id,
+    isPlatformTenant: false,
+  };
 }
 
 export function readConversationId(body: unknown) {

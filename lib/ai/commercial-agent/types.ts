@@ -87,6 +87,17 @@ export type CommercialSuggestion = {
   warnings: string[];
 };
 
+export type CommercialProviderMetadata = {
+  provider: "openai" | "mock" | "deterministic";
+  model: string;
+  providerResponseId?: string | null;
+  latencyMs: number;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  totalTokens?: number | null;
+  requestStatus: "success" | "feature_unavailable" | "timeout" | "rate_limited" | "provider_error" | "invalid_structured_output" | "guardrail_rejected";
+};
+
 export type CommercialSuggestionStatus = "draft" | "approved" | "edited" | "rejected" | "expired" | "unsafe_suggestion";
 
 export type CommercialMessage = {
@@ -145,6 +156,7 @@ export type CommercialSuggestionInput = {
 export type CommercialAgentProvider = {
   analyzeConversation(input: CommercialAnalysisInput): Promise<CommercialAnalysis>;
   suggestResponse(input: CommercialSuggestionInput): Promise<CommercialSuggestion>;
+  getLastMetadata?(): CommercialProviderMetadata | null;
 };
 
 export type CommercialEvaluationEvent = {

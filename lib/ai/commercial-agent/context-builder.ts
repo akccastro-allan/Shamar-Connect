@@ -1,6 +1,6 @@
 import type { CommercialContext, CommercialMessage } from "./types.ts";
 
-const MAX_MESSAGES = 30;
+const MAX_MESSAGES = 20;
 const MAX_MESSAGE_CHARS = 600;
 const MAX_TOTAL_CHARS = 8_000;
 const SECRET_PATTERN = /(service[_-]?role|bearer\s+[a-z0-9._-]+|api[_-]?key|access[_-]?token|refresh[_-]?token|secret|cookie)/gi;
