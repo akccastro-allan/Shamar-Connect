@@ -16,6 +16,9 @@ as $$
   );
 $$;
 
+revoke all on function public.normalize_department_name(text) from public, anon, authenticated;
+grant execute on function public.normalize_department_name(text) to service_role;
+
 alter table public.whatsapp_conversations
   add column if not exists last_inbound_at timestamptz,
   add column if not exists last_outbound_at timestamptz,
@@ -71,7 +74,7 @@ alter table public.whatsapp_conversations
 
 alter table public.whatsapp_conversations
   drop constraint if exists whatsapp_conversations_sla_status_check,
-  add constraint whatsapp_conversations_sla_status_check check (sla_status is null or sla_status in ('pending', 'ok', 'on_time', 'warning', 'breached', 'completed'));
+  add constraint whatsapp_conversations_sla_status_check check (sla_status is null or sla_status in ('on_time', 'warning', 'breached', 'completed')) not valid;
 
 create table if not exists public.department_memberships (
   id uuid primary key default gen_random_uuid(),
@@ -209,7 +212,7 @@ create index if not exists whatsapp_conversations_channel_updated_idx on public.
 create index if not exists department_memberships_department_idx on public.department_memberships (department_id, status);
 create index if not exists agent_availability_org_status_idx on public.agent_availability (organization_id, status, accepting_new_conversations);
 create index if not exists agent_availability_events_actor_idx on public.agent_availability_events (organization_id, app_user_id, created_at desc);
-create index if not exists whatsapp_conversation_events_conv_idx on public.whatsapp_conversation_events (conversation_id, created_at desc);
+create index if not exists whatsapp_conversation_events_conv_event_idx on public.whatsapp_conversation_events (conversation_id, event_type, created_at desc);
 
 create or replace function public.mark_lips_sla_breaches(escalate_to_supervision boolean default false)
 returns integer
@@ -252,6 +255,7 @@ begin
 end;
 $$;
 
+revoke all on function public.mark_lips_sla_breaches(boolean) from public, anon, authenticated;
 grant execute on function public.mark_lips_sla_breaches(boolean) to service_role;
 
 insert into public.departments (tenant_id, organization_id, name, color, is_active)

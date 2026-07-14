@@ -247,7 +247,7 @@ async function routeNonTextToHuman(
       status: "pending",
       requires_human: true,
       pending_reason: pendingReason,
-      sla_status: "pending",
+      sla_status: "on_time",
       updated_at: new Date().toISOString(),
     })
     .eq("id", conversationId);

@@ -238,7 +238,7 @@ export async function POST(request: NextRequest) {
                 status: "pending",
                 requires_human: true,
                 pending_reason: `${inboundMessageType}_requires_human`,
-                sla_status: "pending",
+                sla_status: "on_time",
                 updated_at: new Date().toISOString(),
               })
               .eq("id", job.conversation_id);

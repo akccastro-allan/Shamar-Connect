@@ -123,7 +123,7 @@ export async function ingestInboundMessage(
     last_message_direction: "inbound",
     requires_human: !msg.isGroup,
     pending_reason: msg.isGroup ? null : "new_inbound_message",
-    sla_status: "pending",
+    sla_status: "on_time",
     updated_at: now,
   };
 
