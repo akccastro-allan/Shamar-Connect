@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
+import { assertPlatformAdminApi } from "@/lib/features/api-guards";
 import { ALLOWED_SESSION_IDS, type AllowedSessionId } from "@/lib/providers/whatsapp-web-gateway-client";
 
 function slugify(text: string) {
@@ -20,13 +21,8 @@ function generatePassword() {
 export async function POST(request: NextRequest) {
   try {
     const context = await getRequiredAppContext();
-
-    if ((context.role !== "owner" && context.role !== "admin") || !context.isPlatformTenant) {
-      return NextResponse.json(
-        { ok: false, error: "Acesso restrito a administradores da plataforma." },
-        { status: 403 },
-      );
-    }
+    const admin = await assertPlatformAdminApi(context, "Acesso restrito a administradores da plataforma.");
+    if (!admin.ok) return admin.response;
 
     const body = await request.json();
     const ownerName = String(body?.ownerName || "").trim();

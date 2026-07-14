@@ -6,13 +6,13 @@ export type AppContext = {
   organizationId: string;
   appUserId: string;
   tenantUserId: string;
-  role: "owner" | "admin" | "attendant" | "viewer";
+  role: "owner" | "admin" | "agent" | "attendant" | "viewer";
   email: string;
   name: string;
   isPlatformTenant: boolean;
 };
 
-const allowedRoles = new Set(["owner", "admin", "attendant", "viewer"]);
+const allowedRoles = new Set(["owner", "admin", "agent", "attendant", "viewer"]);
 
 function normalizeRole(value?: string | null): AppContext["role"] {
   return allowedRoles.has(String(value || ""))

@@ -11,7 +11,7 @@ export type ShamarSession = {
   documentNumber: string;
   userId: string;
   userName: string;
-  userRole: "owner" | "admin" | "attendant" | "viewer";
+  userRole: "owner" | "admin" | "agent" | "attendant" | "viewer";
   loginAt: string;
 };
 

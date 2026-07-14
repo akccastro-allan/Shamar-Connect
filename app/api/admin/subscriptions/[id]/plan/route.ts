@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
+import { assertPlatformAdminApi } from "@/lib/features/api-guards";
 
 const VALID_PLANS = new Set(["starter", "professional", "business"]);
 const VALID_CYCLES = new Set(["monthly", "annual"]);
@@ -16,9 +17,8 @@ type Params = { params: Promise<{ id: string }> };
 export async function POST(request: NextRequest, { params }: Params) {
   try {
     const ctx = await getRequiredAppContext();
-    if ((ctx.role !== "owner" && ctx.role !== "admin") || !ctx.isPlatformTenant) {
-      return NextResponse.json({ ok: false, error: "Acesso restrito a administradores da plataforma." }, { status: 403 });
-    }
+    const admin = await assertPlatformAdminApi(ctx, "Acesso restrito a administradores da plataforma.");
+    if (!admin.ok) return admin.response;
 
     const { id } = await params;
     const body = await request.json().catch(() => ({}));

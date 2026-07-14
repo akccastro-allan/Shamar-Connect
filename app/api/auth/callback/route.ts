@@ -5,7 +5,7 @@ import { clearSessionCookie, setSessionCookie } from "@/lib/auth/session";
 
 const PRIVATE_FALLBACK_PATH = "/dashboard";
 const UNAUTHORIZED_PATH = "/planos?reason=not-authorized";
-const ALLOWED_ROLES = new Set(["owner", "admin", "attendant", "viewer"]);
+const ALLOWED_ROLES = new Set(["owner", "admin", "agent", "attendant", "viewer"]);
 
 function normalizeEmail(value?: string | null) {
   return String(value || "").trim().toLowerCase();
@@ -25,7 +25,7 @@ function normalizeNextPath(value: string | null) {
 
 function normalizeRole(value?: string | null) {
   return ALLOWED_ROLES.has(String(value || ""))
-    ? (value as "owner" | "admin" | "attendant" | "viewer")
+    ? (value as "owner" | "admin" | "agent" | "attendant" | "viewer")
     : "viewer";
 }
 

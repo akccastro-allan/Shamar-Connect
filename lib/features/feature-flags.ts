@@ -105,14 +105,12 @@ export function toFeatureContext(context: AppContext, metadata?: TenantMetadata)
   };
 }
 
-export function canAccessPlatformAdmin(context: AppContext): boolean {
-  return context.isPlatformTenant && platformAdminRoles.has(context.role);
+export function canAccessPlatformAdmin(context: AppContext, metadata: TenantMetadata): boolean {
+  return context.isPlatformTenant && platformAdminRoles.has(context.role) && hasTenantFeature(metadata, "platform_admin");
 }
 
 export function canAccessCommandCenter(context: AppContext, metadata: TenantMetadata): boolean {
-  return canAccessPlatformAdmin(context) &&
-    hasTenantFeature(metadata, "command_center") &&
-    canUseFeature("command_center", toFeatureContext(context, metadata));
+  return context.isPlatformTenant && platformAdminRoles.has(context.role) && hasTenantFeature(metadata, "command_center");
 }
 
 export function canAccessMetaChannels(context: AppContext, metadata: TenantMetadata): boolean {

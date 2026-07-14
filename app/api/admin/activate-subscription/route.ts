@@ -5,14 +5,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
+import { assertPlatformAdminApi } from "@/lib/features/api-guards";
 
 export async function POST(request: NextRequest) {
   try {
     const context = await getRequiredAppContext();
-
-    if ((context.role !== "owner" && context.role !== "admin") || !context.isPlatformTenant) {
-      return NextResponse.json({ ok: false, error: "Acesso restrito a administradores." }, { status: 403 });
-    }
+    const admin = await assertPlatformAdminApi(context);
+    if (!admin.ok) return admin.response;
 
     const body = await request.json();
     const tenantId = String(body?.tenantId || "").trim();

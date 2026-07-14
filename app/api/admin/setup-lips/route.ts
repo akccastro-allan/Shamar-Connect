@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
+import { assertPlatformAdminApi } from "@/lib/features/api-guards";
 
 const LIPS_DEPARTMENTS = [
   { name: "Balcão",     color: "#2ABFAB", description: "Peças, produtos, preços e estoque" },
@@ -87,9 +88,8 @@ const LIPS_QUICK_REPLIES = [
 export async function POST(request: NextRequest) {
   try {
     const ctx = await getRequiredAppContext();
-    if ((ctx.role !== "owner" && ctx.role !== "admin") || !ctx.isPlatformTenant) {
-      return NextResponse.json({ ok: false, error: "Acesso restrito a administradores da plataforma." }, { status: 403 });
-    }
+    const admin = await assertPlatformAdminApi(ctx, "Acesso restrito a administradores da plataforma.");
+    if (!admin.ok) return admin.response;
 
     const body = await request.json().catch(() => ({}));
     const tenantId     = String(body?.tenantId     || "").trim();

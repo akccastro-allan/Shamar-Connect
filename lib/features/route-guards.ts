@@ -6,7 +6,9 @@ import { canAccessCommandCenter, canAccessPlatformAdmin, getTenantFeatureMetadat
 export async function assertPlatformAdminRoute() {
   try {
     const context = await getRequiredAppContext();
-    if (!canAccessPlatformAdmin(context)) redirect("/dashboard");
+    const db = createSupabaseWriteClient();
+    const tenantMetadata = await getTenantFeatureMetadata(db, context.tenantId);
+    if (!canAccessPlatformAdmin(context, tenantMetadata)) redirect("/dashboard");
     return context;
   } catch (error) {
     if (isUnauthorizedError(error)) redirect("/login");
@@ -15,9 +17,14 @@ export async function assertPlatformAdminRoute() {
 }
 
 export async function assertCommandCenterRoute() {
-  const context = await assertPlatformAdminRoute();
-  const db = createSupabaseWriteClient();
-  const tenantMetadata = await getTenantFeatureMetadata(db, context.tenantId);
-  if (!canAccessCommandCenter(context, tenantMetadata)) redirect("/dashboard");
-  return context;
+  try {
+    const context = await getRequiredAppContext();
+    const db = createSupabaseWriteClient();
+    const tenantMetadata = await getTenantFeatureMetadata(db, context.tenantId);
+    if (!canAccessCommandCenter(context, tenantMetadata)) redirect("/dashboard");
+    return context;
+  } catch (error) {
+    if (isUnauthorizedError(error)) redirect("/login");
+    throw error;
+  }
 }

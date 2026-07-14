@@ -1,16 +1,54 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { AppContext } from "@/lib/auth/app-context";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 import { clearSessionCookie, setSessionCookie } from "@/lib/auth/session";
+import {
+  canAccessCommandCenter,
+  canAccessPlatformAdmin,
+  normalizeMetadata,
+  type TenantMetadata,
+} from "@/lib/features/feature-flags";
 
 const PRIVATE_FALLBACK_PATH = "/dashboard";
 const UNAUTHORIZED_PATH = "/planos?reason=not-authorized";
-const ALLOWED_ROLES = new Set(["owner", "admin", "attendant", "viewer"]);
+const ALLOWED_ROLES = new Set(["owner", "admin", "agent", "attendant", "viewer"]);
 
 type LoginPayload = {
   email?: string | null;
   password?: string | null;
   next?: string | null;
+};
+
+type TenantUserRow = {
+  id: string;
+  tenant_id: string;
+  organization_id: string;
+  role: string | null;
+  status: string;
+};
+
+type TenantRow = {
+  id: string;
+  is_platform: boolean | null;
+  metadata: unknown;
+};
+
+type OrganizationRow = {
+  id: string;
+  tenant_id: string;
+  name: string | null;
+  legal_name: string | null;
+  document_number: string | null;
+  status: string;
+};
+
+type LoginChoice = {
+  context: AppContext;
+  tenantUser: TenantUserRow;
+  organization: OrganizationRow;
+  metadata: TenantMetadata;
+  destination: string;
 };
 
 function normalizeEmail(value?: string | null) {
@@ -25,10 +63,44 @@ function normalizeNextPath(value?: string | null) {
   return value;
 }
 
+function hasSafeNextPath(value?: string | null) {
+  return Boolean(value && value.startsWith("/") && !value.startsWith("//"));
+}
+
 function normalizeRole(value?: string | null) {
   return ALLOWED_ROLES.has(String(value || ""))
-    ? (value as "owner" | "admin" | "attendant" | "viewer")
+    ? (value as "owner" | "admin" | "agent" | "attendant" | "viewer")
     : "viewer";
+}
+
+function isOperationsPath(path: string) {
+  return path === "/operations" || path.startsWith("/operations/");
+}
+
+function isAdminPath(path: string) {
+  return path === "/admin" || path.startsWith("/admin/");
+}
+
+function destinationFor(context: AppContext, metadata: TenantMetadata) {
+  if (canAccessPlatformAdmin(context, metadata)) return "/admin";
+  if (canAccessCommandCenter(context, metadata)) return "/operations";
+  return PRIVATE_FALLBACK_PATH;
+}
+
+function canAccessPath(path: string, context: AppContext, metadata: TenantMetadata) {
+  if (isAdminPath(path)) return canAccessPlatformAdmin(context, metadata);
+  if (isOperationsPath(path)) return canAccessCommandCenter(context, metadata);
+  return true;
+}
+
+function sortByDestinationPriority(a: LoginChoice, b: LoginChoice) {
+  const priority = new Map([
+    ["/admin", 0],
+    ["/operations", 1],
+    [PRIVATE_FALLBACK_PATH, 2],
+  ]);
+
+  return (priority.get(a.destination) ?? 3) - (priority.get(b.destination) ?? 3);
 }
 
 async function readLoginPayload(request: NextRequest): Promise<{ payload: LoginPayload; wantsHtmlRedirect: boolean }> {
@@ -90,6 +162,7 @@ export async function POST(request: NextRequest) {
   try {
     const email = normalizeEmail(payload.email);
     const password = String(payload.password || "");
+    const hasRequestedNextPath = hasSafeNextPath(payload.next);
     const nextPath = normalizeNextPath(payload.next);
 
     if (!email || !password) {
@@ -131,16 +204,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { data: tenantUser, error: tenantUserError } = await db
+    const { data: tenantUsers, error: tenantUserError } = await db
       .from("tenant_users")
       .select("id, tenant_id, organization_id, role, status")
       .eq("app_user_id", appUser.id)
       .eq("status", "active")
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .maybeSingle();
+      .order("created_at", { ascending: true });
 
-    if (tenantUserError || !tenantUser) {
+    if (tenantUserError || !tenantUsers?.length) {
       await clearSessionCookie();
 
       if (wantsHtmlRedirect) {
@@ -153,34 +224,77 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let organizationName = "ShamarConnect";
-    let documentNumber = "";
+    const tenantIds = Array.from(new Set(tenantUsers.map((item: TenantUserRow) => item.tenant_id).filter(Boolean)));
+    const organizationIds = Array.from(
+      new Set(tenantUsers.map((item: TenantUserRow) => item.organization_id).filter(Boolean)),
+    );
 
-    if (tenantUser.organization_id) {
-      const { data: organization } = await db
-        .from("organizations")
-        .select("name, legal_name, document_number, status")
-        .eq("id", tenantUser.organization_id)
-        .eq("tenant_id", tenantUser.tenant_id)
-        .eq("status", "active")
-        .maybeSingle();
+    const { data: tenants, error: tenantsError } = await db
+      .from("tenants")
+      .select("id, is_platform, metadata")
+      .in("id", tenantIds);
 
-      if (!organization) {
-        await clearSessionCookie();
+    const { data: organizations, error: organizationsError } = await db
+      .from("organizations")
+      .select("id, tenant_id, name, legal_name, document_number, status")
+      .in("id", organizationIds)
+      .eq("status", "active");
 
-        if (wantsHtmlRedirect) {
-          return NextResponse.redirect(new URL(UNAUTHORIZED_PATH, request.url), { status: 303 });
-        }
+    if (tenantsError || organizationsError) {
+      await clearSessionCookie();
+      throw tenantsError || organizationsError;
+    }
 
-        return NextResponse.json(
-          { ok: false, error: "Empresa inativa ou não encontrada.", redirectTo: UNAUTHORIZED_PATH },
-          { status: 403 },
-        );
+    const tenantsById = new Map((tenants as TenantRow[] | null | undefined)?.map((tenant) => [tenant.id, tenant]));
+    const organizationsById = new Map(
+      (organizations as OrganizationRow[] | null | undefined)?.map((organization) => [organization.id, organization]),
+    );
+
+    const choices: LoginChoice[] = (tenantUsers as TenantUserRow[]).flatMap((tenantUser) => {
+      const tenant = tenantsById.get(tenantUser.tenant_id);
+      const organization = organizationsById.get(tenantUser.organization_id);
+
+      if (!tenant || !organization || organization.tenant_id !== tenantUser.tenant_id) return [];
+
+      const role = normalizeRole(tenantUser.role || appUser.role);
+      const metadata = normalizeMetadata(tenant.metadata);
+      const context: AppContext = {
+        tenantId: tenantUser.tenant_id,
+        organizationId: tenantUser.organization_id,
+        appUserId: appUser.id,
+        tenantUserId: tenantUser.id,
+        role,
+        email: authenticatedEmail,
+        name: appUser.name || authenticatedEmail,
+        isPlatformTenant: tenant.is_platform === true,
+      };
+
+      return [{ context, tenantUser, organization, metadata, destination: destinationFor(context, metadata) }];
+    });
+
+    if (!choices.length) {
+      await clearSessionCookie();
+
+      if (wantsHtmlRedirect) {
+        return NextResponse.redirect(new URL(UNAUTHORIZED_PATH, request.url), { status: 303 });
       }
 
-      organizationName = organization.name || organization.legal_name || organizationName;
-      documentNumber = organization.document_number || "";
+      return NextResponse.json(
+        { ok: false, error: "Empresa inativa ou não encontrada.", redirectTo: UNAUTHORIZED_PATH },
+        { status: 403 },
+      );
     }
+
+    const sortedChoices = [...choices].sort(sortByDestinationPriority);
+    const requestedChoice = hasRequestedNextPath
+      ? sortedChoices.find((choice) => canAccessPath(nextPath, choice.context, choice.metadata))
+      : null;
+    const choice = requestedChoice || sortedChoices[0];
+    const redirectPath = hasRequestedNextPath && canAccessPath(nextPath, choice.context, choice.metadata)
+      ? nextPath
+      : choice.destination;
+    const organizationName = choice.organization.name || choice.organization.legal_name || "ShamarConnect";
+    const documentNumber = choice.organization.document_number || "";
 
     await db
       .from("app_users")
@@ -188,23 +302,23 @@ export async function POST(request: NextRequest) {
       .eq("id", appUser.id);
 
     const session = {
-      companyId: tenantUser.organization_id || tenantUser.tenant_id,
+      companyId: choice.tenantUser.organization_id || choice.tenantUser.tenant_id,
       companyName: organizationName,
       documentType: "cnpj" as const,
       documentNumber,
       userId: appUser.id,
       userName: appUser.name || authenticatedEmail,
-      userRole: normalizeRole(tenantUser.role || appUser.role),
+      userRole: choice.context.role,
       loginAt: new Date().toISOString(),
     };
 
     await setSessionCookie(session);
 
     if (wantsHtmlRedirect) {
-      return NextResponse.redirect(new URL(nextPath, request.url), { status: 303 });
+      return NextResponse.redirect(new URL(redirectPath, request.url), { status: 303 });
     }
 
-    return NextResponse.json({ ok: true, session, next: nextPath });
+    return NextResponse.json({ ok: true, session, next: redirectPath });
   } catch (error) {
     await clearSessionCookie();
     const message = error instanceof Error ? error.message : "Falha no login.";

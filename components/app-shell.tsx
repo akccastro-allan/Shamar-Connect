@@ -37,7 +37,7 @@ async function assertAuthorizedSession() {
   try {
     const context = await getRequiredAppContext();
     const tenantMetadata = await getTenantFeatureMetadata(db, context.tenantId);
-    isPlatformAdmin = canAccessPlatformAdmin(context);
+    isPlatformAdmin = canAccessPlatformAdmin(context, tenantMetadata);
     metaChannelsEnabled = canAccessMetaChannels(context, tenantMetadata);
     commandCenterEnabled = canAccessCommandCenter(context, tenantMetadata);
   } catch {

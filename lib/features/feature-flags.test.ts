@@ -24,22 +24,46 @@ test("tenant feature flag only returns true for explicit true", () => {
   assert.equal(hasTenantFeature(null, "command_center"), false);
 });
 
-test("platform admin requires platform tenant and owner/admin role", () => {
-  assert.equal(canAccessPlatformAdmin(context({ isPlatformTenant: true, role: "owner" })), true);
-  assert.equal(canAccessPlatformAdmin(context({ isPlatformTenant: true, role: "admin" })), true);
-  assert.equal(canAccessPlatformAdmin(context({ isPlatformTenant: true, role: "attendant" })), false);
-  assert.equal(canAccessPlatformAdmin(context({ isPlatformTenant: false, role: "owner" })), false);
+test("platform admin requires platform tenant, owner/admin role and explicit flag", () => {
+  const metadata = { features: { platform_admin: true } };
+
+  assert.equal(canAccessPlatformAdmin(context({ isPlatformTenant: true, role: "owner" }), metadata), true);
+  assert.equal(canAccessPlatformAdmin(context({ isPlatformTenant: true, role: "admin" }), metadata), true);
+  assert.equal(canAccessPlatformAdmin(context({ isPlatformTenant: true, role: "agent" }), metadata), false);
+  assert.equal(canAccessPlatformAdmin(context({ isPlatformTenant: true, role: "attendant" }), metadata), false);
+  assert.equal(canAccessPlatformAdmin(context({ isPlatformTenant: false, role: "owner" }), metadata), false);
+  assert.equal(canAccessPlatformAdmin(context({ isPlatformTenant: true, role: "owner" }), { features: {} }), false);
 });
 
-test("command center requires platform admin and explicit command_center flag", () => {
+test("command center requires platform tenant, owner/admin role and explicit command_center flag", () => {
   const metadata = { features: { command_center: true } };
 
   assert.equal(canAccessCommandCenter(context({ isPlatformTenant: true, role: "owner" }), metadata), true);
   assert.equal(canAccessCommandCenter(context({ isPlatformTenant: true, role: "admin" }), metadata), true);
+  assert.equal(canAccessCommandCenter(context({ isPlatformTenant: true, role: "agent" }), metadata), false);
   assert.equal(canAccessCommandCenter(context({ isPlatformTenant: true, role: "attendant" }), metadata), false);
   assert.equal(canAccessCommandCenter(context({ isPlatformTenant: true, role: "viewer" }), metadata), false);
   assert.equal(canAccessCommandCenter(context({ isPlatformTenant: false, role: "owner" }), metadata), false);
   assert.equal(canAccessCommandCenter(context({ isPlatformTenant: true, role: "owner" }), { features: {} }), false);
+});
+
+test("platform admin and command center can be granted separately", () => {
+  const platformOwner = context({ isPlatformTenant: true, role: "owner" });
+  const adminOnly = { features: { platform_admin: true } };
+  const operationsOnly = { features: { command_center: true } };
+
+  assert.equal(canAccessPlatformAdmin(platformOwner, adminOnly), true);
+  assert.equal(canAccessCommandCenter(platformOwner, adminOnly), false);
+  assert.equal(canAccessPlatformAdmin(platformOwner, operationsOnly), false);
+  assert.equal(canAccessCommandCenter(platformOwner, operationsOnly), true);
+});
+
+test("client tenants cannot access admin or command center via metadata", () => {
+  const clientOwner = context({ isPlatformTenant: false, role: "owner" });
+  const metadata = { features: { platform_admin: true, command_center: true } };
+
+  assert.equal(canAccessPlatformAdmin(clientOwner, metadata), false);
+  assert.equal(canAccessCommandCenter(clientOwner, metadata), false);
 });
 
 test("internal channel flags require command center access", () => {
