@@ -6,12 +6,18 @@ import {
   buildCommercialContext,
   LIPS_COMMERCIAL_PROFILE,
   analyzeCommercialConversation,
+  buildConversationContentHash,
+  buildSafetyIdentifier,
+  commercialAnalysisSchema,
+  commercialSuggestionSchema,
+  estimateCommercialAgentCost,
   observerModeBlocksSending,
   suggestCommercialResponse,
   validateCommercialSuggestion,
   type CommercialContext,
   type CommercialSuggestion,
 } from "./index.ts";
+import { OpenAICommercialAgentProvider } from "./providers/openai-commercial-agent-provider.ts";
 
 function lipsContext(overrides: Partial<CommercialContext> = {}): CommercialContext {
   const profile = {
@@ -27,7 +33,7 @@ function lipsContext(overrides: Partial<CommercialContext> = {}): CommercialCont
     conversation: { id: "conversation-lips", status: "open", stage: "novo", isGroup: false },
     contact: { id: "contact-1", name: "Cliente", tags: [] },
     messages: [
-      { id: "msg-1", direction: "inbound", body: "Preciso de pastilha do Corolla 2015, tem pra hoje?", createdAt: new Date().toISOString() },
+      { id: "msg-1", direction: "inbound", body: "Preciso de pastilha do Corolla 2015, tem pra hoje?", createdAt: "2026-07-13T10:00:00.000Z" },
     ],
     classification: {
       intent: "parts_quote",
@@ -152,4 +158,74 @@ test("empresa interna não acessa dados Lips por contexto", () => {
 test("cliente Lips não acessa Centro de Comando", () => {
   const lipsUser = platformContext({ tenantId: "tenant-lips", organizationId: "org-lips", isPlatformTenant: false });
   assert.equal(canAccessCommandCenter(lipsUser, { features: { command_center: true } }), false);
+});
+
+test("schemas rejeitam saída sem aprovação humana obrigatória", () => {
+  assert.throws(() => commercialSuggestionSchema.parse({
+    text: "Resposta pronta para enviar.",
+    callToAction: null,
+    requiresApproval: false,
+    sources: [{ type: "profile", reference: "lips" }],
+    warnings: [],
+  }));
+
+  const parsed = commercialAnalysisSchema.parse({
+    intent: "cotacao_peca",
+    stage: "qualifying",
+    temperature: "warm",
+    confidence: 0.83,
+    objections: [],
+    missingInformation: ["placa"],
+    recommendedNextAction: "Pedir placa para confirmar aplicação.",
+    recommendedDepartment: null,
+    requiresHuman: true,
+    riskFlags: [],
+    summary: "Cliente quer cotação, mas falta confirmar aplicação.",
+  });
+
+  assert.equal(parsed.recommendedDepartment, undefined);
+});
+
+test("hash de conversa é determinístico e muda com conteúdo", () => {
+  const context = lipsContext();
+  const firstHash = buildConversationContentHash(context);
+  const secondHash = buildConversationContentHash(lipsContext());
+  const changedHash = buildConversationContentHash(lipsContext({
+    messages: [{ id: "msg-1", direction: "inbound", body: "Mudou a mensagem", createdAt: context.messages[0].createdAt }],
+  }));
+
+  assert.match(firstHash, /^[a-f0-9]{64}$/);
+  assert.equal(firstHash, secondHash);
+  assert.notEqual(firstHash, changedHash);
+});
+
+test("safety identifier não expõe tenant nem usuário", () => {
+  const identifier = buildSafetyIdentifier({ tenantId: "tenant-lips", userId: "allan@example.com" });
+
+  assert.match(identifier, /^[a-f0-9]{64}$/);
+  assert.equal(identifier.includes("tenant-lips"), false);
+  assert.equal(identifier.includes("allan"), false);
+});
+
+test("custo estimado usa tabela versionada e retorna null para modelo desconhecido", () => {
+  assert.equal(estimateCommercialAgentCost({ model: "gpt-4.1-mini", inputTokens: 1000, outputTokens: 500 }), 0.0012);
+  assert.equal(estimateCommercialAgentCost({ model: "modelo-desconhecido", inputTokens: 1000, outputTokens: 500 }), null);
+});
+
+test("provider OpenAI falha fechado sem feature flag ou credenciais", () => {
+  assert.throws(() => new OpenAICommercialAgentProvider({
+    enabled: false,
+    apiKey: "key",
+    model: "gpt-4.1-mini",
+    tenantId: "tenant-lips",
+    userId: "user-1",
+  }), /feature_unavailable/);
+
+  assert.throws(() => new OpenAICommercialAgentProvider({
+    enabled: true,
+    apiKey: undefined,
+    model: "gpt-4.1-mini",
+    tenantId: "tenant-lips",
+    userId: "user-1",
+  }), /feature_unavailable/);
 });
