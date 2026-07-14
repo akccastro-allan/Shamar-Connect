@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 
-const allowedStatuses = new Set(["open", "pending", "resolved", "archived"]);
-const allowedPriorities = new Set(["baixa", "normal", "alta", "urgente"]);
+const allowedStatuses = new Set(["open", "pending", "resolved", "archived", "new", "queued", "assigned", "in_progress", "awaiting_customer", "pending_internal", "closed"]);
+const allowedPriorities = new Set(["baixa", "normal", "alta", "urgente", "high", "urgent"]);
 
 export async function PATCH(request: NextRequest) {
   try {

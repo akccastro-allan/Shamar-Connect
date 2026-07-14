@@ -3,6 +3,7 @@ import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
 import { normalizeProvider } from "@/lib/providers/provider-aliases";
 import { dispatchOutboxItem } from "@/lib/outbox/send";
+import { recordQueueEvent } from "@/lib/queues/lips-queue";
 
 type Params = { params: Promise<{ conversationId: string }> };
 
@@ -87,7 +88,7 @@ export async function POST(request: NextRequest, context: Params) {
 
     const { data: conversation, error: conversationError } = await db
       .from("whatsapp_conversations")
-      .select("id, tenant_id, organization_id, external_chat_id, contact_id, provider, is_group, channel_id")
+      .select("id, tenant_id, organization_id, external_chat_id, contact_id, provider, is_group, channel_id, first_human_response_at")
       .eq("id", conversationId)
       .eq("tenant_id", appContext.tenantId)
       .eq("organization_id", appContext.organizationId)
@@ -179,21 +180,25 @@ export async function POST(request: NextRequest, context: Params) {
         last_message_at: now,
         last_outbound_at: now,
         last_message_direction: "outbound",
+        status: "awaiting_customer",
         requires_human: false,
         pending_reason: null,
-        sla_status: "ok",
+        sla_status: "completed",
         sla_due_at: null,
+        first_human_response_at: conversation.first_human_response_at ?? now,
         updated_at: now,
       })
       .eq("id", conversation.id);
 
     if (conversation.tenant_id && conversation.organization_id) {
-      await db.from("whatsapp_conversation_events").insert({
-        tenant_id: conversation.tenant_id,
-        organization_id: conversation.organization_id,
-        conversation_id: conversation.id,
-        event_type: "human_reply_sent",
-        event_source: "service_center",
+      await recordQueueEvent(db, {
+        tenantId: conversation.tenant_id,
+        organizationId: conversation.organization_id,
+        conversationId: conversation.id,
+        actorType: "user",
+        actorId: appContext.appUserId,
+        eventType: "human_replied",
+        newState: "awaiting_customer",
         description: "Atendente enviou resposta manual.",
         metadata: { messageId: localMessage.id, deliveryStatus: result, bodyLength: messageBody.length },
       });
