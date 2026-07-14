@@ -100,9 +100,14 @@ export default async function AdminPage() {
             <h2 className="text-lg font-black text-[#1B2F5B]">Clientes e canais</h2>
             <p className="mt-1 text-sm text-slate-500">Visão administrativa da Moriah. Clientes comuns não acessam esta área.</p>
           </div>
-          <Link href="/admin/implantacao" className="inline-flex rounded-full bg-[#1B2F5B] px-5 py-2.5 text-sm font-black text-white">
-            Implantação
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link href="/admin/commercial-agent/lips/evaluation" className="inline-flex rounded-full bg-[#2ABFAB] px-5 py-2.5 text-sm font-black text-white">
+              Avaliar agente Lips
+            </Link>
+            <Link href="/admin/implantacao" className="inline-flex rounded-full bg-[#1B2F5B] px-5 py-2.5 text-sm font-black text-white">
+              Implantação
+            </Link>
+          </div>
         </div>
 
         <div className="mt-5 overflow-x-auto rounded-2xl border border-slate-100">
