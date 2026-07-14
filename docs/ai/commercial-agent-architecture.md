@@ -22,6 +22,10 @@ Código base em `lib/ai/commercial-agent/`:
 - `response-suggester.ts`: sugestão supervisionada sem IA externa.
 - `guardrails.ts`: validação pós-geração.
 - `evaluation.ts`: eventos estruturados sem chain of thought.
+- `schemas.ts`: contratos Zod e JSON Schema para Structured Outputs.
+- `hash.ts`: hash de conteúdo da conversa e `safety_identifier` sem PII.
+- `model-costs.ts`: tabela versionada para custo estimado por tokens.
+- `providers/openai-commercial-agent-provider.ts`: provider OpenAI com fail-closed.
 
 ## Provider
 
@@ -31,10 +35,20 @@ A abstração é `CommercialAgentProvider`:
 type CommercialAgentProvider = {
   analyzeConversation(input: CommercialAnalysisInput): Promise<CommercialAnalysis>;
   suggestResponse(input: CommercialSuggestionInput): Promise<CommercialSuggestion>;
+  getLastMetadata?(): CommercialProviderMetadata | null;
 };
 ```
 
-Nenhum provedor externo é chamado nesta fase.
+O provider OpenAI só é criado quando `OPENAI_COMMERCIAL_AGENT_ENABLED=true`, `OPENAI_API_KEY` e `OPENAI_COMMERCIAL_AGENT_MODEL` estão presentes. Ausência de configuração, timeout, rate limit, erro do provider ou saída fora do schema falham fechado e não geram envio.
+
+Configuração usada:
+
+- `store: false`
+- `stream: false`
+- `tools: []`
+- `parallel_tool_calls: false`
+- `text.format.type = json_schema`
+- `safety_identifier` derivado por hash de tenant e usuário
 
 ## Modos
 
@@ -43,7 +57,7 @@ Nenhum provedor externo é chamado nesta fase.
 - `assisted`: pode preparar fluxos assistidos, ainda com aprovação.
 - `approved_automation`: reservado para etapa futura.
 
-Estado inicial: Centro de Comando e Lips em `observer`.
+Estado inicial: Lips em `observer`. O Centro de Comando não lista Lips e não mistura empresas internas com tenants clientes.
 
 ## APIs
 
@@ -68,6 +82,9 @@ commercial_agent_automation = hidden
 
 ## Banco
 
-Migration preparada em `supabase/migrations/0033_commercial_agent_foundation.sql`.
+Migrations:
 
-Ela não deve ser aplicada em produção sem aprovação operacional.
+- `supabase/migrations/0033_commercial_agent_foundation.sql`: tabelas base, RLS e índices.
+- `supabase/migrations/0034_commercial_agent_runtime_metadata.sql`: hash de dedupe, metadados de provider, tokens, custo estimado e guardrails.
+
+Ambas são aditivas e não alteram a automação determinística da Lips.

@@ -10,6 +10,10 @@ Objetivo: transformar consultas em oportunidades para balcão ou oficina.
 
 Modo inicial: `observer`
 
+Stage inicial: `internal_alpha`
+
+Perfil persistido: `lips-commercial-observer`
+
 ## Metas
 
 - qualificar veículo e peça;
@@ -44,3 +48,5 @@ Se houver conflito entre classificador/catálogo e sugestão, prevalece o determ
 ## Automação
 
 Nenhum envio automático está autorizado. Toda sugestão exige aprovação humana e fica marcada com `requiresApproval: true`.
+
+`commercial_agent_automation` deve permanecer `hidden` até existir avaliação real suficiente, guardrails estáveis e decisão operacional explícita.
