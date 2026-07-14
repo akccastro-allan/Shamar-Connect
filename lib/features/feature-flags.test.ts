@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AppContext } from "../auth/app-context.ts";
-import { canAccessCommandCenter, canAccessMetaChannels, canAccessPlatformAdmin, canUseFeature, hasTenantFeature, toFeatureContext } from "./feature-flags.ts";
+import { canAccessCommandCenter, canAccessCommercialAgentLips, canAccessGlobalPlatformAdmin, canAccessMetaChannels, canAccessPlatformAdmin, canUseFeature, hasTenantFeature, toFeatureContext } from "./feature-flags.ts";
 
 function context(overrides: Partial<AppContext> = {}): AppContext {
   return {
@@ -27,18 +27,52 @@ test("tenant feature flag only returns true for explicit true", () => {
 test("platform admin requires platform tenant and owner/admin role", () => {
   assert.equal(canAccessPlatformAdmin(context({ isPlatformTenant: true, role: "owner" })), true);
   assert.equal(canAccessPlatformAdmin(context({ isPlatformTenant: true, role: "admin" })), true);
+  assert.equal(canAccessPlatformAdmin(context({ isPlatformTenant: true, role: "admin", organizationId: null })), true);
   assert.equal(canAccessPlatformAdmin(context({ isPlatformTenant: true, role: "attendant" })), false);
   assert.equal(canAccessPlatformAdmin(context({ isPlatformTenant: false, role: "owner" })), false);
+});
+
+test("global platform admin requires organization null", () => {
+  assert.equal(canAccessGlobalPlatformAdmin(context({ isPlatformTenant: true, role: "admin", organizationId: null })), true);
+  assert.equal(canAccessGlobalPlatformAdmin(context({ isPlatformTenant: true, role: "admin", organizationId: "org-cliente" })), false);
+  assert.equal(canAccessGlobalPlatformAdmin(context({ isPlatformTenant: false, role: "admin", organizationId: null })), false);
+});
+
+test("platform admin with organization null can access Lips evaluation", () => {
+  const metadata = { features: { commercial_agent_lips: "internal_alpha" } };
+
+  assert.equal(canAccessCommercialAgentLips(context({ isPlatformTenant: true, role: "admin", organizationId: null }), metadata), true);
+});
+
+test("client organization admin is not global commercial admin", () => {
+  const metadata = { features: { commercial_agent_lips: "internal_alpha" } };
+
+  assert.equal(canAccessPlatformAdmin(context({ isPlatformTenant: false, role: "admin", organizationId: "org-oriahfin" })), false);
+  assert.equal(canAccessCommercialAgentLips(context({ isPlatformTenant: false, role: "admin", organizationId: "org-oriahfin" }), metadata), false);
+});
+
+test("Lips client cannot access commercial agent evaluation", () => {
+  const metadata = { features: { commercial_agent_lips: "internal_alpha" } };
+
+  assert.equal(canAccessCommercialAgentLips(context({ tenantId: "tenant-lips", organizationId: "org-lips", isPlatformTenant: false, role: "admin" }), metadata), false);
+});
+
+test("Moriah account is not automatically Shamar admin", () => {
+  const metadata = { features: { commercial_agent_lips: "internal_alpha" } };
+
+  assert.equal(canAccessPlatformAdmin(context({ tenantId: "tenant-moriah", organizationId: "org-moriah", isPlatformTenant: false, role: "admin", email: "allan@moriahsystems.com.br" })), false);
+  assert.equal(canAccessCommercialAgentLips(context({ tenantId: "tenant-moriah", organizationId: "org-moriah", isPlatformTenant: false, role: "admin", email: "allan@moriahsystems.com.br" }), metadata), false);
 });
 
 test("command center requires platform admin and explicit command_center flag", () => {
   const metadata = { features: { command_center: true } };
 
-  assert.equal(canAccessCommandCenter(context({ isPlatformTenant: true, role: "owner" }), metadata), true);
-  assert.equal(canAccessCommandCenter(context({ isPlatformTenant: true, role: "admin" }), metadata), true);
+  assert.equal(canAccessCommandCenter(context({ isPlatformTenant: true, role: "owner", organizationId: null }), metadata), true);
+  assert.equal(canAccessCommandCenter(context({ isPlatformTenant: true, role: "admin", organizationId: null }), metadata), true);
+  assert.equal(canAccessCommandCenter(context({ isPlatformTenant: true, role: "admin", organizationId: "org-cliente" }), metadata), false);
   assert.equal(canAccessCommandCenter(context({ isPlatformTenant: true, role: "attendant" }), metadata), false);
   assert.equal(canAccessCommandCenter(context({ isPlatformTenant: false, role: "owner" }), metadata), false);
-  assert.equal(canAccessCommandCenter(context({ isPlatformTenant: true, role: "owner" }), { features: {} }), false);
+  assert.equal(canAccessCommandCenter(context({ isPlatformTenant: true, role: "owner", organizationId: null }), { features: {} }), false);
 });
 
 test("meta channels remain hidden during WhatsApp-only commercial release", () => {
