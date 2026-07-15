@@ -49,7 +49,7 @@ export const INTERNAL_CHANNEL_PURPOSE_LABELS = {
   other: "Outro",
 } as const satisfies Record<(typeof INTERNAL_CHANNEL_PURPOSES)[number], string>;
 
-export const INTERNAL_CHANNEL_STATUSES = ["draft", "connecting", "connected", "disconnected", "error", "disabled"] as const;
+export const INTERNAL_CHANNEL_STATUSES = ["draft", "starting", "qr_required", "connecting", "connected", "disconnected", "error", "disabled"] as const;
 export const INTERNAL_FEATURE_STAGES = ["hidden", "internal_alpha", "internal_active", "internal_approved", "disabled"] as const;
 export const INTERNAL_SOCIAL_CONNECTION_STATUSES = ["not_connected", "connected", "token_expired", "connection_error"] as const;
 

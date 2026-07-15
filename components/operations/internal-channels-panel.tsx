@@ -94,9 +94,21 @@ const purposes = INTERNAL_CHANNEL_PURPOSES.map((value) => ({ value, label: INTER
 
 function statusClass(status: string) {
   if (status === "connected") return "border-emerald-200 bg-emerald-50 text-emerald-700";
-  if (status === "connecting") return "border-amber-200 bg-amber-50 text-amber-700";
+  if (status === "starting" || status === "qr_required" || status === "connecting") return "border-amber-200 bg-amber-50 text-amber-700";
   if (status === "error" || status === "disconnected") return "border-red-200 bg-red-50 text-red-700";
   return "border-slate-200 bg-slate-50 text-slate-600";
+}
+
+function statusLabel(status: string) {
+  if (status === "draft") return "Nova";
+  if (status === "starting") return "Iniciando";
+  if (status === "qr_required") return "Aguardando QR";
+  if (status === "connecting") return "Conectando";
+  if (status === "connected") return "Conectado";
+  if (status === "disconnected") return "Desconectado";
+  if (status === "error") return "Erro";
+  if (status === "disabled") return "Desativado";
+  return status;
 }
 
 function channelTypeLabel(value: string) {
@@ -276,10 +288,30 @@ export function InternalChannelsPanel() {
       const data = await response.json() as { ok: boolean; error?: string; qrCode?: string | null; status?: string };
       if (!data.ok) throw new Error(data.error || "Falha ao solicitar QR.");
       setQrByChannel((current) => ({ ...current, [channel.id]: data.qrCode || null }));
-      setNotice(`Status da sessão: ${data.status || "em preparação"}.`);
+      setNotice(data.qrCode ? "QR gerado. Escaneie pelo WhatsApp no celular autorizado." : `Status da sessão: ${statusLabel(data.status || "draft")}.`);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao solicitar QR.");
+    } finally {
+      setUpdatingChannelId(null);
+    }
+  }
+
+  async function refreshChannelStatus(channel: InternalChannel) {
+    setUpdatingChannelId(channel.id);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch(`/api/operations/internal-channels/${channel.id}/status`, { cache: "no-store" });
+      const data = await response.json() as { ok: boolean; error?: string; status?: string; providerStatus?: string; phone?: string | null };
+      if (!data.ok) throw new Error(data.error || "Falha ao atualizar status.");
+      if (data.status === "connected") {
+        setQrByChannel((current) => ({ ...current, [channel.id]: null }));
+      }
+      setNotice(`Status atualizado: ${statusLabel(data.status || "draft")}${data.phone ? ` · ${data.phone}` : ""}.`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao atualizar status.");
     } finally {
       setUpdatingChannelId(null);
     }
@@ -331,7 +363,7 @@ export function InternalChannelsPanel() {
         </div>
         <h1 className="mt-3 text-3xl font-black md:text-4xl">Canais internos Allan/Moriah</h1>
         <p className="mt-3 max-w-4xl text-sm leading-6 text-slate-200">
-          Cadastre canais, gateways e origens internas sem misturar clientes SaaS. Segredos ficam fora desta tela e nenhuma conexão real é iniciada aqui.
+          Cadastre canais, gateways e origens internas sem misturar clientes SaaS. Segredos ficam fora desta tela; conexão, QR e status são operados daqui sem abrir o gateway.
         </p>
         <div className="mt-5 flex flex-wrap gap-3">
           <Button asChild className="rounded-full bg-[#2ABFAB] px-5 font-black text-white hover:bg-[#229d8e]">
@@ -503,6 +535,8 @@ export function InternalChannelsPanel() {
                 <select className="mt-1 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-700" value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}>
                   <option value="all">Todos</option>
                   <option value="draft">Rascunho</option>
+                  <option value="starting">Iniciando</option>
+                  <option value="qr_required">Aguardando QR</option>
                   <option value="connecting">Conectando</option>
                   <option value="connected">Conectado</option>
                   <option value="disconnected">Desconectado</option>
@@ -523,7 +557,7 @@ export function InternalChannelsPanel() {
                       {channel.lastError && <p className="mt-1 text-xs font-bold text-red-600">Último erro: {channel.lastError}</p>}
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <Badge className={statusClass(channel.status)}>{channel.status}</Badge>
+                      <Badge className={statusClass(channel.status)}>{statusLabel(channel.status)}</Badge>
                       <Badge variant="outline">{channel.featureStage}</Badge>
                     </div>
                   </div>
@@ -536,11 +570,23 @@ export function InternalChannelsPanel() {
                     <Button type="button" size="sm" variant="outline" className="rounded-full" disabled={updatingChannelId === channel.id} onClick={() => toggleChannel(channel)}>
                       {channel.active ? "Desativar" : "Ativar"}
                     </Button>
-                    {channel.channelType === "whatsapp_web" && channel.status !== "connected" && (
-                      <Button type="button" size="sm" variant="outline" className="rounded-full" disabled={updatingChannelId === channel.id} onClick={() => requestQr(channel)}>Conectar WhatsApp</Button>
+                    {channel.channelType === "whatsapp_web" && (
+                      <Button type="button" size="sm" variant="outline" className="rounded-full" disabled={updatingChannelId === channel.id} onClick={() => refreshChannelStatus(channel)}>Atualizar status</Button>
+                    )}
+                    {channel.channelType === "whatsapp_web" && channel.status !== "connected" && channel.active && (
+                      <Button type="button" size="sm" className="rounded-full bg-[#2ABFAB] font-black text-white hover:bg-[#229d8e]" disabled={updatingChannelId === channel.id} onClick={() => requestQr(channel)}>{qrByChannel[channel.id] ? "Atualizar QR" : "Conectar / Ver QR"}</Button>
                     )}
                   </div>
-                  {qrByChannel[channel.id] && <div className="mt-3 rounded-2xl border border-slate-100 bg-slate-50 p-3 text-xs text-slate-500">QR recebido para conexão manual. Escaneie apenas com o número autorizado por Allan.</div>}
+                  {qrByChannel[channel.id] && (
+                    <div className="mt-4 grid gap-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 md:grid-cols-[auto_1fr]">
+                      <img src={qrByChannel[channel.id] || ""} alt={`QR Code ${channel.accountLabel}`} className="h-56 w-56 rounded-2xl border border-white bg-white p-2 shadow-sm" />
+                      <div className="text-sm text-amber-900">
+                        <p className="font-black">Escaneie no WhatsApp autorizado</p>
+                        <p className="mt-2">Abra o WhatsApp no celular, toque em Dispositivos conectados e escaneie este QR. Depois clique em Atualizar status.</p>
+                        <p className="mt-2 text-xs font-bold">Sessão: {channel.sessionId} · Gateway: {channel.gatewayName}</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
               {!channels.length && <p className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-500">Nenhum canal interno cadastrado. Cadastre o primeiro canal para começar a centralizar as comunicações das empresas da Moriah.</p>}
