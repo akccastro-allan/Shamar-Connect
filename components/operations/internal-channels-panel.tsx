@@ -321,6 +321,66 @@ export function InternalChannelsPanel() {
     }
   }
 
+  async function refreshWhatsappChannels(targetChannels: InternalChannel[], label = "canais") {
+    const whatsappChannels = targetChannels.filter((channel) => channel.channelType === "whatsapp_web" && channel.active);
+    if (!whatsappChannels.length) return;
+    setUpdatingChannelId(`bulk-status-${label}`);
+    setError(null);
+    setNotice(null);
+    const errors: string[] = [];
+    let updated = 0;
+    try {
+      for (const channel of whatsappChannels) {
+        const response = await fetch(`/api/operations/internal-channels/${channel.id}/status`, { cache: "no-store" });
+        const data = await response.json() as { ok: boolean; error?: string; status?: string; phone?: string | null };
+        if (!data.ok) {
+          errors.push(`${channel.accountLabel}: ${data.error || "falha"}`);
+          continue;
+        }
+        if (data.status === "connected") {
+          setQrByChannel((current) => ({ ...current, [channel.id]: null }));
+          setPairingCodeByChannel((current) => ({ ...current, [channel.id]: null }));
+        }
+        updated += 1;
+      }
+      await load();
+      setNotice(`Status atualizado em ${updated} WhatsApp(s)${errors.length ? `. Pendências: ${errors.join("; ")}` : "."}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao atualizar WhatsApps.");
+    } finally {
+      setUpdatingChannelId(null);
+    }
+  }
+
+  async function prepareWhatsappConnections(targetChannels: InternalChannel[], label = "canais") {
+    const pendingChannels = targetChannels.filter((channel) => channel.channelType === "whatsapp_web" && channel.active && channel.status !== "connected");
+    if (!pendingChannels.length) return;
+    setUpdatingChannelId(`bulk-qr-${label}`);
+    setError(null);
+    setNotice(null);
+    const errors: string[] = [];
+    let prepared = 0;
+    try {
+      for (const channel of pendingChannels) {
+        const response = await fetch(`/api/operations/internal-channels/${channel.id}/qr`, { method: "POST" });
+        const data = await response.json() as { ok: boolean; error?: string; qrCode?: string | null; pairingCode?: string | null };
+        if (!data.ok) {
+          errors.push(`${channel.accountLabel}: ${data.error || "falha"}`);
+          continue;
+        }
+        setQrByChannel((current) => ({ ...current, [channel.id]: data.qrCode || null }));
+        setPairingCodeByChannel((current) => ({ ...current, [channel.id]: data.pairingCode || null }));
+        prepared += 1;
+      }
+      await load();
+      setNotice(`${prepared} WhatsApp(s) preparado(s) para conexão. Escaneie cada QR/código na conta correta${errors.length ? `. Pendências: ${errors.join("; ")}` : "."}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao preparar conexões WhatsApp.");
+    } finally {
+      setUpdatingChannelId(null);
+    }
+  }
+
   async function toggleChannel(channel: InternalChannel) {
     setUpdatingChannelId(channel.id);
     setError(null);
@@ -352,6 +412,20 @@ export function InternalChannelsPanel() {
     if (filters.status !== "all" && channel.status !== filters.status) return false;
     return true;
   });
+  const whatsappChannels = channels.filter((channel) => channel.channelType === "whatsapp_web");
+  const activeWhatsappChannels = whatsappChannels.filter((channel) => channel.active);
+  const pendingWhatsappChannels = activeWhatsappChannels.filter((channel) => channel.status !== "connected");
+  const whatsappByOrganization = organizations.map((organization) => {
+    const organizationChannels = whatsappChannels.filter((channel) => channel.businessKey === organization.businessKey);
+    const activeChannels = organizationChannels.filter((channel) => channel.active);
+    return {
+      organization,
+      channels: organizationChannels,
+      activeChannels,
+      connected: activeChannels.filter((channel) => channel.status === "connected").length,
+      pending: activeChannels.filter((channel) => channel.status !== "connected").length,
+    };
+  }).filter((item) => item.channels.length > 0);
   const selectedOrganization = organizations.find((organization) => organization.id === form.organizationId);
   const selectedNextSession = selectedOrganization?.nextSessions.find((session) => session.gatewayId === form.gatewayId);
   const whatsappWebSelected = form.channelType === "whatsapp_web";
@@ -392,6 +466,48 @@ export function InternalChannelsPanel() {
 
       {error && <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">{error}</div>}
       {notice && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-700">{notice}</div>}
+
+      <Card className="rounded-[2rem] border-[#2ABFAB]/20 bg-[#2ABFAB]/5">
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <CardTitle className="text-lg font-black text-[#1B2F5B]">WhatsApps por conta</CardTitle>
+              <p className="mt-1 text-sm text-slate-600">Conecte e confira todos os WhatsApps internos por empresa, sem abrir o gateway.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" size="sm" variant="outline" className="rounded-full bg-white" disabled={!activeWhatsappChannels.length || updatingChannelId !== null} onClick={() => refreshWhatsappChannels(activeWhatsappChannels, "todos")}>Atualizar todos</Button>
+              <Button type="button" size="sm" className="rounded-full bg-[#2ABFAB] font-black text-white hover:bg-[#229d8e]" disabled={!pendingWhatsappChannels.length || updatingChannelId !== null} onClick={() => prepareWhatsappConnections(pendingWhatsappChannels, "todos")}>Gerar QR/código pendentes</Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {whatsappByOrganization.map(({ organization, channels: organizationChannels, activeChannels, connected, pending }) => (
+              <div key={organization.id} className="rounded-2xl border border-white bg-white p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-black text-[#1B2F5B]">{organization.businessLabel}</p>
+                    <p className="mt-1 text-xs text-slate-500">{connected}/{activeChannels.length} conectados · {pending} pendente(s)</p>
+                  </div>
+                  <Badge className={pending ? "border-amber-200 bg-amber-50 text-amber-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}>{pending ? "Pendente" : "OK"}</Badge>
+                </div>
+                <div className="mt-3 space-y-2">
+                  {organizationChannels.map((channel) => (
+                    <div key={channel.id} className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                      <span className="font-bold text-slate-800">{channel.accountLabel}</span> · {channel.sessionId} · {statusLabel(channel.status)} · {channel.phoneNumber || "sem telefone"}
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button type="button" size="sm" variant="outline" className="rounded-full" disabled={!activeChannels.length || updatingChannelId !== null} onClick={() => refreshWhatsappChannels(activeChannels, organization.businessKey)}>Atualizar conta</Button>
+                  <Button type="button" size="sm" className="rounded-full bg-[#1B2F5B] font-black text-white hover:bg-[#16284d]" disabled={!pending || updatingChannelId !== null} onClick={() => prepareWhatsappConnections(activeChannels, organization.businessKey)}>Conectar pendentes</Button>
+                </div>
+              </div>
+            ))}
+            {!whatsappByOrganization.length && <p className="rounded-2xl border border-dashed border-slate-200 bg-white p-4 text-sm text-slate-500 md:col-span-2 xl:col-span-3">Nenhum WhatsApp interno cadastrado ainda.</p>}
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-6 xl:grid-cols-[0.9fr_1.4fr]">
         <Card className="rounded-[2rem] xl:col-span-2">
