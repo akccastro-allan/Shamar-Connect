@@ -46,6 +46,7 @@ type InternalChannel = {
   gatewayId: string | null;
   gatewayName: string;
   externalAccountId: string | null;
+  phoneNumber: string | null;
   purpose: string;
   status: string;
   featureStage: string;
@@ -129,6 +130,7 @@ export function InternalChannelsPanel() {
   const [savingGateway, setSavingGateway] = useState(false);
   const [updatingChannelId, setUpdatingChannelId] = useState<string | null>(null);
   const [qrByChannel, setQrByChannel] = useState<Record<string, string | null>>({});
+  const [pairingCodeByChannel, setPairingCodeByChannel] = useState<Record<string, string | null>>({});
   const [editingGatewayId, setEditingGatewayId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -285,10 +287,11 @@ export function InternalChannelsPanel() {
     setNotice(null);
     try {
       const response = await fetch(`/api/operations/internal-channels/${channel.id}/qr`, { method: "POST" });
-      const data = await response.json() as { ok: boolean; error?: string; qrCode?: string | null; status?: string };
+      const data = await response.json() as { ok: boolean; error?: string; qrCode?: string | null; pairingCode?: string | null; phone?: string | null; status?: string };
       if (!data.ok) throw new Error(data.error || "Falha ao solicitar QR.");
       setQrByChannel((current) => ({ ...current, [channel.id]: data.qrCode || null }));
-      setNotice(data.qrCode ? "QR gerado. Escaneie pelo WhatsApp no celular autorizado." : `Status da sessão: ${statusLabel(data.status || "draft")}.`);
+      setPairingCodeByChannel((current) => ({ ...current, [channel.id]: data.pairingCode || null }));
+      setNotice(data.qrCode || data.pairingCode ? "Conexão gerada. Use o QR ou o código no WhatsApp autorizado." : `Status da sessão: ${statusLabel(data.status || "draft")}.`);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao solicitar QR.");
@@ -307,6 +310,7 @@ export function InternalChannelsPanel() {
       if (!data.ok) throw new Error(data.error || "Falha ao atualizar status.");
       if (data.status === "connected") {
         setQrByChannel((current) => ({ ...current, [channel.id]: null }));
+        setPairingCodeByChannel((current) => ({ ...current, [channel.id]: null }));
       }
       setNotice(`Status atualizado: ${statusLabel(data.status || "draft")}${data.phone ? ` · ${data.phone}` : ""}.`);
       await load();
@@ -553,6 +557,7 @@ export function InternalChannelsPanel() {
                       <p className="font-black text-[#1B2F5B]">{channel.accountLabel}</p>
                       <p className="mt-1 text-xs text-slate-500">{channel.businessLabel} · {channelTypeLabel(String(channel.channelType))} · {purposeLabel(channel.purpose)}</p>
                       <p className="mt-1 text-xs text-slate-400">Sessão/conta: {channel.sessionId || channel.externalAccountId || "a configurar"} · Gateway: {channel.gatewayName}</p>
+                      <p className="mt-1 text-xs text-slate-400">Telefone conectado: {channel.phoneNumber || "a conectar"}</p>
                       <p className="mt-1 text-xs text-slate-400">Última atividade: {channel.lastEventAt || "sem evento registrado"}</p>
                       {channel.lastError && <p className="mt-1 text-xs font-bold text-red-600">Último erro: {channel.lastError}</p>}
                     </div>
@@ -577,12 +582,17 @@ export function InternalChannelsPanel() {
                       <Button type="button" size="sm" className="rounded-full bg-[#2ABFAB] font-black text-white hover:bg-[#229d8e]" disabled={updatingChannelId === channel.id} onClick={() => requestQr(channel)}>{qrByChannel[channel.id] ? "Atualizar QR" : "Conectar / Ver QR"}</Button>
                     )}
                   </div>
-                  {qrByChannel[channel.id] && (
+                  {(qrByChannel[channel.id] || pairingCodeByChannel[channel.id]) && (
                     <div className="mt-4 grid gap-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 md:grid-cols-[auto_1fr]">
-                      <img src={qrByChannel[channel.id] || ""} alt={`QR Code ${channel.accountLabel}`} className="h-56 w-56 rounded-2xl border border-white bg-white p-2 shadow-sm" />
+                      {qrByChannel[channel.id] ? (
+                        <img src={qrByChannel[channel.id] || ""} alt={`QR Code ${channel.accountLabel}`} className="h-56 w-56 rounded-2xl border border-white bg-white p-2 shadow-sm" />
+                      ) : (
+                        <div className="flex h-56 w-56 items-center justify-center rounded-2xl border border-dashed border-amber-300 bg-white p-4 text-center text-xs font-bold text-amber-900">QR não retornado pelo gateway</div>
+                      )}
                       <div className="text-sm text-amber-900">
                         <p className="font-black">Escaneie no WhatsApp autorizado</p>
-                        <p className="mt-2">Abra o WhatsApp no celular, toque em Dispositivos conectados e escaneie este QR. Depois clique em Atualizar status.</p>
+                        <p className="mt-2">Abra o WhatsApp no celular, toque em Dispositivos conectados e escaneie este QR. Se preferir, use o código de telefone quando disponível. Depois clique em Atualizar status.</p>
+                        {pairingCodeByChannel[channel.id] && <p className="mt-3 rounded-2xl bg-white px-4 py-3 font-mono text-2xl font-black tracking-[0.3em] text-[#1B2F5B]">{pairingCodeByChannel[channel.id]}</p>}
                         <p className="mt-2 text-xs font-bold">Sessão: {channel.sessionId} · Gateway: {channel.gatewayName}</p>
                       </div>
                     </div>

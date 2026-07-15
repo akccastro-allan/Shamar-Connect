@@ -28,7 +28,7 @@ export async function POST(_request: Request, routeContext: Params) {
 
     const { data: channel, error: channelError } = await auth.db
       .from("channels")
-      .select("id, tenant_id, organization_id, provider, channel_type, session_id, gateway_id, status, active, is_active, metadata")
+      .select("id, tenant_id, organization_id, provider, channel_type, session_id, gateway_id, phone_number, status, active, is_active, metadata")
       .eq("tenant_id", auth.context.tenantId)
       .eq("id", channelId)
       .maybeSingle();
@@ -52,9 +52,13 @@ export async function POST(_request: Request, routeContext: Params) {
     const providerStatus = await client.connect();
     const qrStatus = await client.getQr();
     const status = mapProviderSessionStatus(qrStatus.status || providerStatus.status);
+    const phone = qrStatus.phone || providerStatus.phone || null;
+    const pairingCode = qrStatus.pairingCode || providerStatus.pairingCode || null;
+    const updatePayload: Record<string, unknown> = { status };
+    if (phone) updatePayload.phone_number = phone;
 
-    await auth.db.from("channels").update({ status }).eq("tenant_id", auth.context.tenantId).eq("id", channelId);
-    return NextResponse.json({ ok: true, status, qrCode: qrStatus.qrCode || null });
+    await auth.db.from("channels").update(updatePayload).eq("tenant_id", auth.context.tenantId).eq("id", channelId);
+    return NextResponse.json({ ok: true, status, qrCode: qrStatus.qrCode || null, pairingCode, phone });
   } catch (error) {
     if (isUnauthorizedError(error)) return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Falha ao gerar QR." }, { status: 500 });

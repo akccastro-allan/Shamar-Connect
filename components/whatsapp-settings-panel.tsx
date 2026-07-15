@@ -145,9 +145,9 @@ export function WhatsappSettingsPanel({ allowedSessions }: { allowedSessions: Se
         <CardContent>
           <ol className="space-y-2 text-sm text-slate-700">
             {[
-              { step: "1", text: "Clique em Conectar abaixo (ou Mostrar QR Code)." },
+              { step: "1", text: "Clique em Conectar abaixo (ou Mostrar QR/código)." },
               { step: "2", text: "Abra o WhatsApp no celular → toque em Dispositivos conectados → Conectar dispositivo." },
-              { step: "3", text: "Escaneie o QR Code que aparecerá na tela." },
+              { step: "3", text: "Escaneie o QR Code ou use o código por telefone que aparecerá na tela." },
               { step: "4", text: "Aguarde o status mudar para Conectado." },
               { step: "5", text: "Clique em Sincronizar conversas para importar o histórico." },
             ].map(({ step, text }) => (
@@ -233,7 +233,7 @@ export function WhatsappSettingsPanel({ allowedSessions }: { allowedSessions: Se
                 </Button>
               )}
               <Button onClick={loadPairingCode} disabled={loading} variant="secondary" size="sm">
-                {status?.qrCode ? "Atualizar QR" : "Mostrar QR Code"}
+                {status?.qrCode || status?.pairingCode ? "Atualizar QR/código" : "Mostrar QR/código"}
               </Button>
               <Button onClick={syncConversations} disabled={syncing || !isConnected} variant="outline" size="sm">
                 <RefreshCcw className={`mr-2 h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
@@ -250,15 +250,16 @@ export function WhatsappSettingsPanel({ allowedSessions }: { allowedSessions: Se
 
         <Card>
           <CardHeader>
-            <CardTitle>QR Code — {sessionInfo.label}</CardTitle>
-            <CardDescription>Escaneie pelo WhatsApp em Dispositivos conectados.</CardDescription>
+            <CardTitle>QR Code e telefone — {sessionInfo.label}</CardTitle>
+            <CardDescription>Escaneie o QR ou use o código de telefone em Dispositivos conectados.</CardDescription>
           </CardHeader>
           <CardContent>
-            {status?.qrCode && !isConnected ? (
+            {(status?.qrCode || status?.pairingCode) && !isConnected ? (
               <div className="flex flex-col items-center gap-4 rounded-2xl border bg-white p-6">
-                <img src={status.qrCode} alt={`QR Code ${sessionInfo.label}`} className="h-72 w-72 rounded-xl border p-2" />
+                {status.qrCode ? <img src={status.qrCode} alt={`QR Code ${sessionInfo.label}`} className="h-72 w-72 rounded-xl border p-2" /> : null}
+                {status.pairingCode ? <p className="rounded-2xl bg-slate-100 px-5 py-3 font-mono text-3xl font-black tracking-[0.35em] text-[#1B2F5B]">{status.pairingCode}</p> : null}
                 <p className="max-w-md text-center text-sm text-muted-foreground">
-                  Sessão: <strong>{sessionInfo.label}</strong>. Abra o WhatsApp no celular, toque em Dispositivos conectados e escaneie este código.
+                  Sessão: <strong>{sessionInfo.label}</strong>. Abra o WhatsApp no celular, toque em Dispositivos conectados e escaneie o QR ou use o código exibido.
                 </p>
               </div>
             ) : isConnected ? (

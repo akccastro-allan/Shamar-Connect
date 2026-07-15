@@ -98,7 +98,7 @@ function asArray<T>(value: unknown): T[] {
   return [];
 }
 
-function normalizeStatus(session: OpenWaSession, qrCode?: string): ProviderStatus {
+function normalizeStatus(session: OpenWaSession, qrCode?: string, pairingCode?: string): ProviderStatus {
   const status = String(session.status || "idle");
   const mapped: ProviderStatus["status"] =
     status === "created"
@@ -122,6 +122,7 @@ function normalizeStatus(session: OpenWaSession, qrCode?: string): ProviderStatu
     status: mapped,
     phone: session.phone || undefined,
     qrCode,
+    pairingCode,
     error: session.lastError || undefined,
   };
 }
@@ -247,7 +248,7 @@ async function startSession(sessionName: string, options?: GatewayClientOptions)
 
 async function getSessionQr(sessionName: string, options?: GatewayClientOptions) {
   const qr = await openWaSessionFetch<OpenWaQrResponse>(sessionName, "/qr", undefined, options);
-  return normalizeStatus(qr, qr.qrCode || qr.qr);
+  return normalizeStatus(qr, qr.qrCode || qr.qr, qr.pairingCode);
 }
 
 async function sendSessionMessage(sessionName: string, payload: ProviderMessagePayload, options?: GatewayClientOptions) {

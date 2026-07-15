@@ -123,6 +123,7 @@ function channelSummary(channel: ChannelRow, organization: OrganizationRow, gate
     gatewayId,
     gatewayName: gatewayId ? gatewayById.get(gatewayId)?.name || gatewayId : null,
     externalAccountId: metadata.externalAccountId || channel.phone_number_id || channel.external_instance || null,
+    phoneNumber: channel.phone_number,
     purpose: metadataPurpose || "other",
     status: normalizeStatus(channel.status, channel.is_active ?? channel.active),
     featureStage: metadataStage || "internal_alpha",

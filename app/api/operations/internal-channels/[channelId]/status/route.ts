@@ -28,7 +28,7 @@ export async function GET(_request: Request, routeContext: Params) {
 
     const { data: channel, error: channelError } = await auth.db
       .from("channels")
-      .select("id, tenant_id, organization_id, provider, channel_type, session_id, gateway_id, status, active, is_active, metadata")
+      .select("id, tenant_id, organization_id, provider, channel_type, session_id, gateway_id, phone_number, status, active, is_active, metadata")
       .eq("tenant_id", auth.context.tenantId)
       .eq("id", channelId)
       .maybeSingle();
@@ -50,8 +50,10 @@ export async function GET(_request: Request, routeContext: Params) {
     const client = createWhatsappGatewayClient(String(channel!.session_id), { baseUrl: String(gateway!.base_url) });
     const providerStatus = await client.getStatus();
     const status = mapProviderSessionStatus(providerStatus.status);
+    const updatePayload: Record<string, unknown> = { status };
+    if (providerStatus.phone) updatePayload.phone_number = providerStatus.phone;
 
-    await auth.db.from("channels").update({ status }).eq("tenant_id", auth.context.tenantId).eq("id", channelId);
+    await auth.db.from("channels").update(updatePayload).eq("tenant_id", auth.context.tenantId).eq("id", channelId);
     return NextResponse.json({ ok: true, status, providerStatus: providerStatus.status, phone: providerStatus.phone || null, error: providerStatus.error || null });
   } catch (error) {
     if (isUnauthorizedError(error)) return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });

@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
     // Verify the requested session belongs to this tenant/org
     const { data: ownedChannel } = await client
       .from("channels")
-      .select("id")
+        .select("id")
       .eq("tenant_id", context.tenantId)
       .eq("organization_id", context.organizationId)
       .eq("session_id", resolved.sessionId)
@@ -26,6 +26,13 @@ export async function GET(request: NextRequest) {
     }
 
     const status = await resolved.client.getStatus();
+
+    if (status.phone) {
+      await client
+        .from("channels")
+        .update({ phone_number: status.phone, updated_at: new Date().toISOString() })
+        .eq("id", ownedChannel.id);
+    }
 
     await client
       .from("whatsapp_connections")
