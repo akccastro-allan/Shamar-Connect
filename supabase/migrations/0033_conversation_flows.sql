@@ -73,22 +73,24 @@ for all using (auth.role() = 'service_role')
 with check (auth.role() = 'service_role');
 
 insert into public.conversation_flows (name, description, trigger_type, status, tags)
-values
-  ('Atendimento inicial', 'Fluxo manual para iniciar uma conversa e qualificar o contato.', 'manual', 'active', array['atendimento','qualificacao']),
-  ('Follow-up comercial', 'Fluxo manual para retomar contato depois do primeiro atendimento.', 'manual', 'active', array['comercial','follow-up'])
-on conflict do nothing;
+select 'Atendimento inicial', 'Fluxo manual para iniciar uma conversa e qualificar o contato.', 'manual', 'active', array['atendimento','qualificacao']
+where not exists (select 1 from public.conversation_flows where name = 'Atendimento inicial');
+
+insert into public.conversation_flows (name, description, trigger_type, status, tags)
+select 'Follow-up comercial', 'Fluxo manual para retomar contato depois do primeiro atendimento.', 'manual', 'active', array['comercial','follow-up']
+where not exists (select 1 from public.conversation_flows where name = 'Follow-up comercial');
 
 insert into public.conversation_flow_steps (flow_id, step_order, title, message_body, wait_minutes, step_type)
-select id, 1, 'Saudação', 'Olá! Tudo bem? Recebemos sua mensagem e já vou te ajudar.', 0, 'message'
-from public.conversation_flows where name = 'Atendimento inicial'
-on conflict do nothing;
+select f.id, 1, 'Saudação', 'Olá! Tudo bem? Recebemos sua mensagem e já vou te ajudar.', 0, 'message'
+from public.conversation_flows f where f.name = 'Atendimento inicial'
+and not exists (select 1 from public.conversation_flow_steps s where s.flow_id = f.id and s.step_order = 1);
 
 insert into public.conversation_flow_steps (flow_id, step_order, title, message_body, wait_minutes, step_type)
-select id, 2, 'Qualificação', 'Para eu te orientar melhor, pode me passar mais detalhes sobre o que você precisa?', 0, 'question'
-from public.conversation_flows where name = 'Atendimento inicial'
-on conflict do nothing;
+select f.id, 2, 'Qualificação', 'Para eu te orientar melhor, pode me passar mais detalhes sobre o que você precisa?', 0, 'question'
+from public.conversation_flows f where f.name = 'Atendimento inicial'
+and not exists (select 1 from public.conversation_flow_steps s where s.flow_id = f.id and s.step_order = 2);
 
 insert into public.conversation_flow_steps (flow_id, step_order, title, message_body, wait_minutes, step_type)
-select id, 1, 'Retomada', 'Olá! Passando para saber se você conseguiu avaliar as informações que conversamos.', 1440, 'follow_up'
-from public.conversation_flows where name = 'Follow-up comercial'
-on conflict do nothing;
+select f.id, 1, 'Retomada', 'Olá! Passando para saber se você conseguiu avaliar as informações que conversamos.', 1440, 'follow_up'
+from public.conversation_flows f where f.name = 'Follow-up comercial'
+and not exists (select 1 from public.conversation_flow_steps s where s.flow_id = f.id and s.step_order = 1);

@@ -210,7 +210,7 @@ quick_replies
 Arquivo:
 
 ```txt
-supabase/migrations/0032_inbox_crm_extensions.sql
+supabase/migrations/0002_inbox_crm_extensions.sql
 ```
 
 Adiciona:
@@ -225,7 +225,7 @@ quick_replies
 
 ## Atenção operacional
 
-Antes de usar o Inbox completo em produção, executar a migration `0032_inbox_crm_extensions.sql` no Supabase.
+Antes de usar o Inbox completo em produção, executar a migration `0002_inbox_crm_extensions.sql` no Supabase.
 
 ## Próximas melhorias
 

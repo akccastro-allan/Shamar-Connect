@@ -87,7 +87,7 @@ Objetivo:
 Migration criada:
 
 ```txt
-supabase/migrations/0002_group_import_review_status.sql
+supabase/migrations/0032_group_import_review_status.sql
 ```
 
 Campo adicionado:
@@ -181,7 +181,7 @@ Listas importadas
 
 ## Próximos passos
 
-1. Rodar a migration `0002_group_import_review_status.sql` no Supabase.
+1. Rodar a migration `0032_group_import_review_status.sql` no Supabase.
 2. Criar pré-visualização de importação de arquivos antes de salvar.
 3. Criar upload real de `.txt` e `.csv`.
 4. Adicionar leitura de `.xlsx`.
