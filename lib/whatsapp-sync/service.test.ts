@@ -12,7 +12,7 @@ import type { OpenWaSyncProvider } from "./providers/openwa-sync-provider.ts";
 const tenantId = "11111111-1111-4111-8111-111111111111";
 const organizationId = "8f074193-bf58-4537-9842-720619a9f259";
 const channelId = "22222222-2222-4222-8222-222222222222";
-const migration0035 = readFileSync("supabase/migrations/0035_whatsapp_auto_sync.sql", "utf8");
+const migration0035 = readFileSync("supabase/migrations/20260716081940_0035_whatsapp_auto_sync.sql", "utf8");
 
 type Tables = Record<string, Record<string, any>[]>;
 

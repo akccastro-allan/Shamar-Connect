@@ -1,4 +1,5 @@
 -- 0036: Scheduler Production para sincronizacao WhatsApp.
+-- A migration do scheduler só pode ser aplicada depois do endpoint existir em Production e do INTERNAL_API_KEY estar configurado no ambiente Production.
 -- NAO aplicar antes do deployment Production existir e dos segredos estarem no Supabase Vault.
 -- Nao versionar INTERNAL_API_KEY. Segredos esperados no Vault:
 --   shamar_connect_sync_worker_url = https://www.shamarconnect.com.br/api/internal/whatsapp-sync/process
