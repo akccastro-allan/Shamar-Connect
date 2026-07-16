@@ -28,7 +28,7 @@ alter table public.whatsapp_conversations
   add column if not exists sla_due_at timestamptz,
   add column if not exists sla_status text,
   add column if not exists watchdog_checked_at timestamptz,
-  add column if not exists queue_status text not null default 'waiting',
+  add column if not exists queue_status text,
   add column if not exists handoff_reason text,
   add column if not exists queue_entered_at timestamptz,
   add column if not exists assigned_user_id uuid references public.app_users(id) on delete set null,
@@ -47,8 +47,14 @@ alter table public.whatsapp_conversations
   add column if not exists queue_reason text;
 
 alter table public.whatsapp_conversations
+  alter column queue_status set default 'waiting';
+
+alter table public.whatsapp_conversations
   drop constraint if exists whatsapp_conversations_queue_status_check,
-  add constraint whatsapp_conversations_queue_status_check check (queue_status in ('waiting', 'in_progress', 'awaiting_customer', 'resolved', 'closed'));
+  add constraint whatsapp_conversations_queue_status_check check (
+    queue_status is null
+    or queue_status in ('waiting', 'in_progress', 'awaiting_customer', 'resolved', 'closed')
+  );
 
 alter table public.whatsapp_conversations
   drop constraint if exists whatsapp_conversations_status_check,
@@ -65,7 +71,13 @@ alter table public.whatsapp_conversations
 
 alter table public.whatsapp_conversations
   drop constraint if exists whatsapp_conversations_sla_status_check,
-  add constraint whatsapp_conversations_sla_status_check check (sla_status is null or sla_status in ('on_time', 'warning', 'breached', 'completed')) not valid;
+  add constraint whatsapp_conversations_sla_status_check check (sla_status in ('on_time', 'warning', 'breached', 'completed', 'ok', 'pending'));
+
+comment on column public.whatsapp_conversations.sla_status is
+  'Estados oficiais: on_time, warning, breached, completed. Valores legados ok/pending permanecem temporariamente ate revisao semantica futura.';
+
+alter table public.whatsapp_conversations
+  alter column sla_status set default 'on_time';
 
 create table if not exists public.department_memberships (
   id uuid primary key default gen_random_uuid(),
@@ -167,15 +179,29 @@ create table if not exists public.whatsapp_conversation_events (
 
 alter table public.whatsapp_conversation_events
   add column if not exists channel_id uuid references public.channels(id) on delete set null,
+  add column if not exists actor_type text not null default 'system',
+  add column if not exists actor_id uuid,
   add column if not exists actor_user_id uuid references public.app_users(id) on delete set null,
+  add column if not exists previous_state text,
+  add column if not exists new_state text,
   add column if not exists from_value text,
   add column if not exists to_value text;
+
+alter table public.whatsapp_conversation_events
+  drop constraint if exists whatsapp_conversation_events_actor_type_check,
+  add constraint whatsapp_conversation_events_actor_type_check check (actor_type in ('system', 'user', 'automation', 'provider'));
 
 alter table public.department_memberships enable row level security;
 alter table public.agent_availability enable row level security;
 alter table public.agent_availability_events enable row level security;
 alter table public.queue_business_hours enable row level security;
 alter table public.whatsapp_conversation_events enable row level security;
+
+revoke all on table public.department_memberships from public, anon, authenticated;
+revoke all on table public.agent_availability from public, anon, authenticated;
+revoke all on table public.agent_availability_events from public, anon, authenticated;
+revoke all on table public.queue_business_hours from public, anon, authenticated;
+revoke all on table public.whatsapp_conversation_events from public, anon, authenticated;
 
 grant all on table public.department_memberships to service_role;
 grant all on table public.agent_availability to service_role;
@@ -214,11 +240,20 @@ as $$
 declare
   changed_count integer := 0;
 begin
-  with lips_supervision as (
+  with candidates as (
+    select distinct c.tenant_id, c.organization_id
+    from public.channels c
+    join public.organizations o on o.id = c.organization_id and o.slug = 'auto-pecas-auto-center-lips'
+    where c.session_id = 'lips-main'
+  ), lips_scope as (
+    select tenant_id, organization_id
+    from candidates
+    where (select count(*) from candidates) = 1
+  ), lips_supervision as (
     select d.id, d.tenant_id, d.organization_id
     from public.departments d
-    where d.organization_id = '8f074193-bf58-4537-9842-720619a9f259'::uuid
-      and public.normalize_department_name(d.name) = 'supervisao'
+    join lips_scope scope on scope.tenant_id = d.tenant_id and scope.organization_id = d.organization_id
+    where public.normalize_department_name(d.name) = 'supervisao'
       and d.is_active = true
     limit 1
   ), changed as (
@@ -228,7 +263,9 @@ begin
         priority = 'urgent',
         department_id = case when escalate_to_supervision then coalesce((select id from lips_supervision), c.department_id) else c.department_id end,
         updated_at = now()
-    where c.organization_id = '8f074193-bf58-4537-9842-720619a9f259'::uuid
+    from lips_scope scope
+    where c.tenant_id = scope.tenant_id
+      and c.organization_id = scope.organization_id
       and c.queue_status in ('waiting', 'in_progress', 'awaiting_customer')
       and c.sla_due_at is not null
       and c.sla_due_at <= now()
@@ -252,6 +289,7 @@ grant execute on function public.mark_lips_sla_breaches(boolean) to service_role
 insert into public.departments (tenant_id, organization_id, name, color, is_active)
 select c.tenant_id, c.organization_id, d.name, d.color, true
 from public.channels c
+join public.organizations o on o.id = c.organization_id and o.slug = 'auto-pecas-auto-center-lips'
 cross join (values
   ('Balcão', '#2ABFAB'),
   ('Oficina', '#1B2F5B'),
@@ -259,7 +297,6 @@ cross join (values
   ('Supervisão', '#C9952A')
 ) as d(name, color)
 where c.session_id = 'lips-main'
-  and c.organization_id = '8f074193-bf58-4537-9842-720619a9f259'::uuid
   and not exists (
     select 1 from public.departments existing
     where existing.tenant_id = c.tenant_id
@@ -271,8 +308,8 @@ update public.departments d
 set is_active = true,
     updated_at = now()
 from public.channels c
+join public.organizations o on o.id = c.organization_id and o.slug = 'auto-pecas-auto-center-lips'
 where c.session_id = 'lips-main'
-  and c.organization_id = '8f074193-bf58-4537-9842-720619a9f259'::uuid
   and d.tenant_id = c.tenant_id
   and d.organization_id = c.organization_id
   and public.normalize_department_name(d.name) in ('balcao', 'oficina', 'financeiro', 'supervisao')
@@ -281,18 +318,18 @@ where c.session_id = 'lips-main'
 insert into public.queue_business_hours (tenant_id, organization_id)
 select c.tenant_id, c.organization_id
 from public.channels c
+join public.organizations o on o.id = c.organization_id and o.slug = 'auto-pecas-auto-center-lips'
 where c.session_id = 'lips-main'
-  and c.organization_id = '8f074193-bf58-4537-9842-720619a9f259'::uuid
 on conflict (organization_id) do nothing;
 
 insert into public.department_memberships (tenant_id, organization_id, department_id, tenant_user_id, app_user_id, status, capacity)
 select c.tenant_id, c.organization_id, d.id, tu.id, au.id, 'active', 3
 from public.channels c
+join public.organizations o on o.id = c.organization_id and o.slug = 'auto-pecas-auto-center-lips'
 join public.app_users au on au.email = 'lips@moriahsystems.com.br' and au.status = 'active'
 join public.tenant_users tu on tu.tenant_id = c.tenant_id and tu.app_user_id = au.id and tu.role = 'owner' and tu.status = 'active'
 join public.departments d on d.tenant_id = c.tenant_id and d.organization_id = c.organization_id and public.normalize_department_name(d.name) in ('balcao', 'oficina', 'financeiro', 'supervisao') and d.is_active = true
 where c.session_id = 'lips-main'
-  and c.organization_id = '8f074193-bf58-4537-9842-720619a9f259'::uuid
 on conflict (department_id, app_user_id)
 do update set
   status = 'active',
@@ -302,10 +339,10 @@ do update set
 insert into public.agent_availability (tenant_id, organization_id, app_user_id, status, accepting_new_conversations, current_load, active_conversations, capacity, updated_at)
 select c.tenant_id, c.organization_id, au.id, 'offline', false, 0, 0, 3, now()
 from public.channels c
+join public.organizations o on o.id = c.organization_id and o.slug = 'auto-pecas-auto-center-lips'
 join public.app_users au on au.email = 'lips@moriahsystems.com.br' and au.status = 'active'
 join public.tenant_users tu on tu.tenant_id = c.tenant_id and tu.app_user_id = au.id and tu.role = 'owner' and tu.status = 'active'
 where c.session_id = 'lips-main'
-  and c.organization_id = '8f074193-bf58-4537-9842-720619a9f259'::uuid
 on conflict (organization_id, app_user_id)
 do update set
   status = 'offline',
