@@ -1,0 +1,1 @@
+-- Consolidated in 20260620211811_fix_media_type_ambiguous.sql for reproducible local history.
