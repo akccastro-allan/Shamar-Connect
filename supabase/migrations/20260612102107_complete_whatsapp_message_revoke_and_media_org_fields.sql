@@ -68,3 +68,30 @@ create table if not exists public.whatsapp_shared_contacts (
 create index if not exists whatsapp_media_files_message_id_idx on public.whatsapp_media_files(message_id);
 create index if not exists whatsapp_shared_locations_message_id_idx on public.whatsapp_shared_locations(message_id);
 create index if not exists whatsapp_shared_contacts_message_id_idx on public.whatsapp_shared_contacts(message_id);
+
+alter table public.whatsapp_media_files enable row level security;
+alter table public.whatsapp_shared_locations enable row level security;
+alter table public.whatsapp_shared_contacts enable row level security;
+
+revoke all on table public.whatsapp_media_files from public, anon, authenticated;
+revoke all on table public.whatsapp_shared_locations from public, anon, authenticated;
+revoke all on table public.whatsapp_shared_contacts from public, anon, authenticated;
+
+grant all on table public.whatsapp_media_files to service_role;
+grant all on table public.whatsapp_shared_locations to service_role;
+grant all on table public.whatsapp_shared_contacts to service_role;
+
+drop policy if exists "service_all_whatsapp_media_files" on public.whatsapp_media_files;
+create policy "service_all_whatsapp_media_files" on public.whatsapp_media_files
+  for all using (auth.role() = 'service_role')
+  with check (auth.role() = 'service_role');
+
+drop policy if exists "service_all_whatsapp_shared_locations" on public.whatsapp_shared_locations;
+create policy "service_all_whatsapp_shared_locations" on public.whatsapp_shared_locations
+  for all using (auth.role() = 'service_role')
+  with check (auth.role() = 'service_role');
+
+drop policy if exists "service_all_whatsapp_shared_contacts" on public.whatsapp_shared_contacts;
+create policy "service_all_whatsapp_shared_contacts" on public.whatsapp_shared_contacts
+  for all using (auth.role() = 'service_role')
+  with check (auth.role() = 'service_role');

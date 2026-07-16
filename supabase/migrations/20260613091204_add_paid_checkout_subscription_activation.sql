@@ -33,6 +33,15 @@ CREATE TABLE IF NOT EXISTS public.billing_subscriptions (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+ALTER TABLE public.billing_subscriptions ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.billing_subscriptions FROM public, anon, authenticated;
+GRANT ALL ON TABLE public.billing_subscriptions TO service_role;
+
+DROP POLICY IF EXISTS "service_all_billing_subscriptions" ON public.billing_subscriptions;
+CREATE POLICY "service_all_billing_subscriptions" ON public.billing_subscriptions
+  FOR ALL USING (auth.role() = 'service_role')
+  WITH CHECK (auth.role() = 'service_role');
+
 ALTER TABLE public.billing_subscriptions
   ADD COLUMN IF NOT EXISTS checkout_session_id    uuid         REFERENCES public.billing_checkout_sessions(id),
   ADD COLUMN IF NOT EXISTS addons                 jsonb        NOT NULL DEFAULT '[]',

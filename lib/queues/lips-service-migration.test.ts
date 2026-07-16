@@ -9,7 +9,7 @@ const migration0034bPath = `${migrationsDir}/20260716081634_0034b_lips_service_q
 const migration0034cPath = `${migrationsDir}/20260716081700_0034c_lips_service_queue_function.sql`;
 const migration0034dPath = `${migrationsDir}/20260716081742_0034d_lips_service_queue_seed.sql`;
 const migration0035Path = `${migrationsDir}/20260716081940_0035_whatsapp_auto_sync.sql`;
-const migration0036Path = `${migrationsDir}/20260716082000_0036_whatsapp_sync_scheduler.sql`;
+const pendingSchedulerPath = "docs/operations/sql/whatsapp_sync_scheduler_pending.sql";
 
 const migration0034a = readFileSync(migration0034aPath, "utf8");
 const migration0034b = readFileSync(migration0034bPath, "utf8");
@@ -17,16 +17,19 @@ const migration0034c = readFileSync(migration0034cPath, "utf8");
 const migration0034d = readFileSync(migration0034dPath, "utf8");
 const migration0034 = [migration0034a, migration0034b, migration0034c, migration0034d].join("\n");
 const migration0035 = readFileSync(migration0035Path);
-const migration0036 = readFileSync(migration0036Path, "utf8");
+const pendingScheduler = readFileSync(pendingSchedulerPath, "utf8");
 
 test("historico local reflete migrations aplicadas no Supabase", () => {
   assert.equal(existsSync(`${migrationsDir}/0034_lips_service_queue.sql`), false);
   assert.equal(existsSync(`${migrationsDir}/0035_whatsapp_auto_sync.sql`), false);
   assert.equal(existsSync(`${migrationsDir}/0036_whatsapp_sync_scheduler.sql`), false);
 
-  for (const path of [migration0034aPath, migration0034bPath, migration0034cPath, migration0034dPath, migration0035Path, migration0036Path]) {
+  for (const path of [migration0034aPath, migration0034bPath, migration0034cPath, migration0034dPath, migration0035Path]) {
     assert.equal(existsSync(path), true, `${path} deve existir`);
   }
+
+  assert.equal(existsSync(`${migrationsDir}/20260716082000_0036_whatsapp_sync_scheduler.sql`), false);
+  assert.equal(existsSync(pendingSchedulerPath), true);
 
   const migrationFiles = readdirSync(migrationsDir);
   assert.equal(migrationFiles.filter((file) => file.includes("0034") && file.endsWith(".sql")).length, 4);
@@ -100,8 +103,8 @@ test("0035 usa timestamp aplicado e permanece inalterada", () => {
   assert.equal(hash, "4b1e1ea7eeef14022905807550322cf9aac13e7eee615c6d75d245d7e14390e7");
 });
 
-test("0036 permanece pendente e posterior ao historico aplicado", () => {
-  assert.match(migration0036Path, /20260716082000_0036_whatsapp_sync_scheduler\.sql$/);
-  assert.match(migration0036, /A migration do scheduler só pode ser aplicada depois do endpoint existir em Production e do INTERNAL_API_KEY estar configurado no ambiente Production\./);
-  assert.match(migration0036, /cron\.schedule/);
+test("scheduler 0036 fica fora de migrations e somente em SQL operacional pendente", () => {
+  assert.match(pendingScheduler, /PENDENTE — NÃO APLICAR AUTOMATICAMENTE/);
+  assert.match(pendingScheduler, /Nao reutilizar o timestamp 20260716082000/);
+  assert.match(pendingScheduler, /cron\.schedule/);
 });
