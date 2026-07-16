@@ -17,7 +17,7 @@ Avançar a tela `/whatsapp-messages` com recursos de atendimento e operação:
 ### Migration de notas internas
 
 ```txt
-supabase/migrations/0033_conversation_notes.sql
+supabase/migrations/0004_conversation_notes.sql
 ```
 
 Cria a tabela:

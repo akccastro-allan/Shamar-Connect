@@ -11,7 +11,7 @@ A primeira versão não dispara mensagens automaticamente. Ela permite seleciona
 ## Migration criada
 
 ```txt
-supabase/migrations/0004_conversation_flows.sql
+supabase/migrations/0033_conversation_flows.sql
 ```
 
 ## Tabelas criadas
