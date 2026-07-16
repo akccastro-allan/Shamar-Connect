@@ -76,6 +76,7 @@ export async function POST(request: NextRequest) {
       .insert({
         tenant_id: context.tenantId,
         organization_id: context.organizationId,
+        channel_id: conversation.channel_id || null,
         external_message_id: externalMessageId,
         provider: "whatsapp_web",
         conversation_id: conversation.id,

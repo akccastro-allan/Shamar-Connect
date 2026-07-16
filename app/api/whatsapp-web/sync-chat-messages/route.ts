@@ -1,401 +1,84 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
+import { isSupervisorRole } from "@/lib/queues/lips-queue";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
-import { requireOwnedWhatsappSession } from "../_auth";
-import type { ProviderChatSummary, ProviderSyncedMessage } from "@/types/messaging-provider";
+import { enqueueWhatsappSync } from "@/lib/whatsapp-sync/service";
 
-function normalizePhone(value?: string) {
-  return String(value || "").replace(/\D/g, "");
+function clampLimit(value: unknown, fallback: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(Math.max(Math.trunc(parsed), 1), 100);
 }
 
-type AppContext = Awaited<ReturnType<typeof getRequiredAppContext>>;
-type SupabaseWriteClient = ReturnType<typeof createSupabaseWriteClient>;
+function normalizeChatIds(body: Record<string, unknown>) {
+  if (Array.isArray(body.chatIds)) return body.chatIds.map(String).filter(Boolean);
+  if (body.chatId) return [String(body.chatId)];
+  return [];
+}
 
-type SyncMessageError = {
-  chatId: string;
-  messageId?: string;
-  step: string;
-  error: string;
-};
+async function enqueueManualDiagnostic(body: Record<string, unknown>) {
+  const context = await getRequiredAppContext();
+  const db = createSupabaseWriteClient();
+  const chatIds = normalizeChatIds(body);
+  const channelId = body.channelId ? String(body.channelId) : null;
 
-async function upsertContact(
-  client: SupabaseWriteClient,
-  context: AppContext,
-  phone: string,
-  name?: string,
-) {
-  if (!phone) return null;
+  if (!isSupervisorRole(context.role)) {
+    return NextResponse.json({ ok: false, error: "Diagnóstico restrito a administradores." }, { status: 403 });
+  }
 
-  const { data: existingContact, error: contactLookupError } = await client
-    .from("crm_contacts")
-    .select("id")
+  if (!channelId) {
+    return NextResponse.json({ ok: false, error: "channelId is required." }, { status: 400 });
+  }
+
+  const { data: channel, error } = await db
+    .from("channels")
+    .select("id, tenant_id, organization_id, session_id, provider")
+    .eq("id", channelId)
     .eq("tenant_id", context.tenantId)
     .eq("organization_id", context.organizationId)
-    .eq("phone", phone)
     .maybeSingle();
+  if (error) throw error;
+  if (!channel?.id) return NextResponse.json({ ok: false, error: "Canal não encontrado." }, { status: 403 });
+  if (channel.provider && channel.provider !== "whatsapp_web") return NextResponse.json({ ok: false, error: "Canal não é WhatsApp Web." }, { status: 400 });
 
-  if (contactLookupError) throw contactLookupError;
-
-  if (existingContact?.id) {
-    const { data: updatedContact, error: updateContactError } = await client
-      .from("crm_contacts")
-      .update({
-        name: name || phone,
-        source: "whatsapp_web_history",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", existingContact.id)
-      .eq("tenant_id", context.tenantId)
-      .eq("organization_id", context.organizationId)
-      .select("id")
-      .single();
-
-    if (updateContactError) throw updateContactError;
-    return updatedContact?.id || existingContact.id;
-  }
-
-  const { data: createdContact, error: createContactError } = await client
-    .from("crm_contacts")
-    .insert({
-      tenant_id: context.tenantId,
-      organization_id: context.organizationId,
-      phone,
-      name: name || phone,
-      source: "whatsapp_web_history",
-      updated_at: new Date().toISOString(),
-    })
-    .select("id")
-    .single();
-
-  if (createContactError) throw createContactError;
-  return createdContact?.id || null;
-}
-
-async function upsertConversation(
-  client: SupabaseWriteClient,
-  context: AppContext,
-  payload: {
-    externalChatId: string;
-    name: string;
-    isGroup: boolean;
-    contactId: string | null;
-    lastMessageAt?: string | null;
-    unreadCount?: number;
-    channelId: string;
-  },
-) {
-  const { data: existingConversation, error: conversationLookupError } = await client
-    .from("whatsapp_conversations")
-    .select("id")
-    .eq("tenant_id", context.tenantId)
-    .eq("organization_id", context.organizationId)
-    .eq("provider", "whatsapp_web")
-    .eq("channel_id", payload.channelId)
-    .eq("external_chat_id", payload.externalChatId)
-    .maybeSingle();
-
-  if (conversationLookupError) throw conversationLookupError;
-
-  const conversationPayload = {
-    tenant_id: context.tenantId,
-    organization_id: context.organizationId,
-    provider: "whatsapp_web",
-    external_chat_id: payload.externalChatId,
-    contact_id: payload.contactId,
-    name: payload.name,
-    is_group: payload.isGroup,
-    unread_count: payload.unreadCount || 0,
-    last_message_at: payload.lastMessageAt || new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    ...(payload.channelId ? { channel_id: payload.channelId } : {}),
-  };
-
-  if (existingConversation?.id) {
-    const { data: updatedConversation, error: updateConversationError } = await client
-      .from("whatsapp_conversations")
-      .update(conversationPayload)
-      .eq("id", existingConversation.id)
-      .eq("tenant_id", context.tenantId)
-      .eq("organization_id", context.organizationId)
-      .select("id")
-      .single();
-
-    if (updateConversationError) throw updateConversationError;
-    return updatedConversation?.id || existingConversation.id;
-  }
-
-  const { data: createdConversation, error: createConversationError } = await client
-    .from("whatsapp_conversations")
-    .insert(conversationPayload)
-    .select("id")
-    .single();
-
-  if (createConversationError) throw createConversationError;
-  return createdConversation?.id || null;
-}
-
-function resolveMessageType(message: ProviderSyncedMessage) {
-  return message.mediaType || message.type || (message.hasMedia ? "media" : "text");
-}
-
-function resolveMessageBody(message: ProviderSyncedMessage) {
-  const text = String(message.body || "").trim();
-  if (text) return text;
-
-  const type = resolveMessageType(message);
-  const mimeType = message.mimeType || message.media?.mimetype || "";
-
-  if (type === "sticker") return "[Figurinha recebida]";
-  if (type === "image") return "[Imagem recebida]";
-  if (type === "audio" || type === "ptt") return "[Áudio recebido]";
-  if (type === "video") return "[Vídeo recebido]";
-  if (type === "document") return "[Documento recebido]";
-  if (message.hasMedia) return mimeType ? `[Mídia recebida: ${mimeType}]` : "[Mídia recebida]";
-
-  return null;
-}
-
-function resolveMediaSummary(message: ProviderSyncedMessage) {
-  if (!message.hasMedia) return null;
-
-  const type = resolveMessageType(message);
-  const mimeType = message.mimeType || message.media?.mimetype || "";
-  const label = type === "sticker" ? "Figurinha" : type || "Mídia";
-
-  return mimeType ? `${label} (${mimeType})` : label;
-}
-
-function sanitizeRawPayload(message: ProviderSyncedMessage) {
-  const payload = JSON.parse(JSON.stringify(message)) as Record<string, unknown>;
-  const media = payload.media as Record<string, unknown> | undefined;
-
-  if (media && typeof media === "object" && typeof media.data === "string") {
-    const data = media.data;
-    const type = String(payload.mediaType || payload.type || "").toLowerCase();
-    const mimeType = String(media.mimetype || payload.mimeType || "").toLowerCase();
-    const canInlineRender = type === "sticker" && mimeType.includes("webp") && data.length <= 250_000;
-
-    if (!canInlineRender) {
-      delete media.data;
-      media.dataOmitted = true;
-    }
-
-    media.dataLength = data.length;
-  }
-
-  return payload;
-}
-
-async function upsertMessage(
-  client: SupabaseWriteClient,
-  context: AppContext,
-  message: ProviderSyncedMessage,
-  conversationId: string,
-  contactId: string | null,
-  channelId: string,
-) {
-  const externalMessageId = String(message.id || "").trim();
-  if (!externalMessageId) return false;
-
-  const { data: existingMessage, error: messageLookupError } = await client
-    .from("whatsapp_messages")
-    .select("id")
-    .eq("tenant_id", context.tenantId)
-    .eq("organization_id", context.organizationId)
-    .eq("provider", "whatsapp_web")
-    .eq("channel_id", channelId)
-    .eq("external_message_id", externalMessageId)
-    .maybeSingle();
-
-  if (messageLookupError) throw messageLookupError;
-
-  const messagePayload = {
-    tenant_id: context.tenantId,
-    organization_id: context.organizationId,
-    external_message_id: externalMessageId,
-    provider: "whatsapp_web",
-    channel_id: channelId,
-    conversation_id: conversationId,
-    contact_id: contactId,
-    direction: message.direction || "inbound",
-    from_id: message.from || null,
-    to_id: message.to || null,
-    body: resolveMessageBody(message),
-    message_type: resolveMessageType(message),
-    raw_payload: sanitizeRawPayload(message),
-    has_media: Boolean(message.hasMedia),
-    media_count: message.hasMedia ? 1 : 0,
-    media_summary: resolveMediaSummary(message),
-    created_at: message.timestamp
-      ? new Date(Number(message.timestamp) * 1000).toISOString()
-      : new Date().toISOString(),
-  };
-
-  if (existingMessage?.id) {
-    const { error: updateMessageError } = await client
-      .from("whatsapp_messages")
-      .update(messagePayload)
-      .eq("id", existingMessage.id)
-      .eq("tenant_id", context.tenantId)
-      .eq("organization_id", context.organizationId);
-
-    if (updateMessageError) throw updateMessageError;
-    return false;
-  }
-
-  const { error: insertMessageError } = await client
-    .from("whatsapp_messages")
-    .insert(messagePayload);
-
-  if (insertMessageError) throw insertMessageError;
-  return true;
-}
-
-async function syncChat(
-  client: SupabaseWriteClient,
-  context: AppContext,
-  chat: ProviderChatSummary,
-  limit: number,
-  gatewayClient: { listChatMessages: (chatId: string, limit?: number) => Promise<ProviderSyncedMessage[]> },
-  channelId: string,
-) {
-  const messages = await gatewayClient.listChatMessages(chat.id, limit);
-  const latestMessage = messages[0];
-  const phone = normalizePhone(latestMessage?.phone || latestMessage?.from || latestMessage?.to || chat.id);
-  const contactId = phone ? await upsertContact(client, context, phone, latestMessage?.contactName || chat.name || phone) : null;
-
-  const lastMessageAt = latestMessage?.timestamp
-    ? new Date(Number(latestMessage.timestamp) * 1000).toISOString()
-    : chat.lastMessageAt || null;
-
-  const conversationId = await upsertConversation(client, context, {
-    externalChatId: chat.id,
-    name: chat.name || latestMessage?.chatName || latestMessage?.contactName || chat.id,
-    isGroup: Boolean(chat.isGroup),
-    contactId,
-    lastMessageAt,
-    unreadCount: chat.unreadCount || 0,
-    channelId,
+  const result = await enqueueWhatsappSync(db, {
+    tenantId: context.tenantId,
+    organizationId: context.organizationId,
+    channelId: channel.id,
+    sessionId: channel.session_id,
+    mode: "manual_diagnostic",
+    triggerSource: "inbox_manual_button",
+    requestedByAppUserId: context.appUserId,
+    selectedChatIds: chatIds,
+    chatLimit: clampLimit(body.chatLimit, chatIds.length || 1),
+    messageLimit: clampLimit(body.limit ?? body.messageLimit, 50),
+    metadata: { requestedFrom: "sync-chat-messages" },
   });
 
-  let savedMessages = 0;
-  const errors: SyncMessageError[] = [];
-
-  if (conversationId) {
-    for (const message of messages) {
-      try {
-        const messagePhone = normalizePhone(message.phone || message.from || message.to || phone);
-        const messageContactId = messagePhone
-          ? await upsertContact(client, context, messagePhone, message.contactName || chat.name || messagePhone)
-          : contactId;
-
-        const inserted = await upsertMessage(client, context, message, conversationId, messageContactId, channelId);
-        if (inserted) savedMessages += 1;
-      } catch (error) {
-        errors.push({
-          chatId: chat.id,
-          messageId: message.id,
-          step: "upsertMessage",
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-  }
-
-  return { chatId: chat.id, scanned: messages.length, savedMessages, conversationId, errors };
-}
-
-async function syncChats(chatIds?: string[], messageLimit = 50, chatLimit = 20, sessionId?: string | null) {
-  const session = await requireOwnedWhatsappSession(sessionId);
-  if (!session.ok) throw new Error("CHANNEL_FORBIDDEN");
-
-  const { context, db: client, resolved, channelId } = session;
-
-  const allChats = await resolved.client.listChats();
-  const selectedChats = Array.isArray(chatIds) && chatIds.length > 0
-    ? allChats.filter((chat) => chatIds.includes(chat.id))
-    : allChats.slice(0, chatLimit);
-
-  const results = [];
-  const chatErrors = [];
-
-  for (const chat of selectedChats) {
-    try {
-      results.push(await syncChat(client, context, chat, messageLimit, resolved.client, channelId));
-    } catch (error) {
-      chatErrors.push({
-        chatId: chat.id,
-        step: "syncChat",
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  const messageErrors = results.flatMap((item) => item.errors || []);
-
-  return {
-    ok: chatErrors.length === 0 && messageErrors.length === 0,
-    partial: chatErrors.length > 0 || messageErrors.length > 0,
-    totalGatewayChats: allChats.length,
-    syncedChats: results.length,
-    failedChats: chatErrors.length,
-    failedMessages: messageErrors.length,
-    savedMessages: results.reduce((sum, item) => sum + item.savedMessages, 0),
-    results,
-    chatErrors,
-    messageErrors: messageErrors.slice(0, 20),
-  };
+  return NextResponse.json({ ok: true, queued: result.created, runId: result.runId, status: result.status, mode: "manual_diagnostic" });
 }
 
 export async function GET(request: NextRequest) {
   try {
-    const searchParams = request.nextUrl.searchParams;
-    const chatId = searchParams.get("chatId");
-    const sessionId = searchParams.get("sessionId");
-    const limit = Math.min(Number(searchParams.get("limit") || 30), 200);
-    const chatLimit = Math.min(Number(searchParams.get("chatLimit") || 20), 100);
-    const result = await syncChats(chatId ? [chatId] : undefined, limit, chatLimit, sessionId);
-    return NextResponse.json(result);
+    const body = {
+      chatId: request.nextUrl.searchParams.get("chatId") || undefined,
+      channelId: request.nextUrl.searchParams.get("channelId") || undefined,
+      limit: request.nextUrl.searchParams.get("limit") || undefined,
+      chatLimit: request.nextUrl.searchParams.get("chatLimit") || undefined,
+    };
+    return enqueueManualDiagnostic(body);
   } catch (error) {
-    if (isUnauthorizedError(error)) {
-      return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
-    }
-    if (error instanceof Error && error.message === "CHANNEL_FORBIDDEN") {
-      return NextResponse.json({ ok: false, error: "Canal não encontrado." }, { status: 403 });
-    }
-
-    return NextResponse.json(
-      { ok: false, error: error instanceof Error ? error.message : "Failed to sync chat messages" },
-      { status: 500 },
-    );
+    if (isUnauthorizedError(error)) return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Failed to enqueue chat sync" }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
-    const chatIds = Array.isArray(body?.chatIds)
-      ? body.chatIds.map(String)
-      : body?.chatId
-        ? [String(body.chatId)]
-        : undefined;
-    const messageLimit = Math.min(Number(body?.limit || 50), 200);
-    const chatLimit = Math.min(Number(body?.chatLimit || 20), 100);
-    const sessionId = body?.sessionId ? String(body.sessionId) : null;
-
-    const result = await syncChats(chatIds, messageLimit, chatLimit, sessionId);
-    return NextResponse.json(result);
+    return enqueueManualDiagnostic(body && typeof body === "object" ? body as Record<string, unknown> : {});
   } catch (error) {
-    if (isUnauthorizedError(error)) {
-      return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
-    }
-    if (error instanceof Error && error.message === "CHANNEL_FORBIDDEN") {
-      return NextResponse.json({ ok: false, error: "Canal não encontrado." }, { status: 403 });
-    }
-
-    return NextResponse.json(
-      { ok: false, error: error instanceof Error ? error.message : "Failed to sync chat messages" },
-      { status: 500 },
-    );
+    if (isUnauthorizedError(error)) return NextResponse.json({ ok: false, error: "Não autorizado." }, { status: 401 });
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Failed to enqueue chat sync" }, { status: 500 });
   }
 }

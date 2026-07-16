@@ -12,6 +12,7 @@ import {
   sendAndSaveResponse,
 } from "@/lib/agents/lips-simple-processor";
 import { LIPS_ORGANIZATION_ID } from "@/lib/agents/auto-reply-config";
+import { enqueueWhatsappSyncForConnectedSession } from "@/lib/whatsapp-sync/service";
 
 export const dynamic = "force-dynamic";
 
@@ -247,7 +248,7 @@ async function routeNonTextToHuman(
       status: "pending",
       requires_human: true,
       pending_reason: pendingReason,
-      sla_status: "pending",
+      sla_status: "on_time",
       updated_at: new Date().toISOString(),
     })
     .eq("id", conversationId);
@@ -261,6 +262,21 @@ export async function POST(request: NextRequest) {
     }
 
     const body = JSON.parse(rawBody) as Record<string, unknown>;
+
+    if (["session.status", "session.status_changed", "session.ready", "session.connected"].includes(String(body.event || ""))) {
+      const data = (body.data || {}) as Record<string, unknown>;
+      const sessionId = String(body.sessionId || data.sessionId || data.session_id || "").trim();
+      const status = String(body.status || data.status || body.event || "").toLowerCase();
+
+      if (sessionId && (status.includes("connected") || status.includes("ready"))) {
+        const db = createSupabaseWriteClient();
+        await enqueueWhatsappSyncForConnectedSession(db, {
+          sessionId,
+          triggerSource: "openwa_session_connected_webhook",
+          metadata: { event: body.event },
+        });
+      }
+    }
 
     if (body.event === "message.received" && body.sessionId && body.data) {
       const data = body.data as Record<string, unknown>;

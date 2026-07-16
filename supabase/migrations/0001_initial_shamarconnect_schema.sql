@@ -15,6 +15,8 @@ create table if not exists public.crm_contacts (
 
 create table if not exists public.whatsapp_conversations (
   id uuid primary key default gen_random_uuid(),
+  tenant_id uuid references public.tenants(id) on delete set null,
+  organization_id uuid references public.organizations(id) on delete set null,
   provider text not null default 'whatsapp_web',
   external_chat_id text not null unique,
   contact_id uuid references public.crm_contacts(id) on delete set null,
@@ -29,6 +31,8 @@ create table if not exists public.whatsapp_conversations (
 
 create table if not exists public.whatsapp_messages (
   id uuid primary key default gen_random_uuid(),
+  tenant_id uuid references public.tenants(id) on delete set null,
+  organization_id uuid references public.organizations(id) on delete set null,
   provider text not null default 'whatsapp_web',
   external_message_id text unique,
   conversation_id uuid references public.whatsapp_conversations(id) on delete cascade,

@@ -53,7 +53,29 @@ export async function getRequiredAppContext(): Promise<AppContext> {
     tenantUsers?.find((item: any) => item.tenant_id === session.companyId) ||
     tenantUsers?.[0];
 
-  if (!tenantUser?.tenant_id || !tenantUser?.organization_id) {
+  if (!tenantUser?.tenant_id) {
+    throw new Error("UNAUTHORIZED");
+  }
+
+  const { data: tenant } = await db
+    .from("tenants")
+    .select("is_platform")
+    .eq("id", tenantUser.tenant_id)
+    .maybeSingle();
+
+  if (!tenantUser.organization_id) {
+    if (tenant?.is_platform === true && ["owner", "admin"].includes(String(tenantUser.role || appUser.role))) {
+      return {
+        tenantId: tenantUser.tenant_id,
+        organizationId: "",
+        appUserId: appUser.id,
+        tenantUserId: tenantUser.id,
+        role: normalizeRole(tenantUser.role || appUser.role),
+        email: appUser.email,
+        name: appUser.name || appUser.email,
+        isPlatformTenant: true,
+      };
+    }
     throw new Error("UNAUTHORIZED");
   }
 
@@ -67,12 +89,6 @@ export async function getRequiredAppContext(): Promise<AppContext> {
 
   if (organizationError) throw organizationError;
   if (!organization) throw new Error("UNAUTHORIZED");
-
-  const { data: tenant } = await db
-    .from("tenants")
-    .select("is_platform")
-    .eq("id", tenantUser.tenant_id)
-    .maybeSingle();
 
   return {
     tenantId: tenantUser.tenant_id,

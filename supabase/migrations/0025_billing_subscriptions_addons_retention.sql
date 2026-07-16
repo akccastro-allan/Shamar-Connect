@@ -10,6 +10,29 @@
 -- ────────────────────────────────────────────────────────────────────────────────
 -- 1. Novas colunas
 -- ────────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.billing_subscriptions (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  tenant_id uuid NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+  organization_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+  plan_slug text NOT NULL,
+  billing_cycle text NOT NULL DEFAULT 'monthly',
+  status text NOT NULL DEFAULT 'active',
+  base_amount numeric(10,2) NOT NULL DEFAULT 0,
+  setup_amount numeric(10,2) NOT NULL DEFAULT 0,
+  extra_whatsapp_connections integer NOT NULL DEFAULT 0,
+  extra_users integer NOT NULL DEFAULT 0,
+  ai_addon_enabled boolean NOT NULL DEFAULT false,
+  total_amount numeric(10,2) NOT NULL DEFAULT 0,
+  currency text NOT NULL DEFAULT 'BRL',
+  billing_provider text,
+  started_at timestamptz,
+  current_period_start timestamptz,
+  current_period_end timestamptz,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
 ALTER TABLE public.billing_subscriptions
   ADD COLUMN IF NOT EXISTS checkout_session_id    uuid         REFERENCES public.billing_checkout_sessions(id),
   ADD COLUMN IF NOT EXISTS addons                 jsonb        NOT NULL DEFAULT '[]',

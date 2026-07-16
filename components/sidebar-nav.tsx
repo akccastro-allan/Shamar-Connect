@@ -8,7 +8,7 @@ import {
   Ticket, ShieldCheck, Building2, ListChecks, Wallet, MessageSquareReply,
   Workflow, Zap, BookOpen, Stethoscope, SlidersHorizontal, Cloud,
   Download, Upload, List, Sparkles, UserRound, FlaskConical, Palette,
-  Lightbulb, ShieldAlert, ChevronDown, Settings,
+  Lightbulb, ShieldAlert, ChevronDown, Settings, RefreshCcw,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -32,6 +32,15 @@ const navigationGroups: NavGroup[] = [
       { href: "/social-inbox", label: "Social Inbox", icon: AtSign, metaOnly: true },
       { href: "/operations", label: "Operações", icon: Activity, platformOnly: true, commandCenterOnly: true },
       { href: "/reports/team", label: "Relatório da equipe", icon: TrendingUp },
+    ],
+  },
+  {
+    label: "Diagnósticos",
+    icon: Stethoscope,
+    platformOnly: true,
+    commandCenterOnly: true,
+    items: [
+      { href: "/operations/diagnostics/whatsapp-sync", label: "Sincronização WhatsApp", icon: RefreshCcw, commandCenterOnly: true },
     ],
   },
   {

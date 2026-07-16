@@ -29,7 +29,7 @@ export const LIPS_AUTO_REPLY_CONFIG: AutoReplyConfig = {
   quoteSlaMinutes: 20,
   serviceDepartment: "Oficina",
   serviceSlaMinutes: 10,
-  purchaseDepartment: "Supervisor",
+  purchaseDepartment: "Balcão",
   unknownDepartment: "Supervisor",
   supervisorRole: "supervisor",
 };

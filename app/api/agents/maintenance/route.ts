@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
           await db
             .from("whatsapp_conversations")
             .update({
-              sla_status: "pending",
+              sla_status: "on_time",
               updated_at: nowIso,
             })
             .eq("id", conv.id as string);

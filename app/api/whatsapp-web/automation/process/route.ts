@@ -393,7 +393,7 @@ export async function GET(request: NextRequest) {
           try {
             const now = new Date().toISOString();
             const slaDueAt = new Date(new Date(latestInbound.created_at).getTime() + 15 * 60 * 1000).toISOString();
-            const slaStatus = new Date(slaDueAt).getTime() < Date.now() ? "breached" : "pending";
+            const slaStatus = new Date(slaDueAt).getTime() < Date.now() ? "breached" : "on_time";
 
             await db
               .from("whatsapp_conversations")
@@ -500,12 +500,12 @@ export async function GET(request: NextRequest) {
           if (decision.requiresHuman) {
             conversationPatch.requires_human = true;
             conversationPatch.pending_reason = decision.pendingReason;
-            conversationPatch.sla_status = "pending";
+            conversationPatch.sla_status = "on_time";
           } else if (!decision.requiresHuman && sentAt) {
             // Bot handled it fully (e.g. menu) — safe to mark ok
             conversationPatch.requires_human = false;
             conversationPatch.pending_reason = null;
-            conversationPatch.sla_status = "ok";
+            conversationPatch.sla_status = "completed";
             conversationPatch.sla_due_at = null;
           }
 

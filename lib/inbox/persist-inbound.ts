@@ -14,6 +14,8 @@ import { createHash } from "crypto";
 import type { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 import type { ChannelResolution } from "@/lib/inbox/resolve-channel";
 import { resolveOrCreateContactByIdentity, type IdentityType } from "@/lib/inbox/contacts";
+import { recordQueueEvent } from "@/lib/queues/lips-queue";
+import { reopenAssignment, type QueueStatus } from "@/lib/queues/lips-routing";
 
 type Db = ReturnType<typeof createSupabaseWriteClient>;
 
@@ -117,24 +119,49 @@ export async function ingestInboundMessage(
     is_group: msg.isGroup,
     last_message_at: now,
     last_inbound_at: now,
+    last_customer_message_at: now,
     last_message_direction: "inbound",
     requires_human: !msg.isGroup,
     pending_reason: msg.isGroup ? null : "new_inbound_message",
-    sla_status: "pending",
+    sla_status: "on_time",
     updated_at: now,
   };
 
   let conversationId: string;
   const { data: existingConv } = await db
     .from("whatsapp_conversations")
-    .select("id")
+    .select("id, queue_status, assigned_user_id, assigned_to, last_assigned_user_id, resolved_at")
     .eq("channel_id", ch.channelId)
     .eq("external_chat_id", msg.externalChatId)
     .maybeSingle();
 
   if (existingConv?.id) {
     conversationId = existingConv.id;
-    await db.from("whatsapp_conversations").update(convFields).eq("id", existingConv.id);
+    const queuePatch: { queue_status?: QueueStatus; [key: string]: string | boolean | null | undefined } = {};
+    if (!msg.isGroup && existingConv.queue_status === "awaiting_customer") {
+      queuePatch.queue_status = "in_progress";
+      queuePatch.requires_human = true;
+      queuePatch.pending_reason = "customer_replied";
+    } else if (!msg.isGroup && existingConv.queue_status === "resolved") {
+      const preferredAssignee = reopenAssignment({ lastAssignedUserId: existingConv.last_assigned_user_id, lastResolvedAt: existingConv.resolved_at, now: new Date(now) });
+      const assignBack = preferredAssignee ? await resolveAvailableAssignee(db, ch, preferredAssignee) : null;
+      queuePatch.queue_status = assignBack ? "in_progress" : "waiting";
+      queuePatch.assigned_user_id = assignBack;
+      queuePatch.assigned_to = assignBack;
+      queuePatch.assigned_at = assignBack ? now : null;
+      queuePatch.requires_human = true;
+      queuePatch.pending_reason = "conversation_reopened";
+      queuePatch.reopened_at = now;
+      queuePatch.queue_entered_at = now;
+      queuePatch.sla_started_at = now;
+      queuePatch.sla_status = "on_time";
+    }
+    await db.from("whatsapp_conversations").update({ ...convFields, ...queuePatch }).eq("id", existingConv.id);
+    if (!msg.isGroup && existingConv.queue_status === "awaiting_customer") {
+      await recordQueueEvent(db, { tenantId: ch.tenantId, organizationId: ch.organizationId, conversationId, actorType: "provider", eventType: "customer_replied", previousState: "awaiting_customer", newState: "in_progress", description: "Cliente respondeu atendimento em espera." });
+    } else if (!msg.isGroup && existingConv.queue_status === "resolved") {
+      await recordQueueEvent(db, { tenantId: ch.tenantId, organizationId: ch.organizationId, conversationId, actorType: "provider", eventType: "reopened", previousState: "resolved", newState: queuePatch.queue_status, description: "Nova mensagem reabriu atendimento resolvido.", metadata: { assignedTo: queuePatch.assigned_user_id ?? null } });
+    }
   } else {
     const { data: created, error } = await db
       .from("whatsapp_conversations")
@@ -220,6 +247,19 @@ export async function ingestInboundMessage(
   await recordProcessedEvent(db, ch, msg, now);
 
   return "processed";
+}
+
+async function resolveAvailableAssignee(db: Db, ch: ChannelResolution, appUserId: string): Promise<string | null> {
+  const { data } = await db
+    .from("agent_availability")
+    .select("app_user_id")
+    .eq("tenant_id", ch.tenantId)
+    .eq("organization_id", ch.organizationId)
+    .eq("app_user_id", appUserId)
+    .eq("status", "available")
+    .eq("accepting_new_conversations", true)
+    .maybeSingle();
+  return data?.app_user_id ?? null;
 }
 
 /** Registra o provider_event como processado (idempotência por canal). */

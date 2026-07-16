@@ -24,10 +24,25 @@ type Conversation = {
   name?: string | null;
   is_group: boolean;
   status: string;
+  queue_status?: string | null;
   stage?: string | null;
   priority?: string | null;
   unread_count: number;
   last_message_at?: string | null;
+  queue_entered_at?: string | null;
+  sla_due_at?: string | null;
+  sla_status?: string | null;
+  pending_reason?: string | null;
+  queue_reason?: string | null;
+  requires_human?: boolean | null;
+  assigned_user_id?: string | null;
+  assigned_to?: string | null;
+  assigned_name?: string | null;
+  department_id?: string | null;
+  channel_id?: string | null;
+  channels?: { id: string; session_id?: string | null; provider?: string | null; name?: string | null } | null;
+  departments?: { id: string; name: string; color: string } | null;
+  latest_message?: { body: string | null; direction: "inbound" | "outbound" | string; created_at: string } | null;
   crm_contacts?: Contact | null;
 };
 
@@ -66,6 +81,23 @@ type ContactNote = {
   created_at: string;
 };
 
+type Availability = {
+  status: "available" | "paused" | "offline";
+  accepting_new_conversations: boolean;
+  current_load?: number | null;
+};
+
+type SyncStatus = {
+  status: "ready" | "syncing" | "stale" | "disconnected";
+  connected: boolean;
+  lastSuccessAt?: string | null;
+  lastEventAt?: string | null;
+  lastChatSyncAt?: string | null;
+  lastMessageSyncAt?: string | null;
+  isStale: boolean;
+  label: string;
+};
+
 async function readJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, { ...init, cache: "no-store" });
   const data = await response.json();
@@ -97,6 +129,31 @@ function getConversationPhone(conversation: Conversation | null) {
   return conversation.external_chat_id || "";
 }
 
+function queueStatusToLabel(status?: string | null) {
+  if (status === "waiting") return "Aguardando atendimento";
+  if (status === "in_progress") return "Em atendimento";
+  if (status === "awaiting_customer") return "Aguardando cliente";
+  if (status === "resolved") return "Resolvida";
+  if (status === "closed") return "Encerrada";
+  if (status === "open") return "Aberta";
+  if (status === "pending") return "Pendente";
+  if (status === "archived") return "Arquivada";
+  return "Aguardando atendimento";
+}
+
+function availabilityLabel(status?: string | null) {
+  if (status === "available") return "Disponível";
+  if (status === "paused") return "Pausado";
+  return "Offline";
+}
+
+function syncStatusLabel(status?: string | null) {
+  if (status === "syncing") return "Sincronizando";
+  if (status === "stale") return "Atualização atrasada";
+  if (status === "disconnected") return "WhatsApp desconectado";
+  return "Atualizado agora";
+}
+
 function tagsToInput(tags?: string[] | null) {
   return (tags || []).join(", ");
 }
@@ -106,6 +163,7 @@ export function InboxPanel() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [quickReplies, setQuickReplies] = useState<QuickReply[]>([]);
   const [notes, setNotes] = useState<ContactNote[]>([]);
+  const [availability, setAvailability] = useState<Availability>({ status: "offline", accepting_new_conversations: false, current_load: 0 });
   const [selectedConversationId, setSelectedConversationId] = useState("");
   const [replyBody, setReplyBody] = useState("");
   const [noteBody, setNoteBody] = useState("");
@@ -117,7 +175,9 @@ export function InboxPanel() {
   const [conversationStatus, setConversationStatus] = useState("open");
   const [conversationStage, setConversationStage] = useState("novo");
   const [conversationPriority, setConversationPriority] = useState("normal");
-  const [syncLimit, setSyncLimit] = useState(50);
+  const [queueFilter, setQueueFilter] = useState("all");
+  const [transferReason, setTransferReason] = useState("");
+  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -127,6 +187,13 @@ export function InboxPanel() {
     [conversations, selectedConversationId]
   );
 
+  const queueStats = useMemo(() => ({
+    unassigned: conversations.filter((conversation) => !(conversation.assigned_user_id ?? conversation.assigned_to) && conversation.queue_status === "waiting").length,
+    critical: conversations.filter((conversation) => conversation.sla_status === "breached").length,
+    active: conversations.filter((conversation) => ["waiting", "in_progress", "awaiting_customer"].includes(conversation.queue_status || "")).length,
+    resolved: conversations.filter((conversation) => conversation.queue_status === "resolved").length,
+  }), [conversations]);
+
   function hydrateForms(conversation: Conversation | null) {
     const contact = conversation?.crm_contacts;
     setContactName(contact?.name || "");
@@ -134,7 +201,7 @@ export function InboxPanel() {
     setContactCompany(contact?.company || "");
     setContactConsent(contact?.consent_status || "unknown");
     setContactTags(tagsToInput(contact?.tags));
-    setConversationStatus(conversation?.status || "open");
+    setConversationStatus(conversation?.queue_status || "waiting");
     setConversationStage(conversation?.stage || "novo");
     setConversationPriority(conversation?.priority || "normal");
   }
@@ -143,7 +210,7 @@ export function InboxPanel() {
     setLoading("conversations");
     setError(null);
     try {
-      const data = await readJson<{ ok: boolean; conversations: Conversation[] }>("/api/inbox/conversations");
+      const data = await readJson<{ ok: boolean; conversations: Conversation[] }>(`/api/inbox/queue?filter=${encodeURIComponent(queueFilter)}`);
       const list = data.conversations || [];
       setConversations(list);
       const nextId = keepSelection && selectedConversationId ? selectedConversationId : list[0]?.id || "";
@@ -151,6 +218,7 @@ export function InboxPanel() {
         setSelectedConversationId(nextId);
         const conversation = list.find((item) => item.id === nextId) || null;
         hydrateForms(conversation);
+        await loadSyncStatus(conversation?.channel_id || null);
         await loadMessages(nextId);
         await loadNotes(conversation);
       }
@@ -184,6 +252,47 @@ export function InboxPanel() {
     }
   }
 
+  async function loadAvailability() {
+    try {
+      const data = await readJson<{ ok: boolean; availability: Availability }>("/api/inbox/availability");
+      setAvailability(data.availability || { status: "offline", accepting_new_conversations: false, current_load: 0 });
+    } catch {
+      setAvailability({ status: "offline", accepting_new_conversations: false, current_load: 0 });
+    }
+  }
+
+  async function loadSyncStatus(channelId?: string | null) {
+    if (!channelId) {
+      setSyncStatus(null);
+      return;
+    }
+
+    try {
+      const data = await readJson<{ ok: boolean; status: SyncStatus | null }>(`/api/whatsapp-web/sync-status?channelId=${encodeURIComponent(channelId)}`);
+      setSyncStatus(data.status || null);
+    } catch {
+      setSyncStatus(null);
+    }
+  }
+
+  async function updateAvailability(status: Availability["status"]) {
+    setLoading("availability");
+    setError(null);
+    setSuccess(null);
+    try {
+      const data = await readJson<{ ok: boolean; availability: Availability }>("/api/inbox/availability", {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      });
+      setAvailability(data.availability);
+      setSuccess(`Disponibilidade alterada para ${availabilityLabel(status)}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao atualizar disponibilidade");
+    } finally {
+      setLoading(null);
+    }
+  }
+
   async function loadNotes(conversation: Conversation | null) {
     if (!conversation) return;
     const contactId = conversation.crm_contacts?.id;
@@ -200,6 +309,7 @@ export function InboxPanel() {
     setSelectedConversationId(conversationId);
     const conversation = conversations.find((item) => item.id === conversationId) || null;
     hydrateForms(conversation);
+    await loadSyncStatus(conversation?.channel_id || null);
     await loadMessages(conversationId);
     await loadNotes(conversation);
   }
@@ -224,25 +334,6 @@ export function InboxPanel() {
     }
   }
 
-  async function syncSelectedConversationMessages() {
-    if (!selectedConversation) return;
-    setLoading("sync");
-    setError(null);
-    setSuccess(null);
-    try {
-      const data = await readJson<{ ok: boolean; savedMessages: number; scanned: number }>("/api/whatsapp-web/sync-chat-messages", {
-        method: "POST",
-        body: JSON.stringify({ chatId: selectedConversation.external_chat_id, limit: syncLimit }),
-      });
-      setSuccess(`Sincronização concluída: ${data.savedMessages} mensagens salvas de ${data.scanned} lidas.`);
-      await loadConversations(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao sincronizar conversa");
-    } finally {
-      setLoading(null);
-    }
-  }
-
   async function saveConversationStatus() {
     if (!selectedConversation) return;
     setLoading("status");
@@ -262,6 +353,49 @@ export function InboxPanel() {
       await loadConversations(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao atualizar status");
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  async function queueAction(action: "claim" | "resolve" | "reopen" | "awaiting_customer" | "closed") {
+    if (!selectedConversation) return;
+    setLoading(action);
+    setError(null);
+    setSuccess(null);
+    try {
+      if (action === "awaiting_customer" || action === "closed") {
+        await readJson<{ ok: boolean }>(`/api/inbox/conversations/${selectedConversation.id}/status`, {
+          method: "POST",
+          body: JSON.stringify({ status: action }),
+        });
+      } else {
+        await readJson<{ ok: boolean }>(`/api/inbox/conversations/${selectedConversation.id}/${action}`, { method: "POST" });
+      }
+      setSuccess("Fila atualizada.");
+      await loadConversations(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao atualizar fila");
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  async function transferToQueue() {
+    if (!selectedConversation || !transferReason.trim()) return;
+    setLoading("transfer");
+    setError(null);
+    setSuccess(null);
+    try {
+      await readJson<{ ok: boolean }>(`/api/inbox/conversations/${selectedConversation.id}/transfer`, {
+        method: "POST",
+        body: JSON.stringify({ departmentId: selectedConversation.department_id || null, assignTo: null, reason: transferReason.trim() }),
+      });
+      setTransferReason("");
+      setSuccess("Atendimento transferido para a fila.");
+      await loadConversations(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao transferir");
     } finally {
       setLoading(null);
     }
@@ -324,7 +458,8 @@ export function InboxPanel() {
   useEffect(() => {
     loadConversations(false);
     loadQuickReplies();
-  }, []);
+    loadAvailability();
+  }, [queueFilter]);
 
   return (
     <div className="space-y-6">
@@ -335,13 +470,37 @@ export function InboxPanel() {
               <CardTitle className="flex items-center gap-2"><Inbox className="h-5 w-5" />Inbox completo</CardTitle>
               <CardDescription>Atendimento manual com leitura, resposta, sincronização, CRM, notas, tags, consentimento e status.</CardDescription>
             </div>
-            <Button onClick={() => loadConversations(true)} disabled={Boolean(loading)} variant="outline" size="sm"><RefreshCcw className="mr-2 h-4 w-4" />Atualizar</Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant={availability.status === "available" ? "default" : "outline"}>{availabilityLabel(availability.status)}</Badge>
+              <Button onClick={() => updateAvailability("available")} disabled={Boolean(loading)} variant={availability.status === "available" ? "default" : "outline"} size="sm">Disponível</Button>
+              <Button onClick={() => updateAvailability("paused")} disabled={Boolean(loading)} variant={availability.status === "paused" ? "default" : "outline"} size="sm">Pausado</Button>
+              <Button onClick={() => updateAvailability("offline")} disabled={Boolean(loading)} variant={availability.status === "offline" ? "default" : "outline"} size="sm">Offline</Button>
+              <Button onClick={() => loadConversations(true)} disabled={Boolean(loading)} variant="outline" size="sm"><RefreshCcw className="mr-2 h-4 w-4" />Atualizar</Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
           <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
             <div className="flex items-center gap-2 font-medium"><MessageCircle className="h-4 w-4" />Central WhatsApp</div>
             <p className="mt-1">Conversas e mensagens processadas automaticamente a partir dos eventos do gateway.</p>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {[
+              ["all", "Todas"],
+              ["mine", "Minha fila"],
+              ["unassigned", "Não atribuídas"],
+              ["critical", "SLA crítico"],
+              ["awaiting_customer", "Aguardando cliente"],
+              ["resolved", "Resolvidas"],
+            ].map(([value, label]) => (
+              <Button key={value} size="sm" variant={queueFilter === value ? "default" : "outline"} onClick={() => setQueueFilter(value)}>{label}</Button>
+            ))}
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-4">
+            <div className="rounded-2xl border bg-white p-4"><p className="text-xs text-muted-foreground">Não atribuídas</p><p className="text-2xl font-black text-[#1B2F5B]">{queueStats.unassigned}</p></div>
+            <div className="rounded-2xl border border-red-100 bg-red-50 p-4"><p className="text-xs text-red-700">SLA crítico</p><p className="text-2xl font-black text-red-800">{queueStats.critical}</p></div>
+            <div className="rounded-2xl border bg-white p-4"><p className="text-xs text-muted-foreground">Ativas</p><p className="text-2xl font-black text-[#1B2F5B]">{queueStats.active}</p></div>
+            <div className="rounded-2xl border bg-white p-4"><p className="text-xs text-muted-foreground">Resolvidas</p><p className="text-2xl font-black text-[#1B2F5B]">{queueStats.resolved}</p></div>
           </div>
         </CardContent>
       </Card>
@@ -353,7 +512,7 @@ export function InboxPanel() {
         <Card className="overflow-hidden">
           <CardHeader className="border-b">
             <CardTitle>Conversas</CardTitle>
-            <CardDescription>{conversations.length} conversa(s) no banco.</CardDescription>
+            <CardDescription>{conversations.length} conversa(s) na fila filtrada.</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
             {conversations.length === 0 ? (
@@ -367,14 +526,17 @@ export function InboxPanel() {
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="truncate text-sm font-semibold text-slate-950">{getConversationName(conversation)}</p>
-                          <p className="mt-1 truncate text-xs text-muted-foreground">{conversation.external_chat_id}</p>
+                          <p className="mt-1 truncate text-xs text-muted-foreground">{conversation.departments?.name || "Sem departamento"} · {conversation.assigned_name || "Não atribuída"}</p>
+                          <p className="mt-1 truncate text-xs text-slate-500">{conversation.latest_message?.body || "Sem última mensagem textual"}</p>
                         </div>
                         <span className="shrink-0 text-xs text-muted-foreground">{formatDate(conversation.last_message_at)}</span>
                       </div>
                       <div className="mt-2 flex flex-wrap gap-2">
                         <Badge variant={conversation.is_group ? "secondary" : "outline"}>{conversation.is_group ? "Grupo" : "Contato"}</Badge>
-                        <Badge variant="outline">{conversation.status}</Badge>
-                        <Badge variant="secondary">{conversation.stage || "novo"}</Badge>
+                        <Badge variant="outline">{queueStatusToLabel(conversation.queue_status || conversation.status)}</Badge>
+                        <Badge variant="secondary">{conversation.priority || "normal"}</Badge>
+                        <Badge variant={conversation.sla_status === "breached" ? "destructive" : "outline"}>SLA {conversation.sla_status || "on_time"}</Badge>
+                        {conversation.requires_human ? <Badge variant="destructive">humano</Badge> : null}
                       </div>
                     </button>
                   );
@@ -400,13 +562,15 @@ export function InboxPanel() {
             ) : (
               <div className="flex h-[760px] flex-col">
                 <div className="flex items-center gap-2 border-b bg-white p-3">
-                  <input type="number" min={10} max={200} value={syncLimit} onChange={(event) => setSyncLimit(Number(event.target.value))} className="w-24 rounded-xl border px-3 py-2 text-sm" />
-                  <Button onClick={syncSelectedConversationMessages} disabled={Boolean(loading)} size="sm" variant="outline"><RotateCw className="mr-2 h-4 w-4" />Sincronizar esta conversa</Button>
+                  <Badge variant={syncStatus?.status === "disconnected" || syncStatus?.status === "stale" ? "outline" : "secondary"}>{syncStatus?.label || syncStatusLabel(syncStatus?.status)}</Badge>
+                  <Button onClick={() => queueAction("claim")} disabled={Boolean(loading)} size="sm">Assumir</Button>
+                  <Button onClick={() => queueAction("resolve")} disabled={Boolean(loading)} size="sm" variant="outline">Resolver</Button>
+                  <Button onClick={() => queueAction("reopen")} disabled={Boolean(loading)} size="sm" variant="outline">Reabrir</Button>
                 </div>
 
                 <div className="flex-1 space-y-3 overflow-auto bg-slate-50 p-4">
                   {messages.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed bg-white p-8 text-center text-sm text-muted-foreground">Sem mensagens salvas. Clique em “Sincronizar esta conversa”.</div>
+                    <div className="rounded-2xl border border-dashed bg-white p-8 text-center text-sm text-muted-foreground">Sem mensagens salvas ainda. A sincronização automática continuará em segundo plano.</div>
                   ) : messages.map((message) => {
                     const outbound = message.direction === "outbound";
                     const deleted = Boolean(message.deleted_by_sender);
@@ -483,10 +647,11 @@ export function InboxPanel() {
             </CardHeader>
             <CardContent className="space-y-3">
               <select value={conversationStatus} onChange={(event) => setConversationStatus(event.target.value)} className="w-full rounded-xl border bg-white px-3 py-2 text-sm">
-                <option value="open">Aberta</option>
-                <option value="pending">Pendente</option>
+                <option value="waiting">Aguardando atendimento</option>
+                <option value="in_progress">Em atendimento</option>
+                <option value="awaiting_customer">Aguardando cliente</option>
                 <option value="resolved">Resolvida</option>
-                <option value="archived">Arquivada</option>
+                <option value="closed">Encerrada</option>
               </select>
               <select value={conversationStage} onChange={(event) => setConversationStage(event.target.value)} className="w-full rounded-xl border bg-white px-3 py-2 text-sm">
                 <option value="novo">Novo</option>
@@ -497,12 +662,16 @@ export function InboxPanel() {
                 <option value="perdido">Perdido</option>
               </select>
               <select value={conversationPriority} onChange={(event) => setConversationPriority(event.target.value)} className="w-full rounded-xl border bg-white px-3 py-2 text-sm">
-                <option value="baixa">Baixa</option>
+                <option value="low">Baixa</option>
                 <option value="normal">Normal</option>
-                <option value="alta">Alta</option>
-                <option value="urgente">Urgente</option>
+                <option value="high">Alta</option>
+                <option value="urgent">Urgente</option>
               </select>
               <Button onClick={saveConversationStatus} disabled={Boolean(loading) || !selectedConversation} className="w-full">Atualizar status</Button>
+              <Button onClick={() => queueAction("awaiting_customer")} disabled={Boolean(loading) || !selectedConversation} variant="outline" className="w-full">Marcar aguardando cliente</Button>
+              <Button onClick={() => queueAction("closed")} disabled={Boolean(loading) || !selectedConversation} variant="outline" className="w-full">Encerrar conversa</Button>
+              <input value={transferReason} onChange={(event) => setTransferReason(event.target.value)} className="w-full rounded-xl border px-3 py-2 text-sm" placeholder="Motivo da transferência" />
+              <Button onClick={transferToQueue} disabled={Boolean(loading) || !selectedConversation || transferReason.trim().length < 3} variant="outline" className="w-full">Transferir para fila</Button>
             </CardContent>
           </Card>
 

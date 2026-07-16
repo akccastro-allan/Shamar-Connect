@@ -41,7 +41,7 @@ export type ProcessMessageResult = {
   shouldSend: boolean;
   autoSendAllowed: boolean; // ← pode enviar resposta automática segura
   requiresHandoff: boolean;
-  department?: 'Balcão' | 'Oficina' | 'Supervisor'; // ← onde encaminhar se handoff
+  department?: 'Balcão' | 'Oficina' | 'Financeiro' | 'Supervisor'; // ← onde encaminhar se handoff
   handoffReason?: string; // ← motivo do handoff (purchase_intent, service_request, etc)
   slaMinutes?: number;
   confidence: number; // ← 0.0 a 1.0
@@ -69,7 +69,10 @@ const OFICINA_HANDOFF_RESPONSE =
   'Entendi. Vou direcionar seu atendimento para a oficina verificar o melhor horário e confirmar os detalhes do serviço.';
 
 const SUPERVISOR_PURCHASE_RESPONSE =
-  'Perfeito. Vou direcionar para o responsável confirmar disponibilidade, aplicação e forma de pagamento antes de finalizar.';
+  'Perfeito. Vou direcionar seu atendimento para o balcão confirmar disponibilidade, aplicação e separação antes de finalizar.';
+
+const FINANCEIRO_HANDOFF_RESPONSE =
+  'Perfeito. Vou direcionar seu atendimento para o financeiro confirmar PIX, pagamento e baixa certinha.';
 
 const SUPERVISOR_GENERAL_RESPONSE =
   'Entendi. Vou direcionar sua mensagem para o responsável da Lips te atender certinho.';
@@ -80,7 +83,8 @@ const CONTINUE_QUOTE_RESPONSE =
 const SLA_MINUTES = {
   Balcão: LIPS_AUTO_REPLY_CONFIG.quoteSlaMinutes,
   Oficina: LIPS_AUTO_REPLY_CONFIG.serviceSlaMinutes,
-  Supervisor: 0,
+  Financeiro: 5,
+  Supervisor: 5,
 } as const;
 
 // ============================================================================
@@ -109,9 +113,14 @@ function detectPurchaseIntent(text: string): boolean {
   const lower = normalizeText(text);
   const purchasePatterns = [
     /quero comprar|vou querer|separa|reserva|pode separar|vou buscar|fecha|fechar|fecha pra mim/,
-    /pagamento|pix|cartão|cartao|boleto|manda link|entrega|retirar|vou pagar/,
+    /entrega|retirar/,
   ];
   return purchasePatterns.some(pattern => pattern.test(lower));
+}
+
+function detectPaymentIntent(text: string): boolean {
+  const lower = normalizeText(text);
+  return /pagamento|pix|cartão|cartao|boleto|manda link|vou pagar|chave/.test(lower);
 }
 
 function detectProductHandoffIntent(text: string): boolean {
@@ -398,15 +407,15 @@ export async function recordAutoReply(
 async function findDepartmentId(
   db: SupabaseClient,
   organizationId: string,
-  department: 'Balcão' | 'Oficina' | 'Supervisor'
+  department: 'Balcão' | 'Oficina' | 'Financeiro' | 'Supervisor'
 ): Promise<string | null> {
-  if (department === 'Supervisor') return null;
+  const departmentName = department === 'Supervisor' ? 'Supervisão' : department;
 
   const { data } = await db
     .from('departments')
     .select('id')
     .eq('organization_id', organizationId)
-    .eq('name', department)
+    .eq('name', departmentName)
     .eq('is_active', true)
     .maybeSingle();
 
@@ -426,17 +435,22 @@ export async function applyLipsConversationState(
     const departmentId = await findDepartmentId(db, organizationId, result.department);
     const slaMinutes = result.slaMinutes ?? SLA_MINUTES[result.department];
     const slaDueAt = slaMinutes > 0 ? new Date(now.getTime() + slaMinutes * 60_000).toISOString() : nowIso;
-    const supervisor = result.department === 'Supervisor';
+    const urgent = result.department === 'Supervisor' || result.department === 'Financeiro';
 
     await db
       .from('whatsapp_conversations')
       .update({
-        status: 'pending',
+        queue_status: 'waiting',
         department_id: departmentId,
+        priority: urgent ? 'urgent' : 'high',
         requires_human: true,
         pending_reason: result.handoffReason || result.intent,
+        handoff_reason: result.handoffReason || result.intent,
+        queue_reason: result.handoffReason || result.intent,
+        queue_entered_at: nowIso,
+        sla_started_at: nowIso,
         sla_due_at: slaDueAt,
-        sla_status: supervisor ? 'breached' : 'pending',
+        sla_status: 'on_time',
         updated_at: nowIso,
       })
       .eq('id', conversationId);
@@ -446,11 +460,11 @@ export async function applyLipsConversationState(
   await db
     .from('whatsapp_conversations')
     .update({
-      status: 'open',
+      queue_status: 'awaiting_customer',
       requires_human: false,
       pending_reason: null,
       sla_due_at: null,
-      sla_status: 'ok',
+      sla_status: 'completed',
       updated_at: nowIso,
     })
     .eq('id', conversationId);
@@ -678,16 +692,31 @@ export async function processLipsMessage(
       };
     }
 
-    // Se cliente quer comprar/pagar/reservar → supervisor imediato.
+    // PIX e pagamento vão para o Financeiro.
+    if (detectPaymentIntent(effectiveMessageBody)) {
+      return {
+        response: FINANCEIRO_HANDOFF_RESPONSE,
+        shouldSend: true,
+        autoSendAllowed: true,
+        requiresHandoff: true,
+        department: 'Financeiro',
+        handoffReason: 'payment_or_pix',
+        slaMinutes: SLA_MINUTES.Financeiro,
+        confidence: 0.95,
+        intent: 'pagamento',
+      };
+    }
+
+    // Compra/reserva/separação vão para o Balcão.
     if (detectPurchaseIntent(effectiveMessageBody)) {
       return {
         response: SUPERVISOR_PURCHASE_RESPONSE,
         shouldSend: true,
         autoSendAllowed: true,
         requiresHandoff: true,
-        department: 'Supervisor',
-        handoffReason: 'purchase_or_payment_intent',
-        slaMinutes: SLA_MINUTES.Supervisor,
+        department: 'Balcão',
+        handoffReason: 'purchase_or_reservation_intent',
+        slaMinutes: SLA_MINUTES.Balcão,
         confidence: 0.95,
         intent: 'compra',
       };
@@ -908,7 +937,7 @@ export async function sendAndSaveResponse(
   senderId: string,
   responseText: string,
   requiresHandoff?: boolean,
-  department?: 'Balcão' | 'Oficina' | 'Supervisor'
+  department?: 'Balcão' | 'Oficina' | 'Financeiro' | 'Supervisor'
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
     const { data: conversation } = await db
@@ -969,7 +998,7 @@ export async function sendAndSaveResponse(
       await db
         .from('whatsapp_conversations')
         .update({
-          status: 'pending',
+          queue_status: 'waiting',
           updated_at: new Date().toISOString(),
         })
         .eq('id', conversationId);

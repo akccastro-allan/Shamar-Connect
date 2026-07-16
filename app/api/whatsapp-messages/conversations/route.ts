@@ -29,14 +29,14 @@ export async function GET() {
 
     let query = db
       .from("whatsapp_conversations")
-      .select("id, external_chat_id, name, is_group, status, unread_count, last_message_at, created_at, last_inbound_at, last_outbound_at, last_message_direction, requires_human, pending_reason, sla_status, sla_due_at, watchdog_checked_at, channel_id, provider, assigned_to, department_id, crm_contacts(id, name, phone, email, company, consent_status), channels(id, name, slug, color, transcription_enabled), departments:department_id(id, name, color)")
+      .select("id, external_chat_id, name, is_group, status, queue_status, unread_count, last_message_at, created_at, last_inbound_at, last_outbound_at, last_message_direction, requires_human, pending_reason, sla_status, sla_due_at, watchdog_checked_at, channel_id, provider, assigned_user_id, assigned_to, department_id, crm_contacts(id, name, phone, email, company, consent_status), channels(id, name, slug, color, transcription_enabled), departments:department_id(id, name, color)")
       .eq("tenant_id", context.tenantId)
       .eq("organization_id", context.organizationId);
 
     // Atendente/viewer: vê só o que é do seu setor, o que está atribuído a ele,
     // ou a fila geral (sem setor definido). Supervisor vê tudo.
     if (!isSupervisor) {
-      const clauses = ["department_id.is.null", `assigned_to.eq.${context.appUserId}`];
+      const clauses = ["department_id.is.null", `assigned_user_id.eq.${context.appUserId}`, `assigned_to.eq.${context.appUserId}`];
       if (myDepartmentId) clauses.push(`department_id.eq.${myDepartmentId}`);
       query = query.or(clauses.join(","));
     }
@@ -74,7 +74,7 @@ export async function GET() {
 
     // Resolve o nome de quem está atendendo (assigned_to = app_user id).
     const assignedIds = Array.from(
-      new Set((conversations || []).map((c) => (c as { assigned_to?: string | null }).assigned_to).filter(Boolean) as string[]),
+      new Set((conversations || []).map((c) => (c as { assigned_user_id?: string | null; assigned_to?: string | null }).assigned_user_id ?? (c as { assigned_to?: string | null }).assigned_to).filter(Boolean) as string[]),
     );
     const nameById = new Map<string, string>();
     if (assignedIds.length > 0) {
@@ -86,9 +86,10 @@ export async function GET() {
       ok: true,
       me: { appUserId: context.appUserId, role: context.role, departmentId: myDepartmentId, isSupervisor },
       conversations: (conversations || []).map((conversation) => {
-        const assignedTo = (conversation as { assigned_to?: string | null }).assigned_to ?? null;
+        const assignedTo = (conversation as { assigned_user_id?: string | null; assigned_to?: string | null }).assigned_user_id ?? (conversation as { assigned_to?: string | null }).assigned_to ?? null;
         return {
           ...conversation,
+          assigned_to: assignedTo,
           latest_message: latestByConversation.get(conversation.id) || null,
           assigned_name: assignedTo ? nameById.get(assignedTo) || null : null,
         };
