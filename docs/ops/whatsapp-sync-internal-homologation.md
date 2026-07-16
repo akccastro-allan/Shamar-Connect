@@ -1,6 +1,8 @@
 # Homologação interna do WhatsApp Sync
 
-Rota interna: `/admin/diagnostics/whatsapp-sync`.
+Rota interna oficial: `/operations/diagnostics/whatsapp-sync`.
+
+A rota legada `/admin/diagnostics/whatsapp-sync` redireciona para o Centro de Comando quando o operador global está autorizado.
 
 Uso permitido somente para operador interno da plataforma com:
 
@@ -74,7 +76,7 @@ Se algum campo mudar indevidamente, a homologação retorna falha e não deve pr
 
 1. Abrir o Preview autenticado.
 2. Entrar com conta de plataforma `owner/admin` com `organization_id = null`.
-3. Abrir `/admin/diagnostics/whatsapp-sync`.
+3. Abrir `/operations/diagnostics/whatsapp-sync`.
 4. Executar `Diagnóstico`.
 5. Executar `Bootstrap controlado` uma vez.
 6. Enviar uma mensagem de teste para a Lips.
