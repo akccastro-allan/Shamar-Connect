@@ -27,6 +27,11 @@ test("migration não inventa horário comercial e prepara escalonamento idempote
   assert.match(migration, /sla_breached_at is null/);
 });
 
+test("migration preserva prioridades antigas sem backfill de conversas", () => {
+  assert.doesNotMatch(migration, /update public\.whatsapp_conversations\s+set priority/i);
+  assert.match(migration, /priority in \('low', 'normal', 'high', 'urgent', 'baixa', 'alta', 'urgente'\)/);
+});
+
 test("migration restringe função server-only e indexa eventos por tipo", () => {
   assert.match(migration, /revoke all on function public\.mark_lips_sla_breaches\(boolean\) from public, anon, authenticated/);
   assert.match(migration, /grant execute on function public\.mark_lips_sla_breaches\(boolean\) to service_role/);

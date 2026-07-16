@@ -82,6 +82,8 @@ end $$;
 alter table public.whatsapp_channel_sync_state enable row level security;
 alter table public.whatsapp_sync_runs enable row level security;
 
+revoke all on table public.whatsapp_channel_sync_state from public, anon, authenticated;
+revoke all on table public.whatsapp_sync_runs from public, anon, authenticated;
 grant all on table public.whatsapp_channel_sync_state to service_role;
 grant all on table public.whatsapp_sync_runs to service_role;
 

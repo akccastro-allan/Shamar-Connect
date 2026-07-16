@@ -60,17 +60,8 @@ alter table public.whatsapp_conversations
 alter table public.whatsapp_conversations
   drop constraint if exists whatsapp_conversations_priority_check;
 
-update public.whatsapp_conversations
-set priority = case priority
-  when 'baixa' then 'low'
-  when 'alta' then 'high'
-  when 'urgente' then 'urgent'
-  else priority
-end
-where priority in ('baixa', 'alta', 'urgente');
-
 alter table public.whatsapp_conversations
-  add constraint whatsapp_conversations_priority_check check (priority in ('low', 'normal', 'high', 'urgent'));
+  add constraint whatsapp_conversations_priority_check check (priority in ('low', 'normal', 'high', 'urgent', 'baixa', 'alta', 'urgente'));
 
 alter table public.whatsapp_conversations
   drop constraint if exists whatsapp_conversations_sla_status_check,
