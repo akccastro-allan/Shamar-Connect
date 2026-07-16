@@ -39,6 +39,8 @@ type Conversation = {
   assigned_to?: string | null;
   assigned_name?: string | null;
   department_id?: string | null;
+  channel_id?: string | null;
+  channels?: { id: string; session_id?: string | null; provider?: string | null; name?: string | null } | null;
   departments?: { id: string; name: string; color: string } | null;
   latest_message?: { body: string | null; direction: "inbound" | "outbound" | string; created_at: string } | null;
   crm_contacts?: Contact | null;
@@ -83,6 +85,17 @@ type Availability = {
   status: "available" | "paused" | "offline";
   accepting_new_conversations: boolean;
   current_load?: number | null;
+};
+
+type SyncStatus = {
+  status: "ready" | "syncing" | "stale" | "disconnected";
+  connected: boolean;
+  lastSuccessAt?: string | null;
+  lastEventAt?: string | null;
+  lastChatSyncAt?: string | null;
+  lastMessageSyncAt?: string | null;
+  isStale: boolean;
+  label: string;
 };
 
 async function readJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -134,6 +147,13 @@ function availabilityLabel(status?: string | null) {
   return "Offline";
 }
 
+function syncStatusLabel(status?: string | null) {
+  if (status === "syncing") return "Sincronizando";
+  if (status === "stale") return "Atualização atrasada";
+  if (status === "disconnected") return "WhatsApp desconectado";
+  return "Atualizado agora";
+}
+
 function tagsToInput(tags?: string[] | null) {
   return (tags || []).join(", ");
 }
@@ -157,7 +177,7 @@ export function InboxPanel() {
   const [conversationPriority, setConversationPriority] = useState("normal");
   const [queueFilter, setQueueFilter] = useState("all");
   const [transferReason, setTransferReason] = useState("");
-  const [syncLimit, setSyncLimit] = useState(50);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -198,6 +218,7 @@ export function InboxPanel() {
         setSelectedConversationId(nextId);
         const conversation = list.find((item) => item.id === nextId) || null;
         hydrateForms(conversation);
+        await loadSyncStatus(conversation?.channel_id || null);
         await loadMessages(nextId);
         await loadNotes(conversation);
       }
@@ -240,6 +261,20 @@ export function InboxPanel() {
     }
   }
 
+  async function loadSyncStatus(channelId?: string | null) {
+    if (!channelId) {
+      setSyncStatus(null);
+      return;
+    }
+
+    try {
+      const data = await readJson<{ ok: boolean; status: SyncStatus | null }>(`/api/whatsapp-web/sync-status?channelId=${encodeURIComponent(channelId)}`);
+      setSyncStatus(data.status || null);
+    } catch {
+      setSyncStatus(null);
+    }
+  }
+
   async function updateAvailability(status: Availability["status"]) {
     setLoading("availability");
     setError(null);
@@ -274,6 +309,7 @@ export function InboxPanel() {
     setSelectedConversationId(conversationId);
     const conversation = conversations.find((item) => item.id === conversationId) || null;
     hydrateForms(conversation);
+    await loadSyncStatus(conversation?.channel_id || null);
     await loadMessages(conversationId);
     await loadNotes(conversation);
   }
@@ -293,25 +329,6 @@ export function InboxPanel() {
       await loadConversations(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao enviar mensagem");
-    } finally {
-      setLoading(null);
-    }
-  }
-
-  async function syncSelectedConversationMessages() {
-    if (!selectedConversation) return;
-    setLoading("sync");
-    setError(null);
-    setSuccess(null);
-    try {
-      const data = await readJson<{ ok: boolean; savedMessages: number; scanned: number }>("/api/whatsapp-web/sync-chat-messages", {
-        method: "POST",
-        body: JSON.stringify({ chatId: selectedConversation.external_chat_id, limit: syncLimit }),
-      });
-      setSuccess(`Sincronização concluída: ${data.savedMessages} mensagens salvas de ${data.scanned} lidas.`);
-      await loadConversations(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao sincronizar conversa");
     } finally {
       setLoading(null);
     }
@@ -545,8 +562,7 @@ export function InboxPanel() {
             ) : (
               <div className="flex h-[760px] flex-col">
                 <div className="flex items-center gap-2 border-b bg-white p-3">
-                  <input type="number" min={10} max={200} value={syncLimit} onChange={(event) => setSyncLimit(Number(event.target.value))} className="w-24 rounded-xl border px-3 py-2 text-sm" />
-                  <Button onClick={syncSelectedConversationMessages} disabled={Boolean(loading)} size="sm" variant="outline"><RotateCw className="mr-2 h-4 w-4" />Sincronizar esta conversa</Button>
+                  <Badge variant={syncStatus?.status === "disconnected" || syncStatus?.status === "stale" ? "outline" : "secondary"}>{syncStatus?.label || syncStatusLabel(syncStatus?.status)}</Badge>
                   <Button onClick={() => queueAction("claim")} disabled={Boolean(loading)} size="sm">Assumir</Button>
                   <Button onClick={() => queueAction("resolve")} disabled={Boolean(loading)} size="sm" variant="outline">Resolver</Button>
                   <Button onClick={() => queueAction("reopen")} disabled={Boolean(loading)} size="sm" variant="outline">Reabrir</Button>
@@ -554,7 +570,7 @@ export function InboxPanel() {
 
                 <div className="flex-1 space-y-3 overflow-auto bg-slate-50 p-4">
                   {messages.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed bg-white p-8 text-center text-sm text-muted-foreground">Sem mensagens salvas. Clique em “Sincronizar esta conversa”.</div>
+                    <div className="rounded-2xl border border-dashed bg-white p-8 text-center text-sm text-muted-foreground">Sem mensagens salvas ainda. A sincronização automática continuará em segundo plano.</div>
                   ) : messages.map((message) => {
                     const outbound = message.direction === "outbound";
                     const deleted = Boolean(message.deleted_by_sender);
