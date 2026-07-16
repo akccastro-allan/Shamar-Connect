@@ -385,14 +385,17 @@ export async function enqueueWhatsappSyncForConnectedSession(db: Db, input: {
   });
 }
 
-async function claimNextRun(db: Db): Promise<SyncRunRow | null> {
+async function claimNextRun(db: Db, channelId?: string | null): Promise<SyncRunRow | null> {
   await recoverAbandonedLocks(db);
 
-  const { data: queued, error } = await db
+  let query = db
     .from("whatsapp_sync_runs")
     .select("id, tenant_id, organization_id, channel_id, sync_state_id, mode, status, selected_chat_ids, chat_limit, message_limit, metadata")
     .eq("status", "queued")
-    .lte("scheduled_at", nowIso())
+    .lte("scheduled_at", nowIso());
+  if (channelId) query = query.eq("channel_id", channelId);
+
+  const { data: queued, error } = await query
     .order("scheduled_at", { ascending: true })
     .order("created_at", { ascending: true })
     .limit(1)
@@ -649,8 +652,13 @@ async function executeRun(db: Db, run: SyncRunRow, providerFactory: SyncProvider
   const selectedChatIds = normalizeChatIds(run.selected_chat_ids || []);
   const cursorOffset = selectedChatIds.length > 0 ? 0 : cursorOffsetFromMetadata(run.metadata);
   const cutoffMs = run.mode === "manual_diagnostic" || run.mode === "incremental" ? null : Date.now() - THIRTY_DAYS_MS;
+  const incrementalCheckpoint = run.mode === "incremental" ? await getIncrementalCheckpoint(db, run) : null;
   const allChats = await provider.listChats();
-  const sortedChats = [...allChats].sort((a, b) => new Date(b.lastMessageAt || 0).getTime() - new Date(a.lastMessageAt || 0).getTime());
+  const checkpointMs = incrementalCheckpoint ? new Date(incrementalCheckpoint).getTime() : null;
+  const candidateChats = checkpointMs && selectedChatIds.length === 0
+    ? allChats.filter((chat) => !chat.lastMessageAt || new Date(chat.lastMessageAt).getTime() >= checkpointMs)
+    : allChats;
+  const sortedChats = [...candidateChats].sort((a, b) => new Date(b.lastMessageAt || 0).getTime() - new Date(a.lastMessageAt || 0).getTime());
   const chats = selectedChatIds.length > 0
     ? sortedChats.filter((chat) => selectedChatIds.includes(chat.id))
     : sortedChats.slice(cursorOffset, cursorOffset + limits.chatLimit);
@@ -666,9 +674,12 @@ async function executeRun(db: Db, run: SyncRunRow, providerFactory: SyncProvider
 
     try {
       const rawMessages = await provider.listChatMessages(chat.id, limits.messageLimit);
-      const messages = cutoffMs
-        ? rawMessages.filter((message) => new Date(messageTime(message)).getTime() >= cutoffMs)
-        : rawMessages;
+      const messages = rawMessages.filter((message) => {
+        const createdMs = new Date(messageTime(message)).getTime();
+        if (cutoffMs && createdMs < cutoffMs) return false;
+        if (checkpointMs && createdMs <= checkpointMs) return false;
+        return true;
+      });
       await syncChat(db, channel, chat, messages, counters);
       counters.chatsSynced += 1;
     } catch (error) {
@@ -677,6 +688,18 @@ async function executeRun(db: Db, run: SyncRunRow, providerFactory: SyncProvider
   }
 
   return counters;
+}
+
+async function getIncrementalCheckpoint(db: Db, run: SyncRunRow) {
+  const { data, error } = await db
+    .from("whatsapp_channel_sync_state")
+    .select("last_message_checkpoint, last_success_at")
+    .eq("channel_id", run.channel_id)
+    .maybeSingle();
+  if (error) throw error;
+  const messageCheckpoint = typeof data?.last_message_checkpoint === "string" ? data.last_message_checkpoint : null;
+  const successCheckpoint = typeof data?.last_success_at === "string" ? data.last_success_at : null;
+  return messageCheckpoint || successCheckpoint;
 }
 
 async function completeRun(db: Db, run: SyncRunRow, counters: SyncCounters) {
@@ -807,6 +830,24 @@ export async function processQueuedWhatsappSyncRuns(db: Db, maxRuns = 1, provide
   }
 
   return { processedRuns: processed.length, reconciliationsQueued: reconciliation.queued, runs: processed };
+}
+
+export async function processQueuedWhatsappSyncRunsForChannel(db: Db, channelId: string, maxRuns = 1, providerFactory: SyncProviderFactory = missingProviderFactory) {
+  const limit = clampInt(maxRuns, 1, 1, 5);
+  const processed = [];
+
+  for (let index = 0; index < limit; index += 1) {
+    const run = await claimNextRun(db, channelId);
+    if (!run) break;
+    try {
+      const counters = await executeRun(db, run, providerFactory);
+      processed.push(await completeRun(db, run, counters));
+    } catch (error) {
+      processed.push(await failRun(db, run, error));
+    }
+  }
+
+  return { processedRuns: processed.length, reconciliationsQueued: 0, runs: processed };
 }
 
 export async function enqueueDueWhatsappReconciliations(db: Db, providerFactory: SyncProviderFactory = missingProviderFactory) {
