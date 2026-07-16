@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import {
   canExecuteSyncDiagnostics,
@@ -169,4 +170,36 @@ test("sanitized run never returns stack traces or provider URLs", () => {
   const run = sanitizeSyncRun({ id: "1234567890abcdef", status: "failed", mode: "bootstrap", error_message: "boom https://secret.example.com/token stack line" });
   assert.equal(run?.id, "123456...cdef");
   assert.equal(run?.error?.includes("https://secret.example.com"), false);
+});
+
+test("diagnostics route lives under operations and admin route only redirects", () => {
+  const operationsPage = readFileSync("app/operations/diagnostics/whatsapp-sync/page.tsx", "utf8");
+  const legacyAdminPage = readFileSync("app/admin/diagnostics/whatsapp-sync/page.tsx", "utf8");
+
+  assert.equal(existsSync("app/operations/diagnostics/whatsapp-sync/actions.ts"), true);
+  assert.equal(existsSync("app/operations/diagnostics/whatsapp-sync/whatsapp-sync-diagnostics-client.tsx"), true);
+  assert.match(operationsPage, /<AppShell active="operations\/diagnostics\/whatsapp-sync">/);
+  assert.match(legacyAdminPage, /redirect\("\/operations\/diagnostics\/whatsapp-sync"\)/);
+  assert.doesNotMatch(legacyAdminPage, /WhatsappSyncDiagnosticsClient/);
+});
+
+test("operations menu exposes sync diagnostics only as command center item", () => {
+  const sidebar = readFileSync("components/sidebar-nav.tsx", "utf8");
+  assert.match(sidebar, /label: "Diagnósticos"/);
+  assert.match(sidebar, /commandCenterOnly: true/);
+  assert.match(sidebar, /href: "\/operations\/diagnostics\/whatsapp-sync"/);
+  assert.match(sidebar, /label: "Sincronização WhatsApp"/);
+});
+
+test("diagnostics page states fixed Lips scope and does not use internal API key", () => {
+  const client = readFileSync("app/operations/diagnostics/whatsapp-sync/whatsapp-sync-diagnostics-client.tsx", "utf8");
+  const actions = readFileSync("app/operations/diagnostics/whatsapp-sync/actions.ts", "utf8");
+  const worker = readFileSync("app/api/internal/whatsapp-sync/process/route.ts", "utf8");
+
+  assert.match(client, /Auto Peças e Auto Center Lips/);
+  assert.match(client, /lips-main/);
+  assert.match(client, /OpenWA/);
+  assert.match(client, /Esta ferramenta não envia mensagens para clientes/);
+  assert.doesNotMatch(actions, /INTERNAL_API_KEY/);
+  assert.match(worker, /processQueuedWhatsappSyncRuns/);
 });
