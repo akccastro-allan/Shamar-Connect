@@ -36,6 +36,8 @@ alter table public.tenant_users
 
 -- Vínculo da conversa ao setor (fila por departamento).
 alter table public.whatsapp_conversations
+  add column if not exists tenant_id uuid references public.tenants(id) on delete set null,
+  add column if not exists organization_id uuid references public.organizations(id) on delete set null,
   add column if not exists department_id uuid references public.departments(id) on delete set null;
 
 create index if not exists idx_conv_department

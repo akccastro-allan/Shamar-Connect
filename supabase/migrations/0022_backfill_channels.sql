@@ -6,6 +6,10 @@
 --
 -- NÃO apaga nada. NÃO torna channel_id NOT NULL.
 
+alter table public.whatsapp_messages
+  add column if not exists tenant_id uuid references public.tenants(id) on delete set null,
+  add column if not exists organization_id uuid references public.organizations(id) on delete set null;
+
 -- ===========================================================================
 -- A) Canal Evolution da Lips (instância "lips")  [OBRIGATÓRIO antes do deploy]
 -- ===========================================================================
