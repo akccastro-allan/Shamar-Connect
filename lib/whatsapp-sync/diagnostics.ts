@@ -3,7 +3,7 @@ import { enqueueWhatsappSync, processQueuedWhatsappSyncRunsForChannel, type What
 import { isOpenWaConnected, type OpenWaSyncProvider } from "./providers/openwa-sync-provider.ts";
 
 type Db = ReturnType<typeof createSupabaseWriteClient>;
-type ProviderFactory = (sessionId: string) => OpenWaSyncProvider;
+type ProviderFactory = (sessionId: string, options?: { baseUrl?: string | null }) => OpenWaSyncProvider;
 
 export type SyncDiagnosticsAction = "status" | "diagnostic" | "bootstrap" | "incremental" | "process_next";
 
@@ -155,7 +155,7 @@ export async function requireWhatsappSyncDiagnosticsOperator(db: Db) {
 export async function resolveLipsSyncChannel(db: Db) {
   const { data: channels, error } = await db
     .from("channels")
-    .select("id, tenant_id, organization_id, session_id, provider, provider_type, channel_type, status, active, is_active")
+    .select("id, tenant_id, organization_id, session_id, provider, provider_type, channel_type, status, active, is_active, gateway_id")
     .eq("session_id", LIPS_SESSION_ID);
   if (error) throw error;
 
@@ -169,11 +169,27 @@ export async function resolveLipsSyncChannel(db: Db) {
       .maybeSingle();
     if (organizationError) throw organizationError;
     if (!organization) continue;
-    if (channel.provider && channel.provider !== "whatsapp_web") throw new Error("Lips channel provider is not whatsapp_web.");
+    if (channel.provider && !["whatsapp_web", "openwa"].includes(channel.provider)) throw new Error("Lips channel provider is not OpenWA/WhatsApp Web.");
     return { channel, organization };
   }
 
   throw new Error("Canal lips-main da Lips nao encontrado.");
+}
+
+async function loadGatewayOptions(db: Db, gatewayId?: string | null) {
+  if (!gatewayId) return {};
+  const { data: gateway, error } = await db
+    .from("internal_messaging_gateways")
+    .select("id, provider, environment, status, base_url")
+    .eq("id", gatewayId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!gateway) throw new Error("Gateway vinculado ao canal Lips nao encontrado.");
+  if (gateway.provider !== "openwa" || gateway.environment !== "production" || gateway.status !== "active") {
+    throw new Error("Gateway vinculado ao canal Lips nao esta ativo em Production/OpenWA.");
+  }
+  if (!gateway.base_url) throw new Error("Gateway vinculado ao canal Lips sem base_url.");
+  return { baseUrl: gateway.base_url as string | null };
 }
 
 async function loadSyncState(db: Db, channelId: string) {
@@ -226,10 +242,11 @@ export async function compareQueueSnapshot(db: Db, channelId: string, before: Ma
 
 export async function getLipsWhatsappSyncDiagnostics(db: Db, providerFactory: ProviderFactory, options?: { includeProviderStatus?: boolean }) {
   const { channel, organization } = await resolveLipsSyncChannel(db);
+  const gatewayOptions = await loadGatewayOptions(db, channel.gateway_id);
   const [state, lastRun] = await Promise.all([loadSyncState(db, channel.id), loadLastRun(db, channel.id)]);
   let providerStatus = typeof state?.last_provider_status === "string" ? state.last_provider_status : null;
   if (options?.includeProviderStatus) {
-    providerStatus = await providerFactory(LIPS_SESSION_ID).getConnectionStatus();
+    providerStatus = await providerFactory(LIPS_SESSION_ID, gatewayOptions).getConnectionStatus();
   }
 
   return {
@@ -275,7 +292,8 @@ function actionLimits(action: SyncDiagnosticsAction) {
 
 export async function runLipsWhatsappSyncDiagnostics(db: Db, providerFactory: ProviderFactory, input: { action: SyncDiagnosticsAction; actorUserId: string }) {
   const { channel } = await resolveLipsSyncChannel(db);
-  const provider = providerFactory(LIPS_SESSION_ID);
+  const gatewayOptions = await loadGatewayOptions(db, channel.gateway_id);
+  const provider = providerFactory(LIPS_SESSION_ID, gatewayOptions);
   const providerStatus = await provider.getConnectionStatus();
   const before = await snapshotQueue(db, channel.id);
   const mode = actionMode(input.action);

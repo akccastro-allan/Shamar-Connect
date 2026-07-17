@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import {
   canExecuteSyncDiagnostics,
+  getLipsWhatsappSyncDiagnostics,
   isWhatsappSyncDiagnosticsOperatorCandidate,
   runLipsWhatsappSyncDiagnostics,
   sanitizeSyncRun,
@@ -14,7 +15,8 @@ type Tables = Record<string, Row[]>;
 
 function createDb(seed?: Partial<Tables>) {
   const tables: Tables = {
-    channels: [{ id: "channel-lips", tenant_id: "tenant-lips", organization_id: "org-lips", session_id: "lips-main", provider: "whatsapp_web", status: "active", active: true, is_active: true }],
+    channels: [{ id: "channel-lips", tenant_id: "tenant-lips", organization_id: "org-lips", session_id: "lips-main", provider: "openwa", status: "active", active: true, is_active: true, gateway_id: "gateway-lips" }],
+    internal_messaging_gateways: [{ id: "gateway-lips", provider: "openwa", environment: "production", status: "active", base_url: "https://gateway.example.com" }],
     organizations: [{ id: "org-lips", slug: "auto-pecas-auto-center-lips", name: "Lips", status: "active" }],
     whatsapp_channel_sync_state: [{ id: "state-lips", tenant_id: "tenant-lips", organization_id: "org-lips", channel_id: "channel-lips", sync_status: "idle", last_message_checkpoint: "2026-07-15T10:00:00.000Z", stats: {} }],
     whatsapp_sync_runs: [],
@@ -84,9 +86,10 @@ function createDb(seed?: Partial<Tables>) {
   return { db: { from: (table: string) => new Query(table) } as any, tables };
 }
 
-function providerFactory(calls: string[] = []): (sessionId: string) => OpenWaSyncProvider {
-  return (sessionId: string) => {
+function providerFactory(calls: string[] = [], optionsCalls: Array<Record<string, unknown> | undefined> = []): (sessionId: string, options?: Record<string, unknown>) => OpenWaSyncProvider {
+  return (sessionId: string, options?: Record<string, unknown>) => {
     calls.push(sessionId);
+    optionsCalls.push(options);
     return {
       sessionId,
       async getConnectionStatus() { return "ready"; },
@@ -123,15 +126,72 @@ test("production blocks execution without explicit internal flag and preview all
 test("diagnostic uses only lips-main, processes one run and preserves queue", async () => {
   const { db, tables } = createDb();
   const calls: string[] = [];
-  const result = await runLipsWhatsappSyncDiagnostics(db, providerFactory(calls), { action: "diagnostic", actorUserId: "platform-user" });
+  const optionsCalls: Array<Record<string, unknown> | undefined> = [];
+  const result = await runLipsWhatsappSyncDiagnostics(db, providerFactory(calls, optionsCalls), { action: "diagnostic", actorUserId: "platform-user" });
 
   assert.deepEqual(Array.from(new Set(calls)), ["lips-main"]);
+  assert.equal(optionsCalls[0]?.baseUrl, "https://gateway.example.com");
   assert.equal(result.processedRuns, 1);
   assert.equal(result.queuePreserved, true);
   assert.equal(result.sentMessages, false);
   assert.equal(result.returnedSecret, false);
   assert.equal(tables.whatsapp_sync_runs[0].mode, "manual_diagnostic");
   assert.equal(tables.whatsapp_sync_runs[0].chat_limit, 1);
+});
+
+test("diagnostics resolves active openwa gateway base_url without exposing URL or token", async () => {
+  const { db } = createDb({
+    internal_messaging_gateways: [{ id: "gateway-lips", provider: "openwa", environment: "production", status: "active", base_url: "https://gateway.example.com", token: "super-secret-token" }],
+  });
+  const calls: string[] = [];
+  const optionsCalls: Array<Record<string, unknown> | undefined> = [];
+  const snapshot = await getLipsWhatsappSyncDiagnostics(db, providerFactory(calls, optionsCalls), { includeProviderStatus: true });
+
+  assert.deepEqual(Array.from(new Set(calls)), ["lips-main"]);
+  assert.equal(optionsCalls[0]?.baseUrl, "https://gateway.example.com");
+  const payload = JSON.stringify(snapshot);
+  assert.equal(payload.includes("gateway.example.com"), false);
+  assert.equal(payload.includes("super-secret-token"), false);
+});
+
+test("legacy whatsapp_web channel without gateway uses provider fallback path", async () => {
+  const { db } = createDb({
+    channels: [{ id: "channel-lips", tenant_id: "tenant-lips", organization_id: "org-lips", session_id: "lips-main", provider: "whatsapp_web", status: "active", active: true, is_active: true, gateway_id: null }],
+  });
+  const calls: string[] = [];
+  const optionsCalls: Array<Record<string, unknown> | undefined> = [];
+  const result = await runLipsWhatsappSyncDiagnostics(db, providerFactory(calls, optionsCalls), { action: "diagnostic", actorUserId: "platform-user" });
+
+  assert.equal(result.processedRuns, 1);
+  assert.deepEqual(Array.from(new Set(calls)), ["lips-main"]);
+  assert.equal(optionsCalls[0]?.baseUrl, undefined);
+});
+
+test("default provider keeps env fallback when no gateway option is supplied", () => {
+  const defaultProvider = readFileSync("lib/whatsapp-sync/providers/openwa-sync-provider-default.ts", "utf8");
+  const gatewayClient = readFileSync("lib/providers/whatsapp-web-gateway-client.ts", "utf8");
+
+  assert.match(defaultProvider, /if \(options\?\.baseUrl\)/);
+  assert.match(defaultProvider, /createOpenWaSyncProvider\(sessionId, resolveSessionClient\)/);
+  assert.match(gatewayClient, /options\?\.baseUrl \|\| process\.env\.WHATSAPP_WEB_GATEWAY_URL/);
+  assert.match(gatewayClient, /AbortSignal\.timeout/);
+});
+
+test("gateway validation fails closed for missing inactive or incomplete gateway", async () => {
+  await assert.rejects(
+    getLipsWhatsappSyncDiagnostics(createDb({ internal_messaging_gateways: [] }).db, providerFactory(), { includeProviderStatus: true }),
+    /Gateway vinculado ao canal Lips nao encontrado/,
+  );
+
+  await assert.rejects(
+    getLipsWhatsappSyncDiagnostics(createDb({ internal_messaging_gateways: [{ id: "gateway-lips", provider: "openwa", environment: "production", status: "inactive", base_url: "https://gateway.example.com" }] }).db, providerFactory(), { includeProviderStatus: true }),
+    /nao esta ativo/,
+  );
+
+  await assert.rejects(
+    getLipsWhatsappSyncDiagnostics(createDb({ internal_messaging_gateways: [{ id: "gateway-lips", provider: "openwa", environment: "production", status: "active", base_url: null }] }).db, providerFactory(), { includeProviderStatus: true }),
+    /sem base_url/,
+  );
 });
 
 test("bootstrap is limited to one controlled batch", async () => {
