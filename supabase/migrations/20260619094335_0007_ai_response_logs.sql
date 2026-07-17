@@ -31,3 +31,12 @@ create table if not exists public.ai_response_logs (
 create index if not exists ai_response_logs_conversation_id_idx on public.ai_response_logs (conversation_id);
 create index if not exists ai_response_logs_tenant_org_idx on public.ai_response_logs (tenant_id, organization_id);
 create index if not exists ai_response_logs_created_at_idx on public.ai_response_logs (created_at desc);
+
+alter table public.ai_response_logs enable row level security;
+revoke all on table public.ai_response_logs from public, anon, authenticated;
+grant all on table public.ai_response_logs to service_role;
+
+drop policy if exists "service_all_ai_response_logs" on public.ai_response_logs;
+create policy "service_all_ai_response_logs" on public.ai_response_logs
+  for all using (auth.role() = 'service_role')
+  with check (auth.role() = 'service_role');

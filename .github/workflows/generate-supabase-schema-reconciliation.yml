@@ -1,0 +1,90 @@
+name: Generate Supabase Schema Reconciliation
+
+on:
+  workflow_dispatch:
+
+jobs:
+  generate-reconciliation:
+    name: Generate reconciliation SQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+
+      - name: Confirm Docker availability
+        run: |
+          set -euo pipefail
+          docker --version
+          docker info >/dev/null
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate required secrets
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+        run: |
+          set -euo pipefail
+          test -n "$POSTGRES_URL" || {
+            echo "::error::POSTGRES_URL ausente"
+            exit 1
+          }
+
+      - name: Generate schema reconciliation SQL
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+          NODE_OPTIONS: --dns-result-order=ipv4first
+        run: |
+          set -euo pipefail
+
+          npx supabase@latest db diff \
+            --db-url "$POSTGRES_URL" \
+            --schema public,extensions \
+            -f production_schema_reconciliation
+
+          mkdir -p artifacts
+
+          RECON_FILE="$(
+            find supabase/migrations \
+              -maxdepth 1 \
+              -type f \
+              -name '*_production_schema_reconciliation.sql' \
+              -print \
+              | sort \
+              | tail -n 1
+          )"
+
+          test -n "$RECON_FILE" || {
+            echo "::error::Arquivo de reconciliação não foi gerado"
+            exit 1
+          }
+
+          cp "$RECON_FILE" artifacts/production_schema_reconciliation.sql
+
+          {
+            echo "Generated file: $RECON_FILE"
+            echo "Bytes: $(wc -c < "$RECON_FILE")"
+            echo "Lines: $(wc -l < "$RECON_FILE")"
+          } > artifacts/reconciliation-summary.txt
+
+          grep -Ein \
+            '^[[:space:]]*(drop|truncate|delete|update|insert)[[:space:]]' \
+            "$RECON_FILE" \
+            > artifacts/review-flags.txt || true
+
+      - name: Upload reconciliation SQL
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-schema-reconciliation-sql
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 7

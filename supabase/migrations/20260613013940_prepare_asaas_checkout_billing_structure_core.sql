@@ -57,6 +57,15 @@ CREATE TABLE IF NOT EXISTS public.billing_checkout_sessions (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+ALTER TABLE public.billing_checkout_sessions ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.billing_checkout_sessions FROM public, anon, authenticated;
+GRANT ALL ON TABLE public.billing_checkout_sessions TO service_role;
+
+DROP POLICY IF EXISTS "service_all_billing_checkout_sessions" ON public.billing_checkout_sessions;
+CREATE POLICY "service_all_billing_checkout_sessions" ON public.billing_checkout_sessions
+  FOR ALL USING (auth.role() = 'service_role')
+  WITH CHECK (auth.role() = 'service_role');
+
 -- Campos de método de pagamento em billing_checkout_sessions
 ALTER TABLE public.billing_checkout_sessions
   ADD COLUMN IF NOT EXISTS payment_method        text,
@@ -82,6 +91,15 @@ CREATE TABLE IF NOT EXISTS public.finance_payments (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+ALTER TABLE public.finance_payments ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.finance_payments FROM public, anon, authenticated;
+GRANT ALL ON TABLE public.finance_payments TO service_role;
+
+DROP POLICY IF EXISTS "service_all_finance_payments" ON public.finance_payments;
+CREATE POLICY "service_all_finance_payments" ON public.finance_payments
+  FOR ALL USING (auth.role() = 'service_role')
+  WITH CHECK (auth.role() = 'service_role');
 
 ALTER TABLE public.finance_payments
   ADD COLUMN IF NOT EXISTS payment_method text;

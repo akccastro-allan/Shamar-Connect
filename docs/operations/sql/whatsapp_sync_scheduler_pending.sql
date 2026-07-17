@@ -1,9 +1,19 @@
--- 0036: Scheduler Production para sincronizacao WhatsApp.
--- A migration do scheduler só pode ser aplicada depois do endpoint existir em Production e do INTERNAL_API_KEY estar configurado no ambiente Production.
--- NAO aplicar antes do deployment Production existir e dos segredos estarem no Supabase Vault.
--- Nao versionar INTERNAL_API_KEY. Segredos esperados no Vault:
---   shamar_connect_sync_worker_url = https://www.shamarconnect.com.br/api/internal/whatsapp-sync/process
---   shamar_connect_sync_internal_key = valor de INTERNAL_API_KEY em Vercel Production
+-- PENDENTE — NÃO APLICAR AUTOMATICAMENTE
+--
+-- Scheduler Production para sincronizacao WhatsApp.
+-- Este SQL foi removido de supabase/migrations para nao ser executado por
+-- branches Preview, ambientes novos ou Production sem homologacao explicita.
+--
+-- Pre-requisitos obrigatorios antes de criar uma nova migration com novo timestamp:
+-- - endpoint Production homologado;
+-- - INTERNAL_API_KEY em Production;
+-- - URL oficial validada;
+-- - Supabase Vault configurado;
+-- - webhook e sync testados ponta a ponta;
+-- - autorizacao explicita.
+--
+-- Nao reutilizar o timestamp 20260716082000.
+-- Quando aprovado, criar uma migration nova com novo timestamp.
 
 set search_path = public, pg_temp;
 
