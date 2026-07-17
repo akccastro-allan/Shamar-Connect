@@ -23105,3 +23105,54 @@ create or replace view "public"."whatsapp_media_dashboard_summary" as  SELECT ( 
            FROM public.whatsapp_audio_transcriptions) AS total_audio_transcriptions,
     ( SELECT count(*) AS count
            FROM public.whatsapp_media_text_extractions) AS total_text_extractions;
+
+-- FRESH ENVIRONMENT INTERNAL TABLE GRANT FINALIZATION
+-- Keep these final so generated grants cannot reopen internal tables to client roles.
+
+revoke all privileges
+on table public.commercial_agent_profiles
+from public, anon, authenticated;
+
+revoke all privileges
+on table public.commercial_conversation_analysis
+from public, anon, authenticated;
+
+revoke all privileges
+on table public.commercial_follow_ups
+from public, anon, authenticated;
+
+revoke all privileges
+on table public.commercial_opportunities
+from public, anon, authenticated;
+
+revoke all privileges
+on table public.commercial_response_suggestions
+from public, anon, authenticated;
+
+revoke all privileges
+on table public.internal_messaging_gateways
+from public, anon, authenticated;
+
+grant all privileges
+on table public.commercial_agent_profiles
+to service_role;
+
+grant all privileges
+on table public.commercial_conversation_analysis
+to service_role;
+
+grant all privileges
+on table public.commercial_follow_ups
+to service_role;
+
+grant all privileges
+on table public.commercial_opportunities
+to service_role;
+
+grant all privileges
+on table public.commercial_response_suggestions
+to service_role;
+
+grant all privileges
+on table public.internal_messaging_gateways
+to service_role;

@@ -18,6 +18,15 @@ const sensitiveTables = [
   "finance_payments",
 ];
 
+const internalServerOnlyTables = [
+  "commercial_agent_profiles",
+  "commercial_conversation_analysis",
+  "commercial_follow_ups",
+  "commercial_opportunities",
+  "commercial_response_suggestions",
+  "internal_messaging_gateways",
+];
+
 test("scheduler automatico fica fora de supabase/migrations", () => {
   assert.equal(existsSync(`${migrationsDir}/20260716082000_0036_whatsapp_sync_scheduler.sql`), false);
   assert.equal(existsSync("docs/operations/sql/whatsapp_sync_scheduler_pending.sql"), true);
@@ -47,6 +56,30 @@ test("tabelas sensiveis recebem RLS, revokes, grants e policy service_role", () 
     assert.match(allMigrations, new RegExp(`revoke all on table public\\.${table} from public, anon, authenticated`, "i"), `${table} sem revoke`);
     assert.match(allMigrations, new RegExp(`grant all on table public\\.${table} to service_role`, "i"), `${table} sem grant service_role`);
     assert.match(allMigrations, new RegExp(`create policy .*${table}.*auth\\.role\\(\\) = 'service_role'`, "is"), `${table} sem policy service_role`);
+  }
+});
+
+test("tabelas internas permanecem server-only na baseline fresh environment", () => {
+  for (const table of internalServerOnlyTables) {
+    const tableRef = `(?:public\\.${table}|"public"\\."${table}")`;
+    const finalRevoke = `revoke all privileges\non table public.${table}\nfrom public, anon, authenticated;`;
+    const finalRevokeIndex = migration0035.toLowerCase().lastIndexOf(finalRevoke);
+
+    assert.match(migration0035, new RegExp(`alter table ${tableRef} enable row level security`, "i"), `${table} sem RLS`);
+    assert.notEqual(finalRevokeIndex, -1, `${table} sem revoke final de public/anon/authenticated`);
+    assert.match(migration0035, new RegExp(`grant all privileges\\s+on table public\\.${table}\\s+to service_role;`, "i"), `${table} sem grant final service_role`);
+    assert.match(
+      migration0035,
+      new RegExp(`create policy [\\s\\S]*on "public"\\."${table}"[\\s\\S]*auth\\.role\\(\\) = 'service_role'`, "i"),
+      `${table} sem policy server-only`,
+    );
+
+    const afterFinalRevoke = migration0035.slice(finalRevokeIndex + finalRevoke.length);
+    assert.doesNotMatch(
+      afterFinalRevoke,
+      new RegExp(`grant\\s+(select|insert|update|delete|all|all privileges|references|trigger|truncate)[\\s\\S]*on table\\s+${tableRef}[\\s\\S]*to\\s+"?(public|anon|authenticated)"?`, "i"),
+      `${table} teve acesso reaberto depois do revoke final`,
+    );
   }
 });
 
