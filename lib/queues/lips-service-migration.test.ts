@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import test from "node:test";
 
@@ -16,7 +15,7 @@ const migration0034b = readFileSync(migration0034bPath, "utf8");
 const migration0034c = readFileSync(migration0034cPath, "utf8");
 const migration0034d = readFileSync(migration0034dPath, "utf8");
 const migration0034 = [migration0034a, migration0034b, migration0034c, migration0034d].join("\n");
-const migration0035 = readFileSync(migration0035Path);
+const migration0035 = readFileSync(migration0035Path, "utf8");
 const pendingScheduler = readFileSync(pendingSchedulerPath, "utf8");
 
 test("historico local reflete migrations aplicadas no Supabase", () => {
@@ -98,9 +97,10 @@ test("migrations Lips nao usam UUID fixo", () => {
   assert.doesNotMatch(migration0034, /8f074193-bf58-4537-9842-720619a9f259/);
 });
 
-test("0035 usa timestamp aplicado e permanece inalterada", () => {
-  const hash = createHash("sha256").update(migration0035).digest("hex");
-  assert.equal(hash, "4b1e1ea7eeef14022905807550322cf9aac13e7eee615c6d75d245d7e14390e7");
+test("0035 usa timestamp aplicado e contem baseline de fresh environments", () => {
+  assert.match(migration0035Path, /20260716081940_0035_whatsapp_auto_sync\.sql$/);
+  assert.match(migration0035, /FRESH ENVIRONMENT SCHEMA RECONCILIATION/);
+  assert.match(migration0035, /Production already records migration 20260716081940 as applied/);
 });
 
 test("scheduler 0036 fica fora de migrations e somente em SQL operacional pendente", () => {

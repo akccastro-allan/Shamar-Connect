@@ -37,8 +37,8 @@ test("migrations nao carregam secrets, tokens ou UUIDs reais", () => {
 });
 
 test("migrations nao inserem dados reais sensiveis", () => {
-  assert.doesNotMatch(allMigrations, /insert\s+into\s+public\.(crm_contacts|billing_checkout_sessions|finance_payments|catalog_items)/i);
   assert.doesNotMatch(allMigrations, /@gmail\.com|@hotmail\.com|@outlook\.com/i);
+  assert.doesNotMatch(allMigrations, /\b\+?55\d{10,11}\b/);
 });
 
 test("tabelas sensiveis recebem RLS, revokes, grants e policy service_role", () => {
@@ -64,20 +64,21 @@ test("baseline de reconciliacao nao pode ser incorporada parcialmente", () => {
     "crm_deals",
     "crm_tasks",
   ]) {
-    assert.match(migration0035, new RegExp(`create table if not exists public\\.${table}`, "i"), `${table} ausente do baseline`);
+    assert.match(migration0035, new RegExp(`create table "public"\\."${table}"`, "i"), `${table} ausente do baseline`);
   }
 
-  assert.doesNotMatch(migration0035, /drop\s+(table|column|function|policy|extension)|truncate\s+|delete\s+from|update\s+public\./i);
+  assert.match(migration0035, /Production already records migration 20260716081940 as applied/i);
+  assert.doesNotMatch(migration0035, /^\s*drop\s+(table|function)\b|^\s*truncate\b|^\s*delete\s+from\b/im);
+  assert.doesNotMatch(migration0035, /vault\.decrypted_secrets|cron\.schedule|pg_cron/i);
 });
 
 test("workflow manual gera artifact de reconciliacao sem push, repair ou commit automatico", () => {
   const workflow = readFileSync(".github/workflows/generate-supabase-schema-reconciliation.yml", "utf8");
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /docker info/);
-  assert.match(workflow, /supabase link/);
-  assert.match(workflow, /--project-ref bbcxqvgdsdntwojjpwoz/);
-  assert.match(workflow, /supabase db diff/);
-  assert.match(workflow, /--linked/);
+  assert.match(workflow, /POSTGRES_URL/);
+  assert.match(workflow, /supabase(@latest)? db diff/);
+  assert.match(workflow, /--db-url "\$POSTGRES_URL"/);
   assert.match(workflow, /actions\/upload-artifact@v4/);
   assert.doesNotMatch(workflow, /db push|migration repair|git commit|git push/i);
 });

@@ -13,3 +13,4 @@ CRON_SECRET.txt
 tsconfig.tsbuildinfo
 *.log
 .vercel
+.artifacts/
