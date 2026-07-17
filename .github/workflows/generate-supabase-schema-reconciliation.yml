@@ -47,6 +47,7 @@ jobs:
       - name: Generate schema reconciliation SQL
         env:
           POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+          NODE_OPTIONS: --dns-result-order=ipv4first
         run: |
           set -euo pipefail
 
