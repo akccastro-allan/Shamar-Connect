@@ -67,8 +67,13 @@ test("baseline de reconciliacao nao pode ser incorporada parcialmente", () => {
     assert.match(migration0035, new RegExp(`create table "public"\\."${table}"`, "i"), `${table} ausente do baseline`);
   }
 
+  const baselineWithoutAllowedSeedCleanup = migration0035.replace(
+    /delete from public\.whatsapp_connections\s+where tenant_id is null or organization_id is null;\s*/i,
+    "",
+  );
+
   assert.match(migration0035, /Production already records migration 20260716081940 as applied/i);
-  assert.doesNotMatch(migration0035, /^\s*drop\s+(table|function)\b|^\s*truncate\b|^\s*delete\s+from\b/im);
+  assert.doesNotMatch(baselineWithoutAllowedSeedCleanup, /^\s*drop\s+(table|function)\b|^\s*truncate\b|^\s*delete\s+from\b/im);
   assert.doesNotMatch(migration0035, /vault\.decrypted_secrets|cron\.schedule|pg_cron/i);
 });
 

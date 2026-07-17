@@ -4187,6 +4187,9 @@ alter table "public"."whatsapp_connections" add column "phone_number" text;
 
 alter table "public"."whatsapp_connections" add column "provider" text not null default 'whatsapp_web'::text;
 
+delete from public.whatsapp_connections
+where tenant_id is null or organization_id is null;
+
 alter table "public"."whatsapp_connections" alter column "organization_id" set not null;
 
 alter table "public"."whatsapp_connections" alter column "tenant_id" set not null;
