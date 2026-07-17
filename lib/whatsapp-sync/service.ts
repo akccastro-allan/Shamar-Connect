@@ -156,6 +156,10 @@ function isGroupChat(chat: ProviderChatSummary | ProviderSyncedMessage) {
   return Boolean(chat.isGroup) || String("chatId" in chat ? chat.chatId : chat.id).endsWith("@g.us");
 }
 
+function isSupportedOpenWaProvider(provider?: string | null) {
+  return !provider || provider === "whatsapp_web" || provider === "openwa";
+}
+
 function runLimits(mode: WhatsappSyncMode, chatLimit: number, messageLimit: number) {
   if (mode === "bootstrap" || mode === "reconciliation") {
     return {
@@ -339,7 +343,7 @@ export async function enqueueWhatsappSyncForSession(db: Db, input: {
     .maybeSingle();
   if (error) throw error;
   if (!channel?.id) return { created: false, runId: null, status: "skipped" as const, reason: "channel_not_found" };
-  if (channel.provider && channel.provider !== "whatsapp_web") return { created: false, runId: null, status: "skipped" as const, reason: "provider_not_supported" };
+  if (!isSupportedOpenWaProvider(channel.provider)) return { created: false, runId: null, status: "skipped" as const, reason: "provider_not_supported" };
 
   return enqueueWhatsappSync(db, {
     tenantId: channel.tenant_id,
@@ -364,7 +368,7 @@ export async function enqueueWhatsappSyncForConnectedSession(db: Db, input: {
     .maybeSingle();
   if (error) throw error;
   if (!channel?.id) return { created: false, runId: null, status: "skipped" as const, reason: "channel_not_found" };
-  if (channel.provider && channel.provider !== "whatsapp_web") return { created: false, runId: null, status: "skipped" as const, reason: "provider_not_supported" };
+  if (!isSupportedOpenWaProvider(channel.provider)) return { created: false, runId: null, status: "skipped" as const, reason: "provider_not_supported" };
   if (channel.organization_id !== LIPS_ORGANIZATION_ID) return { created: false, runId: null, status: "skipped" as const, reason: "non_lips_channel" };
 
   const { data: state, error: stateError } = await db
@@ -622,7 +626,7 @@ async function syncChat(db: Db, channel: ChannelForSync, chat: ProviderChatSumma
 async function executeRun(db: Db, run: SyncRunRow, providerFactory: SyncProviderFactory): Promise<SyncCounters> {
   const channel = await getChannel(db, run.channel_id);
   if (!channel?.session_id) throw new Error("Canal sem session_id para sincronizacao.");
-  if (channel.provider && channel.provider !== "whatsapp_web") throw new Error("Canal nao e WhatsApp Web.");
+  if (!isSupportedOpenWaProvider(channel.provider)) throw new Error("Canal nao e OpenWA/WhatsApp Web.");
 
   const provider = providerFactory(channel.session_id);
 
@@ -857,7 +861,7 @@ export async function enqueueDueWhatsappReconciliations(db: Db, providerFactory:
     .from("channels")
     .select("id, tenant_id, organization_id, session_id, provider, is_active, active")
     .eq("organization_id", LIPS_ORGANIZATION_ID)
-    .eq("provider", "whatsapp_web")
+    .in("provider", ["whatsapp_web", "openwa"])
     .not("session_id", "is", null);
   if (error) throw error;
 
