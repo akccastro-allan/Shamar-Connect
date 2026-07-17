@@ -5,10 +5,35 @@ import { isOpenWaConnected, type OpenWaSyncProvider } from "./providers/openwa-s
 type Db = ReturnType<typeof createSupabaseWriteClient>;
 type ProviderFactory = (sessionId: string, options?: { baseUrl?: string | null }) => OpenWaSyncProvider;
 
-export type SyncDiagnosticsAction = "status" | "diagnostic" | "bootstrap" | "incremental" | "process_next";
+type GatewayOptions = {
+  id?: string | null;
+  name?: string | null;
+  slug?: string | null;
+  provider?: string | null;
+  environment?: string | null;
+  status?: string | null;
+  baseUrl?: string | null;
+};
+
+type GatewaySession = {
+  id?: string;
+  name?: string;
+  status?: string;
+  phone?: string | null;
+  wid?: string | null;
+  number?: string | null;
+  lastError?: string | null;
+  error?: string | null;
+  me?: { user?: string | null } | null;
+};
+
+export type SyncDiagnosticsAction = "status" | "diagnostic" | "bootstrap" | "incremental" | "reconciliation" | "process_next";
 
 const LIPS_SESSION_ID = "lips-main";
 const LIPS_ORGANIZATION_SLUG = "auto-pecas-auto-center-lips";
+const GATEWAY_PROBE_TIMEOUT_MS = 15_000;
+const BOOTSTRAP_CHAT_LIMIT = 100;
+const BOOTSTRAP_MESSAGE_LIMIT = 100;
 const QUEUE_FIELDS = [
   "queue_status",
   "priority",
@@ -41,6 +66,14 @@ export function canExecuteSyncDiagnostics(input: { vercelEnv?: string | null; me
   return hasFeature(input.metadata, "whatsapp_sync_diagnostics_execute");
 }
 
+export function isReadOnlySyncDiagnosticsAction(action: SyncDiagnosticsAction) {
+  return action === "status";
+}
+
+export function isWriteSyncDiagnosticsAction(action: SyncDiagnosticsAction) {
+  return !isReadOnlySyncDiagnosticsAction(action);
+}
+
 function isAllowedRole(value?: string | null) {
   return value === "owner" || value === "admin";
 }
@@ -57,8 +90,35 @@ function maskId(value?: string | null) {
 }
 
 function safeError(value: unknown) {
-  const text = String(value || "").replace(/https?:\/\/\S+/g, "[url-redacted]");
+  const text = String(value || "")
+    .replace(/https?:\/\/\S+/g, "[url-redacted]")
+    .replace(/Bearer\s+[^\s]+/gi, "Bearer [token-redacted]")
+    .replace(/[A-Za-z0-9_-]{24,}/g, "[token-redacted]");
   return text.slice(0, 220);
+}
+
+function maskPhone(value?: string | null) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (!digits) return null;
+  if (digits.length <= 4) return `***${digits}`;
+  return `${digits.slice(0, 4)}***${digits.slice(-4)}`;
+}
+
+function normalizeGatewayBaseUrl(value?: string | null) {
+  return String(value || "").replace(/\/+$/, "");
+}
+
+function gatewayApiBaseUrl(value?: string | null) {
+  const baseUrl = normalizeGatewayBaseUrl(value);
+  if (!baseUrl) return "";
+  return baseUrl.endsWith("/api") ? baseUrl : `${baseUrl}/api`;
+}
+
+function asArray<T>(value: unknown): T[] {
+  if (Array.isArray(value)) return value as T[];
+  if (value && typeof value === "object" && Array.isArray((value as { data?: unknown }).data)) return (value as { data: T[] }).data;
+  if (value && typeof value === "object" && Array.isArray((value as { sessions?: unknown }).sessions)) return (value as { sessions: T[] }).sessions;
+  return [];
 }
 
 export function sanitizeSyncRun(run: Record<string, unknown> | null | undefined) {
@@ -176,11 +236,11 @@ export async function resolveLipsSyncChannel(db: Db) {
   throw new Error("Canal lips-main da Lips nao encontrado.");
 }
 
-async function loadGatewayOptions(db: Db, gatewayId?: string | null) {
+async function loadGatewayOptions(db: Db, gatewayId?: string | null): Promise<GatewayOptions> {
   if (!gatewayId) return {};
   const { data: gateway, error } = await db
     .from("internal_messaging_gateways")
-    .select("id, provider, environment, status, base_url")
+    .select("id, name, slug, provider, environment, status, base_url")
     .eq("id", gatewayId)
     .maybeSingle();
   if (error) throw error;
@@ -189,7 +249,15 @@ async function loadGatewayOptions(db: Db, gatewayId?: string | null) {
     throw new Error("Gateway vinculado ao canal Lips nao esta ativo em Production/OpenWA.");
   }
   if (!gateway.base_url) throw new Error("Gateway vinculado ao canal Lips sem base_url.");
-  return { baseUrl: gateway.base_url as string | null };
+  return {
+    id: gateway.id as string | null,
+    name: gateway.name as string | null,
+    slug: gateway.slug as string | null,
+    provider: gateway.provider as string | null,
+    environment: gateway.environment as string | null,
+    status: gateway.status as string | null,
+    baseUrl: gateway.base_url as string | null,
+  };
 }
 
 async function loadSyncState(db: Db, channelId: string) {
@@ -212,6 +280,99 @@ async function loadLastRun(db: Db, channelId: string) {
     .maybeSingle();
   if (error) throw error;
   return data || null;
+}
+
+async function countRows(db: Db, table: string, applyFilters: (query: any) => any) {
+  const query = applyFilters(db.from(table).select("id"));
+  const { data, error } = await query;
+  if (error) throw error;
+  return Array.isArray(data) ? data.length : 0;
+}
+
+async function loadReadOnlyInventory(db: Db, channelId: string) {
+  const [syncState, syncRuns, pendingRuns, failedRuns, locks, conversations, queueNull] = await Promise.all([
+    countRows(db, "whatsapp_channel_sync_state", (query) => query.eq("channel_id", channelId)),
+    countRows(db, "whatsapp_sync_runs", (query) => query.eq("channel_id", channelId)),
+    countRows(db, "whatsapp_sync_runs", (query) => query.eq("channel_id", channelId).in("status", ["queued", "running"])),
+    countRows(db, "whatsapp_sync_runs", (query) => query.eq("channel_id", channelId).eq("status", "failed")),
+    countRows(db, "whatsapp_channel_sync_state", (query) => query.eq("channel_id", channelId).not("locked_at", "is", null)),
+    countRows(db, "whatsapp_conversations", (query) => query.eq("channel_id", channelId)),
+    countRows(db, "whatsapp_conversations", (query) => query.eq("channel_id", channelId).is("queue_status", null)),
+  ]);
+
+  return { syncState, syncRuns, pendingRuns, failedRuns, locks, conversations, queueStatusNull: queueNull };
+}
+
+async function gatewayFetchJson(url: string, token: string) {
+  const startedAt = Date.now();
+  try {
+    const response = await fetch(url, {
+      headers: { "x-api-key": token, authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(GATEWAY_PROBE_TIMEOUT_MS),
+      cache: "no-store",
+    });
+    const text = await response.text();
+    let payload: unknown = null;
+    try {
+      payload = text ? JSON.parse(text) : null;
+    } catch {
+      payload = { text: text.slice(0, 120) };
+    }
+    return { status: response.status, ok: response.ok, latencyMs: Date.now() - startedAt, payload, error: null as string | null };
+  } catch (error) {
+    return { status: null as number | null, ok: false, latencyMs: Date.now() - startedAt, payload: null, error: safeError(error instanceof Error ? error.message : String(error)) };
+  }
+}
+
+async function probeGatewayStatus(gateway: GatewayOptions) {
+  const token = process.env.WHATSAPP_WEB_GATEWAY_TOKEN || "";
+  if (!token) {
+    return {
+      code: "gateway_token_missing",
+      message: "Credencial server-side do gateway não configurada.",
+      gateway: { name: gateway.name || gateway.slug || "Gateway", status: gateway.status || "unknown" },
+      health: { httpStatus: null, latencyMs: null },
+      readiness: { httpStatus: null, latencyMs: null },
+      version: null,
+      sessions: { total: 0, lipsMainFound: false, lipsMainStatus: null, phoneMasked: null },
+      checkedAt: new Date().toISOString(),
+      error: "gateway_token_missing",
+    };
+  }
+
+  const rawBaseUrl = normalizeGatewayBaseUrl(gateway.baseUrl);
+  const apiBaseUrl = gatewayApiBaseUrl(gateway.baseUrl);
+  const [health, readiness, version, sessionsResponse] = await Promise.all([
+    gatewayFetchJson(`${rawBaseUrl}/health`, token),
+    gatewayFetchJson(`${rawBaseUrl}/readiness`, token),
+    gatewayFetchJson(`${apiBaseUrl}/version`, token),
+    gatewayFetchJson(`${apiBaseUrl}/sessions`, token),
+  ]);
+  const sessions = asArray<GatewaySession>(sessionsResponse.payload);
+  const lipsSession = sessions.find((session) => session.name === LIPS_SESSION_ID || session.id === LIPS_SESSION_ID) || null;
+  const gatewayError = safeError(
+    sessionsResponse.error ||
+    (sessionsResponse.payload && typeof sessionsResponse.payload === "object" ? (sessionsResponse.payload as { error?: unknown; message?: unknown }).error || (sessionsResponse.payload as { message?: unknown }).message : null) ||
+    health.error ||
+    readiness.error,
+  );
+
+  return {
+    code: sessionsResponse.ok ? (lipsSession ? "ok" : "session_not_found") : sessionsResponse.status === 401 ? "gateway_unauthorized" : "gateway_unavailable",
+    message: sessionsResponse.ok ? (lipsSession ? "Status consultado com sucesso." : "Sessão lips-main não encontrada.") : "Falha sanitizada ao consultar sessões do gateway.",
+    gateway: { name: gateway.name || gateway.slug || "Gateway", status: gateway.status || "unknown" },
+    health: { httpStatus: health.status, latencyMs: health.latencyMs },
+    readiness: { httpStatus: readiness.status, latencyMs: readiness.latencyMs },
+    version: version.ok && version.payload && typeof version.payload === "object" ? String((version.payload as { version?: unknown }).version || "") || null : null,
+    sessions: {
+      total: sessions.length,
+      lipsMainFound: Boolean(lipsSession),
+      lipsMainStatus: lipsSession?.status || null,
+      phoneMasked: maskPhone(lipsSession?.phone || lipsSession?.wid || lipsSession?.number || lipsSession?.me?.user),
+    },
+    checkedAt: new Date().toISOString(),
+    error: gatewayError,
+  };
 }
 
 async function snapshotQueue(db: Db, channelId: string) {
@@ -276,10 +437,64 @@ export async function getLipsWhatsappSyncDiagnostics(db: Db, providerFactory: Pr
   };
 }
 
+export async function getLipsWhatsappReadOnlyStatus(db: Db) {
+  const { channel, organization } = await resolveLipsSyncChannel(db);
+  const gatewayOptions = await loadGatewayOptions(db, channel.gateway_id);
+  const [state, lastRun, inventory, gatewayStatus] = await Promise.all([
+    loadSyncState(db, channel.id),
+    loadLastRun(db, channel.id),
+    loadReadOnlyInventory(db, channel.id),
+    probeGatewayStatus(gatewayOptions),
+  ]);
+  const providerStatus = gatewayStatus.sessions.lipsMainStatus || (typeof state?.last_provider_status === "string" ? state.last_provider_status : null);
+
+  return {
+    action: "status" as const,
+    providerStatus: providerStatus || "unknown",
+    connected: isOpenWaConnected(providerStatus),
+    enqueue: null,
+    processedRuns: 0,
+    runs: [],
+    queuePreserved: true,
+    queueChanged: [],
+    sentMessages: false,
+    returnedSecret: false,
+    snapshot: {
+      channel: {
+        id: maskId(channel.id),
+        organization: organization.name,
+        sessionId: channel.session_id,
+        provider: "openwa",
+        status: channel.status || (channel.is_active === false || channel.active === false ? "disabled" : "unknown"),
+      },
+      connection: {
+        providerStatus,
+        connected: isOpenWaConnected(providerStatus),
+      },
+      state: state ? {
+        syncStatus: state.sync_status || "idle",
+        lastSuccessAt: state.last_success_at || null,
+        lastError: state.last_error ? safeError(state.last_error) : null,
+        lastMode: state.last_mode || null,
+        lastRunId: maskId(state.last_run_id),
+        lock: state.locked_at ? { lockedAt: state.locked_at, expiresAt: state.lock_expires_at, lockedBy: maskId(state.locked_by) } : null,
+        checkpoint: { chat: state.last_chat_checkpoint || null, message: state.last_message_checkpoint || null },
+        nextReconciliationAt: state.next_reconciliation_at || null,
+        stats: state.stats || null,
+      } : null,
+      lastRun: sanitizeSyncRun(lastRun),
+    },
+    gatewayStatus,
+    inventory,
+    limits: { chatLimit: BOOTSTRAP_CHAT_LIMIT, messageLimit: BOOTSTRAP_MESSAGE_LIMIT, maxAgeDays: 30, groupsIgnored: true },
+  };
+}
+
 function actionMode(action: SyncDiagnosticsAction): WhatsappSyncMode | null {
   if (action === "diagnostic") return "manual_diagnostic";
   if (action === "bootstrap") return "bootstrap";
   if (action === "incremental") return "incremental";
+  if (action === "reconciliation") return "reconciliation";
   return null;
 }
 
@@ -287,6 +502,7 @@ function actionLimits(action: SyncDiagnosticsAction) {
   if (action === "diagnostic") return { chatLimit: 1, messageLimit: 1 };
   if (action === "bootstrap") return { chatLimit: 100, messageLimit: 100 };
   if (action === "incremental") return { chatLimit: 100, messageLimit: 100 };
+  if (action === "reconciliation") return { chatLimit: 100, messageLimit: 100 };
   return { chatLimit: 1, messageLimit: 1 };
 }
 
