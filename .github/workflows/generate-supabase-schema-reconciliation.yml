@@ -2,11 +2,6 @@ name: Generate Supabase Schema Reconciliation
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - 'fix/supabase-remote-migration-versions'
-    paths:
-      - '.github/reconciliation-trigger'
 
 jobs:
   generate-reconciliation:
