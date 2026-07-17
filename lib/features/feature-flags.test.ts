@@ -34,11 +34,12 @@ test("platform admin requires platform tenant and owner/admin role", () => {
 test("command center requires platform admin and explicit command_center flag", () => {
   const metadata = { features: { command_center: true } };
 
-  assert.equal(canAccessCommandCenter(context({ isPlatformTenant: true, role: "owner" }), metadata), true);
-  assert.equal(canAccessCommandCenter(context({ isPlatformTenant: true, role: "admin" }), metadata), true);
-  assert.equal(canAccessCommandCenter(context({ isPlatformTenant: true, role: "attendant" }), metadata), false);
-  assert.equal(canAccessCommandCenter(context({ isPlatformTenant: false, role: "owner" }), metadata), false);
-  assert.equal(canAccessCommandCenter(context({ isPlatformTenant: true, role: "owner" }), { features: {} }), false);
+  assert.equal(canAccessCommandCenter(context({ isPlatformTenant: true, organizationId: "", role: "owner" }), metadata), true);
+  assert.equal(canAccessCommandCenter(context({ isPlatformTenant: true, organizationId: "", role: "admin" }), metadata), true);
+  assert.equal(canAccessCommandCenter(context({ isPlatformTenant: true, organizationId: "", role: "attendant" }), metadata), false);
+  assert.equal(canAccessCommandCenter(context({ isPlatformTenant: false, organizationId: "", role: "owner" }), metadata), false);
+  assert.equal(canAccessCommandCenter(context({ isPlatformTenant: true, organizationId: "", role: "owner" }), { features: {} }), false);
+  assert.equal(canAccessCommandCenter(context({ isPlatformTenant: true, organizationId: "org-1", role: "owner" }), metadata), false);
 });
 
 test("meta channels remain hidden during WhatsApp-only commercial release", () => {

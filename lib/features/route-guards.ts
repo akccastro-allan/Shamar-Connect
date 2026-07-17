@@ -1,4 +1,4 @@
-import { redirect } from "next/navigation";
+import { forbidden, redirect } from "next/navigation";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 import { canAccessCommandCenter, canAccessPlatformAdmin, getTenantFeatureMetadata } from "@/lib/features/feature-flags";
@@ -15,9 +15,14 @@ export async function assertPlatformAdminRoute() {
 }
 
 export async function assertCommandCenterRoute() {
-  const context = await assertPlatformAdminRoute();
-  const db = createSupabaseWriteClient();
-  const tenantMetadata = await getTenantFeatureMetadata(db, context.tenantId);
-  if (!canAccessCommandCenter(context, tenantMetadata)) redirect("/dashboard");
-  return context;
+  try {
+    const context = await getRequiredAppContext();
+    const db = createSupabaseWriteClient();
+    const tenantMetadata = await getTenantFeatureMetadata(db, context.tenantId);
+    if (!canAccessCommandCenter(context, tenantMetadata)) forbidden();
+    return context;
+  } catch (error) {
+    if (isUnauthorizedError(error)) redirect("/login?next=/operations");
+    throw error;
+  }
 }

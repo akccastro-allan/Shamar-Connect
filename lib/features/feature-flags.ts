@@ -106,6 +106,7 @@ export function canAccessPlatformAdmin(context: AppContext): boolean {
 
 export function canAccessCommandCenter(context: AppContext, metadata: TenantMetadata): boolean {
   return canAccessPlatformAdmin(context) &&
+    !context.organizationId &&
     hasTenantFeature(metadata, "command_center") &&
     canUseFeature("command_center", toFeatureContext(context, metadata));
 }
