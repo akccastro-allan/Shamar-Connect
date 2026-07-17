@@ -4,7 +4,8 @@ import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 import { createDefaultOpenWaSyncProvider } from "@/lib/whatsapp-sync/providers/openwa-sync-provider-default";
 import {
   canExecuteSyncDiagnostics,
-  getLipsWhatsappSyncDiagnostics,
+  getLipsWhatsappReadOnlyStatus,
+  isReadOnlySyncDiagnosticsAction,
   requireWhatsappSyncDiagnosticsOperator,
   runLipsWhatsappSyncDiagnostics,
   type SyncDiagnosticsAction,
@@ -18,7 +19,7 @@ export type WhatsappSyncDiagnosticsActionState = {
 
 function safeAction(value: FormDataEntryValue | null): SyncDiagnosticsAction {
   const action = String(value || "status");
-  if (["diagnostic", "bootstrap", "incremental", "process_next"].includes(action)) return action as SyncDiagnosticsAction;
+  if (["diagnostic", "bootstrap", "incremental", "reconciliation", "process_next"].includes(action)) return action as SyncDiagnosticsAction;
   return "status";
 }
 
@@ -26,29 +27,13 @@ export async function runWhatsappSyncDiagnosticsAction(_previous: WhatsappSyncDi
   const db = createSupabaseWriteClient();
   try {
     const operator = await requireWhatsappSyncDiagnosticsOperator(db);
-    if (!canExecuteSyncDiagnostics({ vercelEnv: process.env.VERCEL_ENV, metadata: operator.metadata })) {
-      return { ok: false, error: "Execução bloqueada em Production sem flag interna explícita." };
+    const action = safeAction(formData.get("action"));
+    if (isReadOnlySyncDiagnosticsAction(action)) {
+      return { ok: true, result: await getLipsWhatsappReadOnlyStatus(db) };
     }
 
-    const action = safeAction(formData.get("action"));
-    if (action === "status") {
-      const snapshot = await getLipsWhatsappSyncDiagnostics(db, createDefaultOpenWaSyncProvider, { includeProviderStatus: true });
-      return {
-        ok: true,
-        result: {
-          action,
-          providerStatus: snapshot.connection.providerStatus || "disconnected",
-          connected: snapshot.connection.connected,
-          enqueue: null,
-          processedRuns: 0,
-          runs: [],
-          queuePreserved: true,
-          queueChanged: [],
-          snapshot,
-          sentMessages: false,
-          returnedSecret: false,
-        },
-      };
+    if (!canExecuteSyncDiagnostics({ vercelEnv: process.env.VERCEL_ENV, metadata: operator.metadata })) {
+      return { ok: false, error: "Execução bloqueada em Production sem flag interna explícita." };
     }
 
     const result = await runLipsWhatsappSyncDiagnostics(db, createDefaultOpenWaSyncProvider, { action, actorUserId: operator.appUserId });

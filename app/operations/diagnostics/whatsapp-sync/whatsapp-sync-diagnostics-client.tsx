@@ -11,7 +11,7 @@ import { runWhatsappSyncDiagnosticsAction, type WhatsappSyncDiagnosticsActionSta
 
 type Snapshot = NonNullable<WhatsappSyncDiagnosticsActionState["result"]>["snapshot"];
 
-function SubmitButton({ children, confirmText, disabled }: { children: React.ReactNode; confirmText?: string; disabled?: boolean }) {
+function SubmitButton({ children, confirmText, disabled, pendingLabel = "Executando..." }: { children: React.ReactNode; confirmText?: string; disabled?: boolean; pendingLabel?: string }) {
   const status = useFormStatus();
   return (
     <Button
@@ -22,7 +22,7 @@ function SubmitButton({ children, confirmText, disabled }: { children: React.Rea
       }}
       className="w-full rounded-full bg-[#1B2F5B] px-5 font-black text-white hover:bg-[#16284d] disabled:opacity-50 md:w-auto"
     >
-      {status.pending ? "Executando..." : children}
+      {status.pending ? pendingLabel : children}
     </Button>
   );
 }
@@ -39,6 +39,28 @@ function SnapshotCards({ snapshot }: { snapshot: Snapshot }) {
       <Card className="rounded-[2rem]"><CardHeader><CardTitle className="text-lg font-black text-[#1B2F5B]">Checkpoint</CardTitle></CardHeader><CardContent className="grid gap-3 sm:grid-cols-2"><Stat label="Chat" value={snapshot.state?.checkpoint.chat || "—"} /><Stat label="Mensagem" value={snapshot.state?.checkpoint.message || "—"} /><Stat label="Lock" value={snapshot.state?.lock ? "ativo" : "livre"} /><Stat label="Expiração" value={snapshot.state?.lock?.expiresAt || "—"} /></CardContent></Card>
       <Card className="rounded-[2rem]"><CardHeader><CardTitle className="text-lg font-black text-[#1B2F5B]">Última execução</CardTitle></CardHeader><CardContent className="grid gap-3 sm:grid-cols-2"><Stat label="Run" value={snapshot.lastRun?.id || snapshot.state?.lastRunId || "—"} /><Stat label="Status" value={snapshot.lastRun?.status || "—"} /><Stat label="Chats" value={snapshot.lastRun ? `${snapshot.lastRun.chatsSynced}/${snapshot.lastRun.chatsScanned}` : "—"} /><Stat label="Grupos ignorados" value={snapshot.lastRun?.chatsSkipped ?? "—"} /><Stat label="Mensagens examinadas" value={snapshot.lastRun?.messagesScanned ?? "—"} /><Stat label="Erros" value={snapshot.lastRun?.errorsCount ?? "—"} /></CardContent></Card>
     </div>
+  );
+}
+
+function GatewayStatusCard({ status }: { status: any }) {
+  if (!status) return null;
+  const stateLabel = status.code === "ok" ? "conectado" : status.code === "gateway_token_missing" ? "credencial ausente" : status.code === "session_not_found" ? "sessão não encontrada" : status.code === "gateway_unauthorized" ? "não autorizado" : "gateway indisponível";
+  return (
+    <Card className="rounded-[2rem] border-[#2ABFAB]/30 bg-[#2ABFAB]/5">
+      <CardHeader><CardTitle className="text-lg font-black text-[#1B2F5B]">Status live do gateway</CardTitle></CardHeader>
+      <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Stat label="Estado" value={stateLabel} />
+        <Stat label="Gateway" value={`${status.gateway?.name || "Gateway"} · ${status.gateway?.status || "unknown"}`} />
+        <Stat label="Health" value={status.health?.httpStatus ? `HTTP ${status.health.httpStatus} · ${status.health.latencyMs}ms` : "não consultado"} />
+        <Stat label="Readiness" value={status.readiness?.httpStatus ? `HTTP ${status.readiness.httpStatus} · ${status.readiness.latencyMs}ms` : "não consultado"} />
+        <Stat label="Versão" value={status.version || "não disponível"} />
+        <Stat label="Sessões" value={status.sessions?.total ?? 0} />
+        <Stat label="lips-main" value={status.sessions?.lipsMainFound ? status.sessions.lipsMainStatus || "encontrada" : "não encontrada"} />
+        <Stat label="Telefone" value={status.sessions?.phoneMasked || "—"} />
+        <Stat label="Consultado em" value={status.checkedAt || "—"} />
+        <Stat label="Erro seguro" value={status.error || "—"} />
+      </CardContent>
+    </Card>
   );
 }
 
@@ -60,12 +82,14 @@ export function WhatsappSyncDiagnosticsClient({ initialSnapshot, canExecute, ver
       </header>
 
       {!canExecute ? <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800">Execução bloqueada neste ambiente. Em Production, ações exigem flag interna explícita.</div> : null}
+      <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-800">Consultas de status são somente leitura. Execução de sincronização está desabilitada quando a flag interna não está ativa.</div>
       {state.error ? <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">{state.error}</div> : null}
       {result ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-800">Ação: {result.action}. Fila preservada: {result.queuePreserved ? "sim" : "não"}. Mensagem enviada: não. Secret retornado: não.</div> : null}
 
       <SnapshotCards snapshot={snapshot} />
+      <GatewayStatusCard status={result?.gatewayStatus} />
 
-      <Card className="rounded-[2rem]"><CardHeader><CardTitle className="flex items-center gap-2 text-lg font-black text-[#1B2F5B]"><RefreshCcw className="h-5 w-5" /> Ações de homologação</CardTitle></CardHeader><CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4"><form action={formAction}><input type="hidden" name="action" value="diagnostic" /><SubmitButton disabled={!canExecute} confirmText="Executar diagnóstico? Será processado no máximo um run, sem envio de mensagens.">Executar diagnóstico</SubmitButton></form><form action={formAction}><input type="hidden" name="action" value="bootstrap" /><SubmitButton disabled={!canExecute} confirmText="Executar bootstrap controlado? Serão consultados chats e mensagens recentes da Lips. Nenhuma mensagem será enviada.">Bootstrap controlado</SubmitButton></form><form action={formAction}><input type="hidden" name="action" value="incremental" /><SubmitButton disabled={!canExecute} confirmText="Executar incremental usando checkpoints existentes? Nenhuma mensagem será enviada.">Incremental</SubmitButton></form><form action={formAction}><input type="hidden" name="action" value="process_next" /><SubmitButton disabled={!canExecute} confirmText="Processar próximo job de lips-main? Não executa em paralelo.">Processar próximo job</SubmitButton></form></CardContent></Card>
+      <Card className="rounded-[2rem]"><CardHeader><CardTitle className="flex items-center gap-2 text-lg font-black text-[#1B2F5B]"><RefreshCcw className="h-5 w-5" /> Ações de homologação</CardTitle></CardHeader><CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3"><form action={formAction}><input type="hidden" name="action" value="status" /><SubmitButton pendingLabel="Consultando...">Verificar status</SubmitButton></form><form action={formAction}><input type="hidden" name="action" value="diagnostic" /><SubmitButton disabled={!canExecute} confirmText="Executar diagnóstico? Será processado no máximo um run, sem envio de mensagens.">Executar diagnóstico</SubmitButton></form><form action={formAction}><input type="hidden" name="action" value="bootstrap" /><SubmitButton disabled={!canExecute} confirmText="Executar bootstrap controlado? Serão consultados chats e mensagens recentes da Lips. Nenhuma mensagem será enviada.">Bootstrap controlado</SubmitButton></form><form action={formAction}><input type="hidden" name="action" value="incremental" /><SubmitButton disabled={!canExecute} confirmText="Executar incremental usando checkpoints existentes? Nenhuma mensagem será enviada.">Incremental</SubmitButton></form><form action={formAction}><input type="hidden" name="action" value="reconciliation" /><SubmitButton disabled={!canExecute} confirmText="Executar reconciliação? Nenhuma mensagem será enviada.">Reconciliation</SubmitButton></form><form action={formAction}><input type="hidden" name="action" value="process_next" /><SubmitButton disabled={!canExecute} confirmText="Processar próximo job de lips-main? Não executa em paralelo.">Processar próximo job</SubmitButton></form></CardContent></Card>
 
       {result?.runs?.length ? <Card className="rounded-[2rem]"><CardHeader><CardTitle className="text-lg font-black text-[#1B2F5B]">Contadores</CardTitle></CardHeader><CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{result.runs.map((run: any) => <div key={`${run.id}-${run.status}`} className="rounded-2xl border border-slate-100 bg-white p-4"><p className="font-black text-[#1B2F5B]">Run {run.id}</p><p className="mt-1 text-sm text-slate-600">Status: {run.status}</p><p className="mt-1 text-sm text-slate-600">Chats: {run.chatsSynced}/{run.chatsScanned} · grupos ignorados {run.chatsSkipped}</p><p className="mt-1 text-sm text-slate-600">Mensagens: {run.messagesScanned} examinadas · {run.messagesSaved} salvas · {run.messagesUpdated} atualizadas</p><p className="mt-1 text-sm text-slate-600">Erros: {run.errorsCount}</p></div>)}</CardContent></Card> : null}
 

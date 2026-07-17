@@ -3,7 +3,10 @@ import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import {
   canExecuteSyncDiagnostics,
+  getLipsWhatsappReadOnlyStatus,
   getLipsWhatsappSyncDiagnostics,
+  isReadOnlySyncDiagnosticsAction,
+  isWriteSyncDiagnosticsAction,
   isWhatsappSyncDiagnosticsOperatorCandidate,
   runLipsWhatsappSyncDiagnostics,
   sanitizeSyncRun,
@@ -14,6 +17,7 @@ type Row = Record<string, any>;
 type Tables = Record<string, Row[]>;
 
 function createDb(seed?: Partial<Tables>) {
+  const writes: Array<{ table: string; action: string; payload: unknown }> = [];
   const tables: Tables = {
     channels: [{ id: "channel-lips", tenant_id: "tenant-lips", organization_id: "org-lips", session_id: "lips-main", provider: "openwa", status: "active", active: true, is_active: true, gateway_id: "gateway-lips" }],
     internal_messaging_gateways: [{ id: "gateway-lips", provider: "openwa", environment: "production", status: "active", base_url: "https://gateway.example.com" }],
@@ -39,6 +43,7 @@ function createDb(seed?: Partial<Tables>) {
     constructor(table: string) { this.table = table; }
     select() { return this; }
     eq(column: string, value: any) { this.filters.push((row) => row[column] === value); return this; }
+    is(column: string, value: any) { this.filters.push((row) => row[column] === value); return this; }
     in(column: string, values: any[]) { this.filters.push((row) => values.includes(row[column])); return this; }
     not(column: string, operator: string) { if (operator === "is") this.filters.push((row) => row[column] !== null && row[column] !== undefined); return this; }
     lte(column: string, value: any) { this.filters.push((row) => String(row[column] || "") <= String(value)); return this; }
@@ -60,6 +65,7 @@ function createDb(seed?: Partial<Tables>) {
 
     execute() {
       if (this.action === "insert") {
+        writes.push({ table: this.table, action: "insert", payload: this.payload });
         const payloads = Array.isArray(this.payload) ? this.payload : [this.payload];
         const inserted = payloads.map((payload) => ({ id: payload.id || `${this.table}-${++ids}`, ...payload }));
         tables[this.table] ||= [];
@@ -67,6 +73,7 @@ function createDb(seed?: Partial<Tables>) {
         return { data: inserted, error: null };
       }
       if (this.action === "update") {
+        writes.push({ table: this.table, action: "update", payload: this.payload });
         const matched = this.rows();
         for (const row of matched) {
           for (const [key, value] of Object.entries(this.payload)) {
@@ -83,7 +90,7 @@ function createDb(seed?: Partial<Tables>) {
     then(resolve: (value: any) => void, reject?: (reason: any) => void) { try { resolve(this.execute()); } catch (error) { reject?.(error); } }
   }
 
-  return { db: { from: (table: string) => new Query(table) } as any, tables };
+  return { db: { from: (table: string) => new Query(table) } as any, tables, writes };
 }
 
 function providerFactory(calls: string[] = [], optionsCalls: Array<Record<string, unknown> | undefined> = []): (sessionId: string, options?: Record<string, unknown>) => OpenWaSyncProvider {
@@ -107,6 +114,32 @@ function providerFactory(calls: string[] = [], optionsCalls: Array<Record<string
   };
 }
 
+async function withGatewayEnv<T>(token: string | undefined, fetchImpl: typeof fetch, callback: () => Promise<T>) {
+  const previousToken = process.env.WHATSAPP_WEB_GATEWAY_TOKEN;
+  const previousFetch = globalThis.fetch;
+  if (token === undefined) delete process.env.WHATSAPP_WEB_GATEWAY_TOKEN;
+  else process.env.WHATSAPP_WEB_GATEWAY_TOKEN = token;
+  globalThis.fetch = fetchImpl;
+  try {
+    return await callback();
+  } finally {
+    if (previousToken === undefined) delete process.env.WHATSAPP_WEB_GATEWAY_TOKEN;
+    else process.env.WHATSAPP_WEB_GATEWAY_TOKEN = previousToken;
+    globalThis.fetch = previousFetch;
+  }
+}
+
+function gatewayFetch(payloads: Record<string, { status: number; body: unknown }>) {
+  return (async (input: RequestInfo | URL, init?: RequestInit) => {
+    assert.equal((init?.headers as Record<string, string> | undefined)?.["x-api-key"], "server-token");
+    assert.equal((init?.headers as Record<string, string> | undefined)?.authorization, "Bearer server-token");
+    const url = String(input);
+    const match = Object.entries(payloads).find(([suffix]) => url.endsWith(suffix));
+    const response = match?.[1] || { status: 404, body: { error: "not_found" } };
+    return new Response(JSON.stringify(response.body), { status: response.status, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+}
+
 test("diagnostics access requires platform owner/admin with null organization and command center", () => {
   const metadata = { features: { command_center: true } };
   assert.equal(isWhatsappSyncDiagnosticsOperatorCandidate({ isPlatformTenant: true, role: "owner", organizationId: null, metadata }), true);
@@ -121,6 +154,78 @@ test("production blocks execution without explicit internal flag and preview all
   assert.equal(canExecuteSyncDiagnostics({ vercelEnv: "preview", metadata: null }), true);
   assert.equal(canExecuteSyncDiagnostics({ vercelEnv: "production", metadata: null }), false);
   assert.equal(canExecuteSyncDiagnostics({ vercelEnv: "production", metadata: { features: { whatsapp_sync_diagnostics_execute: true } } }), true);
+});
+
+test("status is read-only even when execute flag is false and write actions stay classified as writes", () => {
+  assert.equal(canExecuteSyncDiagnostics({ vercelEnv: "production", metadata: { features: { command_center: true } } }), false);
+  assert.equal(isReadOnlySyncDiagnosticsAction("status"), true);
+  assert.equal(isWriteSyncDiagnosticsAction("bootstrap"), true);
+  assert.equal(isWriteSyncDiagnosticsAction("incremental"), true);
+  assert.equal(isWriteSyncDiagnosticsAction("reconciliation"), true);
+  assert.equal(isWriteSyncDiagnosticsAction("process_next"), true);
+});
+
+test("read-only status probes gateway from database URL with env token and returns sanitized DTO", async () => {
+  const { db, tables, writes } = createDb({
+    internal_messaging_gateways: [{ id: "gateway-lips", name: "Gateway 01", slug: "gateway-01", provider: "openwa", environment: "production", status: "active", base_url: "https://gateway.example.com", token: "stored-token" }],
+    whatsapp_channel_sync_state: [],
+    whatsapp_sync_runs: [],
+  });
+  const beforeConversation = JSON.stringify(tables.whatsapp_conversations);
+  const result = await withGatewayEnv("server-token", gatewayFetch({
+    "/health": { status: 200, body: { ok: true } },
+    "/readiness": { status: 200, body: { ready: true } },
+    "/api/version": { status: 200, body: { version: "1.2.3" } },
+    "/api/sessions": { status: 200, body: [{ id: "session-1", name: "lips-main", status: "ready", phone: "5521999998888", secret: "should-not-leak" }] },
+  }), () => getLipsWhatsappReadOnlyStatus(db));
+
+  assert.equal(result.gatewayStatus.code, "ok");
+  assert.equal(result.gatewayStatus.health.httpStatus, 200);
+  assert.equal(result.gatewayStatus.readiness.httpStatus, 200);
+  assert.equal(result.gatewayStatus.version, "1.2.3");
+  assert.equal(result.gatewayStatus.sessions.total, 1);
+  assert.equal(result.gatewayStatus.sessions.lipsMainFound, true);
+  assert.equal(result.gatewayStatus.sessions.lipsMainStatus, "ready");
+  assert.equal(result.gatewayStatus.sessions.phoneMasked, "5521***8888");
+  assert.equal(result.inventory.syncState, 0);
+  assert.equal(result.inventory.syncRuns, 0);
+  assert.equal(result.inventory.queueStatusNull, 0);
+  assert.equal(result.limits.chatLimit, 100);
+  assert.equal(result.limits.messageLimit, 100);
+  assert.equal(result.limits.maxAgeDays, 30);
+  assert.equal(result.limits.groupsIgnored, true);
+  assert.equal(writes.length, 0);
+  assert.equal(JSON.stringify(tables.whatsapp_conversations), beforeConversation);
+  const payload = JSON.stringify(result);
+  assert.equal(payload.includes("gateway.example.com"), false);
+  assert.equal(payload.includes("server-token"), false);
+  assert.equal(payload.includes("stored-token"), false);
+  assert.equal(payload.includes("5521999998888"), false);
+  assert.equal(payload.includes("should-not-leak"), false);
+});
+
+test("read-only status handles missing token gateway 401 and missing session safely", async () => {
+  const missingToken = await withGatewayEnv(undefined, gatewayFetch({}), () => getLipsWhatsappReadOnlyStatus(createDb().db));
+  assert.equal(missingToken.gatewayStatus.code, "gateway_token_missing");
+  assert.equal(missingToken.gatewayStatus.error, "gateway_token_missing");
+
+  const unauthorized = await withGatewayEnv("server-token", gatewayFetch({
+    "/health": { status: 200, body: { ok: true } },
+    "/readiness": { status: 200, body: { ready: true } },
+    "/api/version": { status: 404, body: { error: "missing" } },
+    "/api/sessions": { status: 401, body: { error: "Unauthorized", message: "bad Bearer very-secret-token-value-that-must-not-leak" } },
+  }), () => getLipsWhatsappReadOnlyStatus(createDb().db));
+  assert.equal(unauthorized.gatewayStatus.code, "gateway_unauthorized");
+  assert.equal(unauthorized.gatewayStatus.error?.includes("very-secret-token"), false);
+
+  const absent = await withGatewayEnv("server-token", gatewayFetch({
+    "/health": { status: 200, body: { ok: true } },
+    "/readiness": { status: 200, body: { ready: true } },
+    "/api/version": { status: 404, body: { error: "missing" } },
+    "/api/sessions": { status: 200, body: [{ id: "other", name: "other-main", status: "ready" }] },
+  }), () => getLipsWhatsappReadOnlyStatus(createDb().db));
+  assert.equal(absent.gatewayStatus.code, "session_not_found");
+  assert.equal(absent.gatewayStatus.sessions.lipsMainFound, false);
 });
 
 test("diagnostic uses only lips-main, processes one run and preserves queue", async () => {
@@ -259,7 +364,14 @@ test("diagnostics page states fixed Lips scope and does not use internal API key
   assert.match(client, /Auto Peças e Auto Center Lips/);
   assert.match(client, /lips-main/);
   assert.match(client, /OpenWA/);
+  assert.match(client, /Verificar status/);
+  assert.match(client, /Consultas de status são somente leitura/);
+  assert.match(client, /Execução de sincronização está desabilitada/);
+  assert.match(client, /Consultando\.\.\./);
   assert.match(client, /Esta ferramenta não envia mensagens para clientes/);
   assert.doesNotMatch(actions, /INTERNAL_API_KEY/);
+  assert.match(actions, /isReadOnlySyncDiagnosticsAction\(action\)/);
+  const actionBody = actions.slice(actions.indexOf("const action = safeAction"));
+  assert.ok(actionBody.indexOf("isReadOnlySyncDiagnosticsAction(action)") < actionBody.indexOf("canExecuteSyncDiagnostics"));
   assert.match(worker, /processQueuedWhatsappSyncRuns/);
 });
