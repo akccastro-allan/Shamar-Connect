@@ -4161,13 +4161,21 @@ alter table "public"."quick_replies" add column "usage_count" integer not null d
 
 alter table "public"."social_accounts" add column "channel_id" uuid;
 
+alter table "public"."whatsapp_connections" add column "connection_key" text;
+
+alter table "public"."whatsapp_connections" add column "display_name" text;
+
+update public.whatsapp_connections
+set
+  connection_key = coalesce(nullif(session_id, ''), id::text),
+  display_name = coalesce(nullif(name, ''), display_name)
+where connection_key is null;
+
+alter table "public"."whatsapp_connections" alter column "connection_key" set not null;
+
 alter table "public"."whatsapp_connections" drop column "name";
 
 alter table "public"."whatsapp_connections" drop column "session_id";
-
-alter table "public"."whatsapp_connections" add column "connection_key" text not null;
-
-alter table "public"."whatsapp_connections" add column "display_name" text;
 
 alter table "public"."whatsapp_connections" add column "is_active" boolean not null default true;
 
