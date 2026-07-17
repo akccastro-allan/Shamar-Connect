@@ -21873,3 +21873,1235 @@ CREATE TRIGGER trg_message_transcriptions_updated_at BEFORE UPDATE ON public.mes
 CREATE TRIGGER trg_transcription_jobs_updated_at BEFORE UPDATE ON public.transcription_jobs FOR EACH ROW EXECUTE FUNCTION public.shamar_set_updated_at();
 
 drop extension if exists "pg_net";
+
+-- FRESH ENVIRONMENT SCHEMA RECONCILIATION FOLLOW-UP
+-- Residual schema-only diff after the first reconciliation pass: grants, views, and functions.
+-- Production already records migration 20260716081940 as applied.
+
+revoke references on table "public"."commercial_agent_profiles" from "anon";
+
+revoke trigger on table "public"."commercial_agent_profiles" from "anon";
+
+revoke truncate on table "public"."commercial_agent_profiles" from "anon";
+
+revoke references on table "public"."commercial_agent_profiles" from "authenticated";
+
+revoke trigger on table "public"."commercial_agent_profiles" from "authenticated";
+
+revoke truncate on table "public"."commercial_agent_profiles" from "authenticated";
+
+revoke references on table "public"."commercial_conversation_analysis" from "anon";
+
+revoke trigger on table "public"."commercial_conversation_analysis" from "anon";
+
+revoke truncate on table "public"."commercial_conversation_analysis" from "anon";
+
+revoke references on table "public"."commercial_conversation_analysis" from "authenticated";
+
+revoke trigger on table "public"."commercial_conversation_analysis" from "authenticated";
+
+revoke truncate on table "public"."commercial_conversation_analysis" from "authenticated";
+
+revoke references on table "public"."commercial_follow_ups" from "anon";
+
+revoke trigger on table "public"."commercial_follow_ups" from "anon";
+
+revoke truncate on table "public"."commercial_follow_ups" from "anon";
+
+revoke references on table "public"."commercial_follow_ups" from "authenticated";
+
+revoke trigger on table "public"."commercial_follow_ups" from "authenticated";
+
+revoke truncate on table "public"."commercial_follow_ups" from "authenticated";
+
+revoke references on table "public"."commercial_opportunities" from "anon";
+
+revoke trigger on table "public"."commercial_opportunities" from "anon";
+
+revoke truncate on table "public"."commercial_opportunities" from "anon";
+
+revoke references on table "public"."commercial_opportunities" from "authenticated";
+
+revoke trigger on table "public"."commercial_opportunities" from "authenticated";
+
+revoke truncate on table "public"."commercial_opportunities" from "authenticated";
+
+revoke references on table "public"."commercial_response_suggestions" from "anon";
+
+revoke trigger on table "public"."commercial_response_suggestions" from "anon";
+
+revoke truncate on table "public"."commercial_response_suggestions" from "anon";
+
+revoke references on table "public"."commercial_response_suggestions" from "authenticated";
+
+revoke trigger on table "public"."commercial_response_suggestions" from "authenticated";
+
+revoke truncate on table "public"."commercial_response_suggestions" from "authenticated";
+
+revoke references on table "public"."internal_messaging_gateways" from "anon";
+
+revoke trigger on table "public"."internal_messaging_gateways" from "anon";
+
+revoke truncate on table "public"."internal_messaging_gateways" from "anon";
+
+revoke references on table "public"."internal_messaging_gateways" from "authenticated";
+
+revoke trigger on table "public"."internal_messaging_gateways" from "authenticated";
+
+revoke truncate on table "public"."internal_messaging_gateways" from "authenticated";
+
+drop view if exists "public"."calendar_events_summary";
+
+drop view if exists "public"."commercial_proposals_summary";
+
+drop view if exists "public"."conversation_assignment_summary";
+
+drop view if exists "public"."crm_contacts_with_tags";
+
+drop view if exists "public"."crm_dashboard_summary";
+
+drop view if exists "public"."documents_summary";
+
+drop view if exists "public"."files_summary";
+
+drop view if exists "public"."finance_dashboard_summary";
+
+drop view if exists "public"."finance_invoices_summary";
+
+drop view if exists "public"."finance_open_installments";
+
+drop view if exists "public"."multi_tenant_dashboard_summary";
+
+drop view if exists "public"."tenants_summary";
+
+drop view if exists "public"."whatsapp_media_dashboard_summary";
+
+set check_function_bodies = off;
+
+CREATE OR REPLACE FUNCTION public.activate_paid_checkout_subscription(p_checkout_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_checkout          record;
+  v_subscription_id   uuid;
+  v_addons            jsonb;
+  v_storage_gb        integer;
+  v_retention_days    integer;
+  v_period_end        timestamptz;
+BEGIN
+  SELECT * INTO v_checkout
+  FROM public.billing_checkout_sessions
+  WHERE id = p_checkout_id
+    AND status IN ('paid_pending_activation', 'active');
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'checkout_not_found_or_wrong_status');
+  END IF;
+
+  IF v_checkout.tenant_id IS NULL OR v_checkout.organization_id IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'tenant_not_provisioned_yet');
+  END IF;
+
+  SELECT id INTO v_subscription_id
+  FROM public.billing_subscriptions
+  WHERE checkout_session_id = p_checkout_id;
+
+  IF FOUND THEN
+    RETURN jsonb_build_object('ok', true, 'subscription_id', v_subscription_id, 'already_exists', true);
+  END IF;
+
+  v_addons := COALESCE((v_checkout.metadata -> 'selectedAddons'), '[]'::jsonb);
+
+  v_storage_gb := 5;
+  IF EXISTS (SELECT 1 FROM jsonb_array_elements(v_addons) AS a WHERE a->>'slug' = 'storage_100gb') THEN
+    v_storage_gb := 105;
+  ELSIF EXISTS (SELECT 1 FROM jsonb_array_elements(v_addons) AS a WHERE a->>'slug' = 'storage_50gb') THEN
+    v_storage_gb := 55;
+  ELSIF EXISTS (SELECT 1 FROM jsonb_array_elements(v_addons) AS a WHERE a->>'slug' = 'storage_10gb') THEN
+    v_storage_gb := 15;
+  END IF;
+
+  v_retention_days := CASE v_checkout.plan_slug
+    WHEN 'starter'      THEN 365
+    WHEN 'professional' THEN 730
+    WHEN 'business'     THEN 1095
+    ELSE 365
+  END;
+
+  v_period_end := CASE v_checkout.billing_cycle
+    WHEN 'annual' THEN now() + interval '1 year'
+    ELSE now() + interval '1 month'
+  END;
+
+  INSERT INTO public.billing_subscriptions (
+    tenant_id, organization_id, checkout_session_id,
+    plan_slug, billing_cycle, status,
+    base_amount, setup_amount, extra_whatsapp_connections, extra_users, ai_addon_enabled,
+    total_amount, currency, billing_provider,
+    addons, storage_quota_gb, message_retention_days,
+    started_at, current_period_start, current_period_end,
+    metadata, created_at, updated_at
+  ) VALUES (
+    v_checkout.tenant_id, v_checkout.organization_id, p_checkout_id,
+    v_checkout.plan_slug, v_checkout.billing_cycle, 'active',
+    COALESCE(v_checkout.base_amount, 0), COALESCE(v_checkout.setup_amount, 0),
+    COALESCE(v_checkout.extra_whatsapp_connections, 0), COALESCE(v_checkout.extra_users, 0),
+    COALESCE(v_checkout.ai_addon_enabled, false),
+    COALESCE(v_checkout.final_amount, v_checkout.total_amount, 0), 'BRL', 'asaas',
+    v_addons, v_storage_gb, v_retention_days,
+    now(), now(), v_period_end,
+    jsonb_build_object('checkout_session_id', p_checkout_id, 'activated_via', 'admin_provision',
+      'plan_name', COALESCE(v_checkout.metadata->>'planName', v_checkout.plan_slug)),
+    now(), now()
+  ) RETURNING id INTO v_subscription_id;
+
+  RETURN jsonb_build_object(
+    'ok', true,
+    'subscription_id', v_subscription_id,
+    'plan_slug', v_checkout.plan_slug,
+    'storage_quota_gb', v_storage_gb,
+    'message_retention_days', v_retention_days,
+    'period_end', v_period_end
+  );
+END;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.agent_touch_updated_at()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$function$
+;
+
+create or replace view "public"."calendar_events_summary" as  SELECT e.id,
+    e.title,
+    e.description,
+    e.event_type,
+    e.status,
+    e.priority,
+    e.starts_at,
+    e.ends_at,
+    e.all_day,
+    e.timezone,
+    e.location,
+    e.meeting_url,
+    e.completed_at,
+    e.cancelled_at,
+    e.created_at,
+    cal.name AS calendar_name,
+    cal.color AS calendar_color,
+    t.name AS tenant_name,
+    t.slug AS tenant_slug,
+    u.name AS assigned_to_name,
+    u.email AS assigned_to_email,
+    c.name AS contact_name,
+    c.phone AS contact_phone,
+    wc.name AS conversation_name,
+    wc.external_chat_id,
+    d.title AS deal_title,
+    task.title AS task_title,
+    count(DISTINCT p.id) AS participant_count,
+    count(DISTINCT r.id) AS reminder_count
+   FROM (((((((((public.calendar_events e
+     LEFT JOIN public.calendars cal ON ((cal.id = e.calendar_id)))
+     LEFT JOIN public.tenants t ON ((t.id = e.tenant_id)))
+     LEFT JOIN public.app_users u ON ((u.id = e.assigned_to)))
+     LEFT JOIN public.crm_contacts c ON ((c.id = e.contact_id)))
+     LEFT JOIN public.whatsapp_conversations wc ON ((wc.id = e.conversation_id)))
+     LEFT JOIN public.crm_deals d ON ((d.id = e.deal_id)))
+     LEFT JOIN public.crm_tasks task ON ((task.id = e.task_id)))
+     LEFT JOIN public.calendar_event_participants p ON ((p.event_id = e.id)))
+     LEFT JOIN public.reminders r ON ((r.event_id = e.id)))
+  GROUP BY e.id, cal.name, cal.color, t.name, t.slug, u.name, u.email, c.name, c.phone, wc.name, wc.external_chat_id, d.title, task.title;
+
+
+CREATE OR REPLACE FUNCTION public.catalog_touch_updated_at()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$function$
+;
+
+create or replace view "public"."commercial_proposals_summary" as  SELECT p.id,
+    p.proposal_number,
+    p.title,
+    p.status,
+    p.total,
+    p.currency,
+    p.validity_date,
+    p.sent_at,
+    p.viewed_at,
+    p.accepted_at,
+    p.rejected_at,
+    p.created_at,
+    c.name AS contact_name,
+    c.phone AS contact_phone,
+    c.email AS contact_email,
+    wc.name AS conversation_name,
+    wc.external_chat_id,
+    d.title AS deal_title,
+    count(pi.id) AS item_count
+   FROM ((((public.commercial_proposals p
+     LEFT JOIN public.crm_contacts c ON ((c.id = p.contact_id)))
+     LEFT JOIN public.whatsapp_conversations wc ON ((wc.id = p.conversation_id)))
+     LEFT JOIN public.crm_deals d ON ((d.id = p.deal_id)))
+     LEFT JOIN public.commercial_proposal_items pi ON ((pi.proposal_id = p.id)))
+  GROUP BY p.id, c.name, c.phone, c.email, wc.name, wc.external_chat_id, d.title;
+
+
+CREATE OR REPLACE FUNCTION public.complete_onboarding_step(p_tenant_slug text, p_step_key text, p_completed_by text DEFAULT 'system'::text)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+declare
+  status_id uuid;
+begin
+  update public.tenant_onboarding_step_status ss
+  set
+    status = 'completed',
+    validation_status = case when ss.validation_status = 'not_checked' then 'passed' else ss.validation_status end,
+    completed_by = p_completed_by,
+    completed_at = now(),
+    updated_at = now()
+  from public.tenants t, public.onboarding_steps s
+  where ss.tenant_id = t.id
+    and ss.step_id = s.id
+    and t.slug = p_tenant_slug
+    and s.step_key = p_step_key
+  returning ss.id into status_id;
+
+  update public.tenant_onboarding_progress p
+  set
+    completed_steps = sub.completed_steps,
+    completed_required_steps = sub.completed_required_steps,
+    progress_percent = case
+      when sub.total_steps > 0 then round((sub.completed_steps::numeric / sub.total_steps::numeric) * 100, 2)
+      else 0
+    end,
+    status = case
+      when sub.required_steps > 0 and sub.completed_required_steps >= sub.required_steps then 'completed'
+      else 'in_progress'
+    end,
+    completed_at = case
+      when sub.required_steps > 0 and sub.completed_required_steps >= sub.required_steps then now()
+      else p.completed_at
+    end,
+    updated_at = now()
+  from (
+    select
+      ss.tenant_id,
+      ss.flow_id,
+      count(*) as total_steps,
+      count(*) filter (where ss.status = 'completed') as completed_steps,
+      count(*) filter (where s.is_required = true) as required_steps,
+      count(*) filter (where s.is_required = true and ss.status = 'completed') as completed_required_steps
+    from public.tenant_onboarding_step_status ss
+    join public.onboarding_steps s on s.id = ss.step_id
+    group by ss.tenant_id, ss.flow_id
+  ) sub
+  where p.tenant_id = sub.tenant_id
+    and p.flow_id = sub.flow_id
+    and p.tenant_id = (select id from public.tenants where slug = p_tenant_slug);
+
+  return status_id;
+end;
+$function$
+;
+
+create or replace view "public"."conversation_assignment_summary" as  SELECT ca.id,
+    ca.external_chat_id,
+    ca.status,
+    ca.priority,
+    ca.assigned_at,
+    ca.closed_at,
+    ca.last_activity_at,
+    ca.created_at,
+    q.name AS queue_name,
+    u.name AS assigned_to_name,
+    u.email AS assigned_to_email,
+    wc.name AS conversation_name,
+    wc.is_group,
+    wc.unread_count,
+    wc.last_message_at
+   FROM (((public.conversation_assignments ca
+     LEFT JOIN public.support_queues q ON ((q.id = ca.queue_id)))
+     LEFT JOIN public.app_users u ON ((u.id = ca.assigned_to)))
+     LEFT JOIN public.whatsapp_conversations wc ON ((wc.id = ca.conversation_id)));
+
+
+CREATE OR REPLACE FUNCTION public.create_calendar_event_quick(p_title text, p_starts_at timestamp with time zone, p_event_type text DEFAULT 'follow_up'::text, p_assigned_to uuid DEFAULT NULL::uuid, p_contact_id uuid DEFAULT NULL::uuid, p_conversation_id uuid DEFAULT NULL::uuid, p_description text DEFAULT NULL::text)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+declare
+  event_id uuid;
+  default_calendar uuid;
+  tenant_uuid uuid;
+begin
+  select id into tenant_uuid
+  from public.tenants
+  where slug = 'shamar-connect'
+  limit 1;
+
+  select id into default_calendar
+  from public.calendars
+  where is_default = true
+    and (tenant_id = tenant_uuid or tenant_id is null)
+  limit 1;
+
+  insert into public.calendar_events (
+    calendar_id,
+    tenant_id,
+    title,
+    description,
+    event_type,
+    starts_at,
+    ends_at,
+    assigned_to,
+    contact_id,
+    conversation_id
+  )
+  values (
+    default_calendar,
+    tenant_uuid,
+    p_title,
+    p_description,
+    p_event_type,
+    p_starts_at,
+    p_starts_at + interval '30 minutes',
+    p_assigned_to,
+    p_contact_id,
+    p_conversation_id
+  )
+  returning id into event_id;
+
+  return event_id;
+end;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.create_import_job(p_name text, p_import_type text DEFAULT 'contacts'::text, p_source_type text DEFAULT 'manual_paste'::text, p_original_file_name text DEFAULT NULL::text)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+declare
+  job_id uuid;
+begin
+  insert into public.import_jobs (
+    name,
+    import_type,
+    source_type,
+    original_file_name,
+    status
+  )
+  values (
+    p_name,
+    p_import_type,
+    p_source_type,
+    p_original_file_name,
+    'draft'
+  )
+  returning id into job_id;
+
+  insert into public.import_logs (job_id, log_level, message)
+  values (job_id, 'info', 'Job de importação criado.');
+
+  return job_id;
+end;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.create_notification(p_title text, p_body text, p_module text DEFAULT 'general'::text, p_notification_type text DEFAULT 'info'::text, p_priority text DEFAULT 'normal'::text, p_recipient_user_id uuid DEFAULT NULL::uuid, p_tenant_id uuid DEFAULT NULL::uuid, p_action_url text DEFAULT NULL::text, p_metadata jsonb DEFAULT '{}'::jsonb)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+declare
+  notification_id uuid;
+begin
+  insert into public.notifications (
+    tenant_id,
+    recipient_user_id,
+    title,
+    body,
+    module,
+    notification_type,
+    priority,
+    action_url,
+    metadata
+  )
+  values (
+    p_tenant_id,
+    p_recipient_user_id,
+    p_title,
+    p_body,
+    p_module,
+    p_notification_type,
+    p_priority,
+    p_action_url,
+    coalesce(p_metadata, '{}'::jsonb)
+  )
+  returning id into notification_id;
+
+  return notification_id;
+end;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.create_qa_bug(p_title text, p_description text DEFAULT NULL::text, p_module text DEFAULT 'general'::text, p_severity text DEFAULT 'medium'::text, p_environment text DEFAULT 'production'::text, p_error_message text DEFAULT NULL::text)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+declare
+  bug_id uuid;
+begin
+  insert into public.qa_bugs (
+    title,
+    description,
+    module,
+    severity,
+    environment,
+    error_message,
+    reported_by
+  )
+  values (
+    p_title,
+    p_description,
+    p_module,
+    p_severity,
+    p_environment,
+    p_error_message,
+    'system'
+  )
+  returning id into bug_id;
+
+  return bug_id;
+end;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.create_reminder(p_title text, p_scheduled_at timestamp with time zone, p_recipient_user_id uuid DEFAULT NULL::uuid, p_body text DEFAULT NULL::text, p_event_id uuid DEFAULT NULL::uuid, p_task_id uuid DEFAULT NULL::uuid, p_priority text DEFAULT 'normal'::text)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+declare
+  reminder_id uuid;
+  tenant_uuid uuid;
+begin
+  select id into tenant_uuid
+  from public.tenants
+  where slug = 'shamar-connect'
+  limit 1;
+
+  insert into public.reminders (
+    tenant_id,
+    event_id,
+    task_id,
+    recipient_user_id,
+    title,
+    body,
+    scheduled_at,
+    priority
+  )
+  values (
+    tenant_uuid,
+    p_event_id,
+    p_task_id,
+    p_recipient_user_id,
+    p_title,
+    p_body,
+    p_scheduled_at,
+    p_priority
+  )
+  returning id into reminder_id;
+
+  return reminder_id;
+end;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.create_system_alert(p_title text, p_description text DEFAULT NULL::text, p_alert_type text DEFAULT 'system'::text, p_severity text DEFAULT 'info'::text, p_module text DEFAULT NULL::text, p_metadata jsonb DEFAULT '{}'::jsonb)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+declare
+  alert_id uuid;
+begin
+  insert into public.system_alerts (
+    title,
+    description,
+    alert_type,
+    severity,
+    module,
+    metadata
+  )
+  values (
+    p_title,
+    p_description,
+    p_alert_type,
+    p_severity,
+    p_module,
+    coalesce(p_metadata, '{}'::jsonb)
+  )
+  returning id into alert_id;
+
+  return alert_id;
+end;
+$function$
+;
+
+create or replace view "public"."crm_contacts_with_tags" as  SELECT c.id,
+    c.name,
+    c.phone,
+    c.email,
+    c.company,
+    c.source,
+    c.consent_status,
+    c.created_at,
+    c.updated_at,
+    COALESCE(jsonb_agg(DISTINCT jsonb_build_object('id', t.id, 'name', t.name, 'color', t.color)) FILTER (WHERE (t.id IS NOT NULL)), '[]'::jsonb) AS tags
+   FROM ((public.crm_contacts c
+     LEFT JOIN public.crm_contact_tags ct ON ((ct.contact_id = c.id)))
+     LEFT JOIN public.crm_tags t ON ((t.id = ct.tag_id)))
+  GROUP BY c.id;
+
+
+create or replace view "public"."crm_dashboard_summary" as  SELECT ( SELECT count(*) AS count
+           FROM public.crm_contacts) AS total_contacts,
+    ( SELECT count(*) AS count
+           FROM public.whatsapp_conversations) AS total_conversations,
+    ( SELECT count(*) AS count
+           FROM public.whatsapp_messages) AS total_messages,
+    ( SELECT count(*) AS count
+           FROM public.crm_deals
+          WHERE (crm_deals.status = 'open'::text)) AS open_deals,
+    ( SELECT count(*) AS count
+           FROM public.crm_deals
+          WHERE (crm_deals.status = 'won'::text)) AS won_deals,
+    ( SELECT count(*) AS count
+           FROM public.crm_deals
+          WHERE (crm_deals.status = 'lost'::text)) AS lost_deals,
+    ( SELECT count(*) AS count
+           FROM public.crm_tasks
+          WHERE (crm_tasks.status = 'pending'::text)) AS pending_tasks,
+    ( SELECT count(*) AS count
+           FROM public.crm_tasks
+          WHERE (crm_tasks.status = 'completed'::text)) AS completed_tasks,
+    ( SELECT count(*) AS count
+           FROM public.group_contact_list_items
+          WHERE (group_contact_list_items.review_status = 'pending'::text)) AS pending_imported_contacts,
+    ( SELECT count(*) AS count
+           FROM public.group_contact_list_items
+          WHERE (group_contact_list_items.review_status = 'approved'::text)) AS approved_imported_contacts,
+    ( SELECT count(*) AS count
+           FROM public.group_contact_list_items
+          WHERE (group_contact_list_items.review_status = 'rejected'::text)) AS rejected_imported_contacts;
+
+
+create or replace view "public"."documents_summary" as  SELECT d.id,
+    d.document_number,
+    d.title,
+    d.document_type,
+    d.status,
+    d.public_url,
+    d.pdf_url,
+    d.expires_at,
+    d.sent_at,
+    d.viewed_at,
+    d.accepted_at,
+    d.rejected_at,
+    d.created_at,
+    c.name AS contact_name,
+    c.phone AS contact_phone,
+    c.email AS contact_email,
+    wc.name AS conversation_name,
+    wc.external_chat_id,
+    deal.title AS deal_title,
+    p.title AS proposal_title,
+    i.invoice_number,
+    count(DISTINCT a.id) AS acceptance_count,
+    count(DISTINCT f.id) AS file_count,
+    count(DISTINCT e.id) AS event_count
+   FROM ((((((((public.documents d
+     LEFT JOIN public.crm_contacts c ON ((c.id = d.contact_id)))
+     LEFT JOIN public.whatsapp_conversations wc ON ((wc.id = d.conversation_id)))
+     LEFT JOIN public.crm_deals deal ON ((deal.id = d.deal_id)))
+     LEFT JOIN public.commercial_proposals p ON ((p.id = d.proposal_id)))
+     LEFT JOIN public.finance_invoices i ON ((i.id = d.invoice_id)))
+     LEFT JOIN public.document_acceptances a ON ((a.document_id = d.id)))
+     LEFT JOIN public.document_files f ON ((f.document_id = d.id)))
+     LEFT JOIN public.document_events e ON ((e.document_id = d.id)))
+  GROUP BY d.id, c.name, c.phone, c.email, wc.name, wc.external_chat_id, deal.title, p.title, i.invoice_number;
+
+
+create or replace view "public"."files_summary" as  SELECT f.id,
+    f.file_name,
+    f.original_file_name,
+    f.title,
+    f.description,
+    f.file_type,
+    f.mime_type,
+    f.file_extension,
+    f.file_size_bytes,
+    f.storage_provider,
+    f.storage_bucket,
+    f.storage_path,
+    f.public_url,
+    f.visibility,
+    f.status,
+    f.created_at,
+    folder.name AS folder_name,
+    folder.path AS folder_path,
+    c.name AS contact_name,
+    c.phone AS contact_phone,
+    wc.name AS conversation_name,
+    wc.external_chat_id,
+    d.title AS deal_title,
+    p.title AS proposal_title,
+    i.invoice_number,
+    doc.title AS document_title,
+    COALESCE(jsonb_agg(DISTINCT jsonb_build_object('id', tag.id, 'name', tag.name, 'color', tag.color)) FILTER (WHERE (tag.id IS NOT NULL)), '[]'::jsonb) AS tags,
+    count(DISTINCT v.id) AS version_count,
+    count(DISTINCT s.id) AS share_count
+   FROM (((((((((((public.files f
+     LEFT JOIN public.file_folders folder ON ((folder.id = f.folder_id)))
+     LEFT JOIN public.crm_contacts c ON ((c.id = f.contact_id)))
+     LEFT JOIN public.whatsapp_conversations wc ON ((wc.id = f.conversation_id)))
+     LEFT JOIN public.crm_deals d ON ((d.id = f.deal_id)))
+     LEFT JOIN public.commercial_proposals p ON ((p.id = f.proposal_id)))
+     LEFT JOIN public.finance_invoices i ON ((i.id = f.invoice_id)))
+     LEFT JOIN public.documents doc ON ((doc.id = f.document_id)))
+     LEFT JOIN public.file_tag_links ftl ON ((ftl.file_id = f.id)))
+     LEFT JOIN public.file_tags tag ON ((tag.id = ftl.tag_id)))
+     LEFT JOIN public.file_versions v ON ((v.file_id = f.id)))
+     LEFT JOIN public.file_shares s ON ((s.file_id = f.id)))
+  GROUP BY f.id, folder.name, folder.path, c.name, c.phone, wc.name, wc.external_chat_id, d.title, p.title, i.invoice_number, doc.title;
+
+
+create or replace view "public"."finance_dashboard_summary" as  SELECT ( SELECT count(*) AS count
+           FROM public.finance_invoices) AS total_invoices,
+    ( SELECT count(*) AS count
+           FROM public.finance_invoices
+          WHERE (finance_invoices.status = ANY (ARRAY['issued'::text, 'sent'::text, 'partially_paid'::text, 'overdue'::text]))) AS open_invoices,
+    ( SELECT count(*) AS count
+           FROM public.finance_invoices
+          WHERE (finance_invoices.status = 'paid'::text)) AS paid_invoices,
+    ( SELECT count(*) AS count
+           FROM public.finance_invoices
+          WHERE (finance_invoices.status = 'overdue'::text)) AS overdue_invoices,
+    ( SELECT COALESCE(sum(finance_invoices.total), (0)::numeric) AS "coalesce"
+           FROM public.finance_invoices) AS total_invoiced,
+    ( SELECT COALESCE(sum(finance_invoices.paid_total), (0)::numeric) AS "coalesce"
+           FROM public.finance_invoices) AS total_paid,
+    ( SELECT COALESCE(sum(finance_invoices.balance_due), (0)::numeric) AS "coalesce"
+           FROM public.finance_invoices
+          WHERE (finance_invoices.status = ANY (ARRAY['issued'::text, 'sent'::text, 'partially_paid'::text, 'overdue'::text]))) AS total_open_balance,
+    ( SELECT count(*) AS count
+           FROM public.finance_installments
+          WHERE (finance_installments.status = ANY (ARRAY['pending'::text, 'sent'::text, 'partially_paid'::text]))) AS open_installments,
+    ( SELECT count(*) AS count
+           FROM public.finance_installments
+          WHERE ((finance_installments.due_date < CURRENT_DATE) AND (finance_installments.status = ANY (ARRAY['pending'::text, 'sent'::text, 'partially_paid'::text])))) AS overdue_installments,
+    ( SELECT count(*) AS count
+           FROM public.finance_payments
+          WHERE (finance_payments.status = 'confirmed'::text)) AS confirmed_payments,
+    ( SELECT COALESCE(sum(finance_payments.amount), (0)::numeric) AS "coalesce"
+           FROM public.finance_payments
+          WHERE (finance_payments.status = 'confirmed'::text)) AS confirmed_payment_value,
+    ( SELECT count(*) AS count
+           FROM public.finance_payments
+          WHERE (finance_payments.status = 'pending'::text)) AS pending_payments;
+
+
+create or replace view "public"."finance_invoices_summary" as  SELECT i.id,
+    i.invoice_number,
+    i.title,
+    i.status,
+    i.total,
+    i.paid_total,
+    i.balance_due,
+    i.currency,
+    i.issue_date,
+    i.due_date,
+    i.paid_at,
+    i.created_at,
+    c.name AS contact_name,
+    c.phone AS contact_phone,
+    c.email AS contact_email,
+    d.title AS deal_title,
+    p.title AS proposal_title,
+    count(DISTINCT it.id) AS item_count,
+    count(DISTINCT inst.id) AS installment_count,
+    count(DISTINCT pay.id) AS payment_count
+   FROM ((((((public.finance_invoices i
+     LEFT JOIN public.crm_contacts c ON ((c.id = i.contact_id)))
+     LEFT JOIN public.crm_deals d ON ((d.id = i.deal_id)))
+     LEFT JOIN public.commercial_proposals p ON ((p.id = i.proposal_id)))
+     LEFT JOIN public.finance_invoice_items it ON ((it.invoice_id = i.id)))
+     LEFT JOIN public.finance_installments inst ON ((inst.invoice_id = i.id)))
+     LEFT JOIN public.finance_payments pay ON ((pay.invoice_id = i.id)))
+  GROUP BY i.id, c.name, c.phone, c.email, d.title, p.title;
+
+
+create or replace view "public"."finance_open_installments" as  SELECT inst.id,
+    inst.invoice_id,
+    inst.installment_number,
+    inst.title,
+    inst.amount,
+    inst.paid_amount,
+    (inst.amount - inst.paid_amount) AS balance_due,
+    inst.status,
+    inst.due_date,
+    inst.payment_url,
+    i.invoice_number,
+    i.title AS invoice_title,
+    c.name AS contact_name,
+    c.phone AS contact_phone,
+    c.email AS contact_email,
+        CASE
+            WHEN (inst.status = ANY (ARRAY['paid'::text, 'cancelled'::text, 'refunded'::text])) THEN false
+            WHEN (inst.due_date < CURRENT_DATE) THEN true
+            ELSE false
+        END AS is_overdue,
+    (inst.due_date - CURRENT_DATE) AS days_until_due
+   FROM ((public.finance_installments inst
+     LEFT JOIN public.finance_invoices i ON ((i.id = inst.invoice_id)))
+     LEFT JOIN public.crm_contacts c ON ((c.id = i.contact_id)))
+  WHERE (inst.status = ANY (ARRAY['pending'::text, 'sent'::text, 'partially_paid'::text, 'overdue'::text]));
+
+
+CREATE OR REPLACE FUNCTION public.generate_document_number()
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+declare
+  next_number integer;
+  document_code text;
+begin
+  select coalesce(count(*), 0) + 1
+  into next_number
+  from public.documents
+  where created_at::date = current_date;
+
+  document_code := 'DOC-' || to_char(current_date, 'YYYYMMDD') || '-' || lpad(next_number::text, 4, '0');
+
+  return document_code;
+end;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.generate_file_share_token()
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+begin
+  return encode(gen_random_bytes(24), 'hex');
+end;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.generate_invoice_number()
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+declare
+  next_number integer;
+  invoice_code text;
+begin
+  select coalesce(count(*), 0) + 1
+  into next_number
+  from public.finance_invoices
+  where created_at::date = current_date;
+
+  invoice_code := 'COB-' || to_char(current_date, 'YYYYMMDD') || '-' || lpad(next_number::text, 4, '0');
+
+  return invoice_code;
+end;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.generate_proposal_number()
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+declare
+  next_number integer;
+  proposal_code text;
+begin
+  select coalesce(count(*), 0) + 1
+  into next_number
+  from public.commercial_proposals
+  where created_at::date = current_date;
+
+  proposal_code := 'PROP-' || to_char(current_date, 'YYYYMMDD') || '-' || lpad(next_number::text, 4, '0');
+
+  return proposal_code;
+end;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.log_application_event(p_level text, p_source text, p_module text, p_message text, p_metadata jsonb DEFAULT '{}'::jsonb)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+declare
+  log_id uuid;
+begin
+  insert into public.application_logs (
+    level,
+    source,
+    module,
+    message,
+    metadata
+  )
+  values (
+    p_level,
+    p_source,
+    p_module,
+    p_message,
+    coalesce(p_metadata, '{}'::jsonb)
+  )
+  returning id into log_id;
+
+  return log_id;
+end;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.mark_notification_read(p_notification_id uuid)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+begin
+  update public.notifications
+  set
+    status = 'read',
+    read_at = now(),
+    updated_at = now()
+  where id = p_notification_id;
+
+  return true;
+end;
+$function$
+;
+
+create or replace view "public"."multi_tenant_dashboard_summary" as  SELECT ( SELECT count(*) AS count
+           FROM public.tenants) AS total_tenants,
+    ( SELECT count(*) AS count
+           FROM public.tenants
+          WHERE (tenants.status = 'active'::text)) AS active_tenants,
+    ( SELECT count(*) AS count
+           FROM public.organizations
+          WHERE (organizations.status = 'active'::text)) AS active_organizations,
+    ( SELECT count(*) AS count
+           FROM public.tenant_users
+          WHERE (tenant_users.status = 'active'::text)) AS active_tenant_users,
+    ( SELECT count(*) AS count
+           FROM public.white_label_brands
+          WHERE (white_label_brands.status = 'active'::text)) AS active_white_label_brands,
+    ( SELECT count(*) AS count
+           FROM public.tenant_domains
+          WHERE (tenant_domains.status = 'active'::text)) AS active_domains,
+    ( SELECT count(*) AS count
+           FROM public.subscription_plans
+          WHERE (subscription_plans.is_active = true)) AS active_plans,
+    ( SELECT count(*) AS count
+           FROM public.tenant_subscriptions
+          WHERE (tenant_subscriptions.status = 'active'::text)) AS active_subscriptions,
+    ( SELECT COALESCE(sum(tenant_subscriptions.price), (0)::numeric) AS "coalesce"
+           FROM public.tenant_subscriptions
+          WHERE (tenant_subscriptions.status = 'active'::text)) AS monthly_recurring_revenue_estimate;
+
+
+CREATE OR REPLACE FUNCTION public.register_inbound_webhook_event(p_provider text, p_event_type text, p_payload jsonb, p_event_id text DEFAULT NULL::text, p_endpoint_key text DEFAULT NULL::text)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+declare
+  endpoint_record record;
+  event_uuid uuid;
+begin
+  select e.*, i.id as integration_uuid
+  into endpoint_record
+  from public.inbound_webhook_endpoints e
+  left join public.external_integrations i on i.id = e.integration_id
+  where
+    (p_endpoint_key is not null and e.endpoint_key = p_endpoint_key)
+    or
+    (p_endpoint_key is null and e.provider = p_provider)
+  limit 1;
+
+  insert into public.inbound_webhook_events (
+    endpoint_id,
+    integration_id,
+    provider,
+    event_type,
+    event_id,
+    payload,
+    status,
+    processing_status
+  )
+  values (
+    endpoint_record.id,
+    endpoint_record.integration_uuid,
+    p_provider,
+    p_event_type,
+    p_event_id,
+    coalesce(p_payload, '{}'::jsonb),
+    'received',
+    'pending'
+  )
+  returning id into event_uuid;
+
+  return event_uuid;
+end;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.search_global(p_query text, p_module text DEFAULT NULL::text, p_entity_type text DEFAULT NULL::text, p_limit integer DEFAULT 20)
+ RETURNS TABLE(id uuid, entity_type text, entity_id text, title text, subtitle text, summary text, module text, url_path text, rank real, metadata jsonb)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+begin
+  return query
+  select
+    g.id,
+    g.entity_type,
+    g.entity_id,
+    g.title,
+    g.subtitle,
+    g.summary,
+    g.module,
+    g.url_path,
+    ts_rank(
+      to_tsvector('portuguese', g.searchable_text),
+      plainto_tsquery('portuguese', p_query)
+    ) as rank,
+    g.metadata
+  from public.global_search_index g
+  where g.is_active = true
+    and (
+      p_module is null
+      or g.module = p_module
+    )
+    and (
+      p_entity_type is null
+      or g.entity_type = p_entity_type
+    )
+    and (
+      to_tsvector('portuguese', g.searchable_text) @@ plainto_tsquery('portuguese', p_query)
+      or g.searchable_text ilike '%' || p_query || '%'
+    )
+  order by
+    rank desc,
+    g.priority desc,
+    g.updated_at desc
+  limit p_limit;
+end;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.shamar_set_updated_at()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.simple_slug(input_text text)
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+begin
+  return lower(
+    regexp_replace(
+      regexp_replace(
+        translate(input_text, 'áàãâäéèêëíìîïóòõôöúùûüçÁÀÃÂÄÉÈÊËÍÌÎÏÓÒÕÔÖÚÙÛÜÇ', 'aaaaaeeeeiiiiooooouuuucAAAAAEEEEIIIIOOOOOUUUUC'),
+        '[^a-zA-Z0-9]+',
+        '-',
+        'g'
+      ),
+      '(^-|-$)',
+      '',
+      'g'
+    )
+  );
+end;
+$function$
+;
+
+create or replace view "public"."tenants_summary" as  SELECT t.id,
+    t.name,
+    t.slug,
+    t.status,
+    t.owner_name,
+    t.owner_email,
+    t.timezone,
+    t.locale,
+    t.currency,
+    t.created_at,
+    count(DISTINCT o.id) AS organization_count,
+    count(DISTINCT tu.id) AS user_count,
+    count(DISTINCT d.id) AS domain_count,
+    s.status AS subscription_status,
+    p.name AS plan_name,
+    p.slug AS plan_slug,
+    p.price AS plan_price,
+    b.brand_name,
+    b.app_name,
+    b.logo_url,
+    b.icon_url,
+    b.primary_color,
+    b.secondary_color,
+    b.accent_color
+   FROM ((((((public.tenants t
+     LEFT JOIN public.organizations o ON ((o.tenant_id = t.id)))
+     LEFT JOIN public.tenant_users tu ON ((tu.tenant_id = t.id)))
+     LEFT JOIN public.tenant_domains d ON ((d.tenant_id = t.id)))
+     LEFT JOIN public.tenant_subscriptions s ON ((s.tenant_id = t.id)))
+     LEFT JOIN public.subscription_plans p ON ((p.id = s.plan_id)))
+     LEFT JOIN public.white_label_brands b ON ((b.tenant_id = t.id)))
+  GROUP BY t.id, s.status, p.name, p.slug, p.price, b.brand_name, b.app_name, b.logo_url, b.icon_url, b.primary_color, b.secondary_color, b.accent_color;
+
+
+CREATE OR REPLACE FUNCTION public.touch_commercial_agent_updated_at()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SET search_path TO 'public'
+AS $function$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.upsert_global_search_item(p_entity_type text, p_entity_id text, p_title text, p_subtitle text DEFAULT NULL::text, p_content text DEFAULT NULL::text, p_summary text DEFAULT NULL::text, p_module text DEFAULT 'general'::text, p_tags text[] DEFAULT '{}'::text[], p_url_path text DEFAULT NULL::text, p_contact_id uuid DEFAULT NULL::uuid, p_conversation_id uuid DEFAULT NULL::uuid, p_metadata jsonb DEFAULT '{}'::jsonb)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+declare
+  search_id uuid;
+  combined_text text;
+begin
+  combined_text := trim(
+    coalesce(p_title, '') || ' ' ||
+    coalesce(p_subtitle, '') || ' ' ||
+    coalesce(p_content, '') || ' ' ||
+    coalesce(p_summary, '') || ' ' ||
+    array_to_string(coalesce(p_tags, '{}'), ' ')
+  );
+
+  insert into public.global_search_index (
+    entity_type,
+    entity_id,
+    title,
+    subtitle,
+    content,
+    summary,
+    module,
+    searchable_text,
+    tags,
+    url_path,
+    contact_id,
+    conversation_id,
+    metadata,
+    indexed_at,
+    updated_at
+  )
+  values (
+    p_entity_type,
+    p_entity_id,
+    p_title,
+    p_subtitle,
+    p_content,
+    p_summary,
+    p_module,
+    combined_text,
+    coalesce(p_tags, '{}'),
+    p_url_path,
+    p_contact_id,
+    p_conversation_id,
+    coalesce(p_metadata, '{}'::jsonb),
+    now(),
+    now()
+  )
+  on conflict (entity_type, entity_id) do update
+  set
+    title = excluded.title,
+    subtitle = excluded.subtitle,
+    content = excluded.content,
+    summary = excluded.summary,
+    module = excluded.module,
+    searchable_text = excluded.searchable_text,
+    tags = excluded.tags,
+    url_path = excluded.url_path,
+    contact_id = excluded.contact_id,
+    conversation_id = excluded.conversation_id,
+    metadata = excluded.metadata,
+    indexed_at = now(),
+    updated_at = now()
+  returning id into search_id;
+
+  return search_id;
+end;
+$function$
+;
+
+create or replace view "public"."whatsapp_media_dashboard_summary" as  SELECT ( SELECT count(*) AS count
+           FROM public.whatsapp_media_files) AS total_media_files,
+    ( SELECT count(*) AS count
+           FROM public.whatsapp_media_files
+          WHERE (whatsapp_media_files.media_type = 'image'::text)) AS total_images,
+    ( SELECT count(*) AS count
+           FROM public.whatsapp_media_files
+          WHERE (whatsapp_media_files.media_type = 'audio'::text)) AS total_audios,
+    ( SELECT count(*) AS count
+           FROM public.whatsapp_media_files
+          WHERE (whatsapp_media_files.media_type = 'video'::text)) AS total_videos,
+    ( SELECT count(*) AS count
+           FROM public.whatsapp_media_files
+          WHERE (whatsapp_media_files.media_type = 'document'::text)) AS total_documents,
+    ( SELECT count(*) AS count
+           FROM public.whatsapp_media_files
+          WHERE (whatsapp_media_files.download_status = 'pending'::text)) AS pending_downloads,
+    ( SELECT count(*) AS count
+           FROM public.whatsapp_media_files
+          WHERE (whatsapp_media_files.download_status = 'failed'::text)) AS failed_downloads,
+    ( SELECT count(*) AS count
+           FROM public.media_processing_jobs
+          WHERE (media_processing_jobs.status = 'pending'::text)) AS pending_jobs,
+    ( SELECT count(*) AS count
+           FROM public.media_processing_jobs
+          WHERE (media_processing_jobs.status = 'failed'::text)) AS failed_jobs,
+    ( SELECT count(*) AS count
+           FROM public.whatsapp_audio_transcriptions) AS total_audio_transcriptions,
+    ( SELECT count(*) AS count
+           FROM public.whatsapp_media_text_extractions) AS total_text_extractions;
