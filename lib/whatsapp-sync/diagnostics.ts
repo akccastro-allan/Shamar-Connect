@@ -1,10 +1,22 @@
+import { createHash } from "crypto";
+import type { ProviderChatSummary } from "../../types/messaging-provider.ts";
 import type { createSupabaseWriteClient } from "../supabase/server-write.ts";
 import { PROVIDER_TIMEOUT_MS } from "../providers/whatsapp-web-gateway-client.ts";
-import { enqueueWhatsappSync, processQueuedWhatsappSyncRunsForChannel, type WhatsappSyncMode } from "./service.ts";
-import { isOpenWaConnected, type OpenWaSyncProvider } from "./providers/openwa-sync-provider.ts";
+import {
+  enqueueWhatsappSync,
+  processQueuedWhatsappSyncRunsForChannel,
+  type WhatsappSyncMode,
+} from "./service.ts";
+import {
+  isOpenWaConnected,
+  type OpenWaSyncProvider,
+} from "./providers/openwa-sync-provider.ts";
 
 type Db = ReturnType<typeof createSupabaseWriteClient>;
-type ProviderFactory = (sessionId: string, options?: { baseUrl?: string | null }) => OpenWaSyncProvider;
+type ProviderFactory = (
+  sessionId: string,
+  options?: { baseUrl?: string | null },
+) => OpenWaSyncProvider;
 
 type GatewayOptions = {
   id?: string | null;
@@ -28,7 +40,15 @@ type GatewaySession = {
   me?: { user?: string | null } | null;
 };
 
-export type SyncDiagnosticsAction = "status" | "probe_chats" | "diagnostic" | "bootstrap" | "incremental" | "reconciliation" | "process_next";
+export type SyncDiagnosticsAction =
+  | "status"
+  | "probe_chats"
+  | "validate_chat_pagination"
+  | "diagnostic"
+  | "bootstrap"
+  | "incremental"
+  | "reconciliation"
+  | "process_next";
 
 const LIPS_SESSION_ID = "lips-main";
 const LIPS_ORGANIZATION_SLUG = "auto-pecas-auto-center-lips";
@@ -37,6 +57,7 @@ const BOOTSTRAP_CHAT_LIMIT = 100;
 const BOOTSTRAP_MESSAGE_LIMIT = 100;
 const PROBE_CHAT_DEFAULT_LIMIT = 5;
 const PROBE_CHAT_MAX_LIMIT = 10;
+const PROBE_CHAT_DEFAULT_OFFSET = 0;
 const QUEUE_FIELDS = [
   "queue_status",
   "priority",
@@ -55,22 +76,41 @@ const QUEUE_FIELDS = [
 
 type TenantMetadata = Record<string, unknown> | null;
 
+type ProbeChatsOptions = {
+  limit?: number;
+  offset?: number;
+};
+
 function metadataRecord(value: unknown): TenantMetadata {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
 }
 
 function hasFeature(metadata: TenantMetadata, feature: string) {
   const features = metadata?.features;
-  return Boolean(features && typeof features === "object" && !Array.isArray(features) && (features as Record<string, unknown>)[feature] === true);
+  return Boolean(
+    features &&
+    typeof features === "object" &&
+    !Array.isArray(features) &&
+    (features as Record<string, unknown>)[feature] === true,
+  );
 }
 
-export function canExecuteSyncDiagnostics(input: { vercelEnv?: string | null; metadata: TenantMetadata }) {
+export function canExecuteSyncDiagnostics(input: {
+  vercelEnv?: string | null;
+  metadata: TenantMetadata;
+}) {
   if (input.vercelEnv !== "production") return true;
   return hasFeature(input.metadata, "whatsapp_sync_diagnostics_execute");
 }
 
 export function isReadOnlySyncDiagnosticsAction(action: SyncDiagnosticsAction) {
-  return action === "status" || action === "probe_chats";
+  return (
+    action === "status" ||
+    action === "probe_chats" ||
+    action === "validate_chat_pagination"
+  );
 }
 
 export function isWriteSyncDiagnosticsAction(action: SyncDiagnosticsAction) {
@@ -81,8 +121,18 @@ function isAllowedRole(value?: string | null) {
   return value === "owner" || value === "admin";
 }
 
-export function isWhatsappSyncDiagnosticsOperatorCandidate(input: { isPlatformTenant: boolean; role?: string | null; organizationId?: string | null; metadata: TenantMetadata }) {
-  return input.isPlatformTenant === true && input.organizationId === null && isAllowedRole(input.role) && hasFeature(input.metadata, "command_center");
+export function isWhatsappSyncDiagnosticsOperatorCandidate(input: {
+  isPlatformTenant: boolean;
+  role?: string | null;
+  organizationId?: string | null;
+  metadata: TenantMetadata;
+}) {
+  return (
+    input.isPlatformTenant === true &&
+    input.organizationId === null &&
+    isAllowedRole(input.role) &&
+    hasFeature(input.metadata, "command_center")
+  );
 }
 
 function maskId(value?: string | null) {
@@ -99,6 +149,64 @@ function safeError(value: unknown) {
     .replace(/\b\d{8,}\b/g, "[number-redacted]")
     .replace(/[A-Za-z0-9_-]{24,}/g, "[token-redacted]");
   return text.slice(0, 220);
+}
+
+function safeErrorCode(error: unknown) {
+  const code =
+    typeof (error as { code?: unknown })?.code === "string"
+      ? String((error as { code: string }).code)
+      : "";
+  const text =
+    `${code} ${error instanceof Error ? error.message : String(error || "")}`.toLowerCase();
+  if (
+    text.includes("unauthorized") ||
+    text.includes("forbidden") ||
+    text.includes("401") ||
+    text.includes("403")
+  )
+    return "gateway_unauthorized";
+  if (text.includes("timeout") || text.includes("aborted"))
+    return "provider_list_chats_timeout";
+  if (text.includes("not_found") || text.includes("404"))
+    return "gateway_session_not_found";
+  return "provider_list_chats_failed";
+}
+
+function fingerprintChat(sessionId: string, chat: ProviderChatSummary) {
+  return createHash("sha256").update(`${sessionId}:${chat.id}`).digest("hex");
+}
+
+function normalizeProbeChatsOptions(input?: ProbeChatsOptions) {
+  const limitProvided = input?.limit !== undefined;
+  const offsetProvided = input?.offset !== undefined;
+  const rawLimit = limitProvided
+    ? Number(input?.limit)
+    : PROBE_CHAT_DEFAULT_LIMIT;
+  const rawOffset = offsetProvided
+    ? Number(input?.offset)
+    : PROBE_CHAT_DEFAULT_OFFSET;
+  const limit = Number.isFinite(rawLimit) ? Math.trunc(rawLimit) : NaN;
+  const offset = Number.isFinite(rawOffset) ? Math.trunc(rawOffset) : NaN;
+
+  if (!Number.isFinite(limit) || limit < 1 || limit > PROBE_CHAT_MAX_LIMIT) {
+    return {
+      ok: false as const,
+      limit,
+      offset: Number.isFinite(offset) ? offset : PROBE_CHAT_DEFAULT_OFFSET,
+      code: "probe_limit_out_of_bounds",
+      error: `probe_limit_must_be_between_1_and_${PROBE_CHAT_MAX_LIMIT}`,
+    };
+  }
+  if (!Number.isFinite(offset) || offset < 0) {
+    return {
+      ok: false as const,
+      limit,
+      offset,
+      code: "probe_offset_out_of_bounds",
+      error: "probe_offset_must_be_zero_or_positive",
+    };
+  }
+  return { ok: true as const, limit, offset };
 }
 
 function maskPhone(value?: string | null) {
@@ -120,12 +228,24 @@ function gatewayApiBaseUrl(value?: string | null) {
 
 function asArray<T>(value: unknown): T[] {
   if (Array.isArray(value)) return value as T[];
-  if (value && typeof value === "object" && Array.isArray((value as { data?: unknown }).data)) return (value as { data: T[] }).data;
-  if (value && typeof value === "object" && Array.isArray((value as { sessions?: unknown }).sessions)) return (value as { sessions: T[] }).sessions;
+  if (
+    value &&
+    typeof value === "object" &&
+    Array.isArray((value as { data?: unknown }).data)
+  )
+    return (value as { data: T[] }).data;
+  if (
+    value &&
+    typeof value === "object" &&
+    Array.isArray((value as { sessions?: unknown }).sessions)
+  )
+    return (value as { sessions: T[] }).sessions;
   return [];
 }
 
-export function sanitizeSyncRun(run: Record<string, unknown> | null | undefined) {
+export function sanitizeSyncRun(
+  run: Record<string, unknown> | null | undefined,
+) {
   if (!run) return null;
   return {
     id: maskId(String(run.id || "")),
@@ -156,7 +276,8 @@ export function sanitizeProcessedRun(run: Record<string, unknown>) {
     messagesSaved: Number(run.messagesSaved || 0),
     messagesUpdated: Number(run.messagesUpdated || 0),
     errorsCount: Array.isArray(run.errors) ? run.errors.length : 0,
-    providerStatus: typeof run.providerStatus === "string" ? run.providerStatus : null,
+    providerStatus:
+      typeof run.providerStatus === "string" ? run.providerStatus : null,
   };
 }
 
@@ -181,17 +302,24 @@ export async function requireWhatsappSyncDiagnosticsOperator(db: Db) {
     .eq("status", "active");
   if (tenantUsersError) throw tenantUsersError;
 
-  const globalMemberships = (tenantUsers || []).filter((item) => item.organization_id === null && isAllowedRole(item.role || appUser.role));
+  const globalMemberships = (tenantUsers || []).filter(
+    (item) =>
+      item.organization_id === null && isAllowedRole(item.role || appUser.role),
+  );
   if (!globalMemberships.length) throw new Error("FORBIDDEN");
 
-  const tenantIds = Array.from(new Set(globalMemberships.map((item) => item.tenant_id).filter(Boolean)));
+  const tenantIds = Array.from(
+    new Set(globalMemberships.map((item) => item.tenant_id).filter(Boolean)),
+  );
   const { data: tenants, error: tenantsError } = await db
     .from("tenants")
     .select("id, is_platform, metadata")
     .in("id", tenantIds);
   if (tenantsError) throw tenantsError;
 
-  const tenantById = new Map((tenants || []).map((tenant) => [tenant.id, tenant]));
+  const tenantById = new Map(
+    (tenants || []).map((tenant) => [tenant.id, tenant]),
+  );
   const membership = globalMemberships.find((item) => {
     const tenant = tenantById.get(item.tenant_id);
     return isWhatsappSyncDiagnosticsOperatorCandidate({
@@ -219,7 +347,9 @@ export async function requireWhatsappSyncDiagnosticsOperator(db: Db) {
 export async function resolveLipsSyncChannel(db: Db) {
   const { data: channels, error } = await db
     .from("channels")
-    .select("id, tenant_id, organization_id, session_id, provider, provider_type, channel_type, status, active, is_active, gateway_id")
+    .select(
+      "id, tenant_id, organization_id, session_id, provider, provider_type, channel_type, status, active, is_active, gateway_id",
+    )
     .eq("session_id", LIPS_SESSION_ID);
   if (error) throw error;
 
@@ -233,14 +363,21 @@ export async function resolveLipsSyncChannel(db: Db) {
       .maybeSingle();
     if (organizationError) throw organizationError;
     if (!organization) continue;
-    if (channel.provider && !["whatsapp_web", "openwa"].includes(channel.provider)) throw new Error("Lips channel provider is not OpenWA/WhatsApp Web.");
+    if (
+      channel.provider &&
+      !["whatsapp_web", "openwa"].includes(channel.provider)
+    )
+      throw new Error("Lips channel provider is not OpenWA/WhatsApp Web.");
     return { channel, organization };
   }
 
   throw new Error("Canal lips-main da Lips nao encontrado.");
 }
 
-async function loadGatewayOptions(db: Db, gatewayId?: string | null): Promise<GatewayOptions> {
+async function loadGatewayOptions(
+  db: Db,
+  gatewayId?: string | null,
+): Promise<GatewayOptions> {
   if (!gatewayId) return {};
   const { data: gateway, error } = await db
     .from("internal_messaging_gateways")
@@ -248,11 +385,19 @@ async function loadGatewayOptions(db: Db, gatewayId?: string | null): Promise<Ga
     .eq("id", gatewayId)
     .maybeSingle();
   if (error) throw error;
-  if (!gateway) throw new Error("Gateway vinculado ao canal Lips nao encontrado.");
-  if (gateway.provider !== "openwa" || gateway.environment !== "production" || gateway.status !== "active") {
-    throw new Error("Gateway vinculado ao canal Lips nao esta ativo em Production/OpenWA.");
+  if (!gateway)
+    throw new Error("Gateway vinculado ao canal Lips nao encontrado.");
+  if (
+    gateway.provider !== "openwa" ||
+    gateway.environment !== "production" ||
+    gateway.status !== "active"
+  ) {
+    throw new Error(
+      "Gateway vinculado ao canal Lips nao esta ativo em Production/OpenWA.",
+    );
   }
-  if (!gateway.base_url) throw new Error("Gateway vinculado ao canal Lips sem base_url.");
+  if (!gateway.base_url)
+    throw new Error("Gateway vinculado ao canal Lips sem base_url.");
   return {
     id: gateway.id as string | null,
     name: gateway.name as string | null,
@@ -267,7 +412,9 @@ async function loadGatewayOptions(db: Db, gatewayId?: string | null): Promise<Ga
 async function loadSyncState(db: Db, channelId: string) {
   const { data, error } = await db
     .from("whatsapp_channel_sync_state")
-    .select("sync_status, last_mode, last_run_id, last_queued_at, last_started_at, last_completed_at, last_success_at, last_error_at, last_error, bootstrap_completed_at, last_chat_checkpoint, last_message_checkpoint, last_provider_status, last_provider_seen_at, next_reconciliation_at, locked_at, lock_expires_at, locked_by, cursor, stats, updated_at")
+    .select(
+      "sync_status, last_mode, last_run_id, last_queued_at, last_started_at, last_completed_at, last_success_at, last_error_at, last_error, bootstrap_completed_at, last_chat_checkpoint, last_message_checkpoint, last_provider_status, last_provider_seen_at, next_reconciliation_at, locked_at, lock_expires_at, locked_by, cursor, stats, updated_at",
+    )
     .eq("channel_id", channelId)
     .maybeSingle();
   if (error) throw error;
@@ -277,7 +424,9 @@ async function loadSyncState(db: Db, channelId: string) {
 async function loadLastRun(db: Db, channelId: string) {
   const { data, error } = await db
     .from("whatsapp_sync_runs")
-    .select("id, mode, status, started_at, completed_at, chats_scanned, chats_synced, chats_skipped, messages_scanned, messages_saved, messages_updated, errors_count, error_message")
+    .select(
+      "id, mode, status, started_at, completed_at, chats_scanned, chats_synced, chats_skipped, messages_scanned, messages_saved, messages_updated, errors_count, error_message",
+    )
     .eq("channel_id", channelId)
     .order("created_at", { ascending: false })
     .limit(1)
@@ -286,7 +435,11 @@ async function loadLastRun(db: Db, channelId: string) {
   return data || null;
 }
 
-async function countRows(db: Db, table: string, applyFilters: (query: any) => any) {
+async function countRows(
+  db: Db,
+  table: string,
+  applyFilters: (query: any) => any,
+) {
   const query = applyFilters(db.from(table).select("id"));
   const { data, error } = await query;
   if (error) throw error;
@@ -294,17 +447,96 @@ async function countRows(db: Db, table: string, applyFilters: (query: any) => an
 }
 
 async function loadReadOnlyInventory(db: Db, channelId: string) {
-  const [syncState, syncRuns, pendingRuns, failedRuns, locks, conversations, queueNull] = await Promise.all([
-    countRows(db, "whatsapp_channel_sync_state", (query) => query.eq("channel_id", channelId)),
-    countRows(db, "whatsapp_sync_runs", (query) => query.eq("channel_id", channelId)),
-    countRows(db, "whatsapp_sync_runs", (query) => query.eq("channel_id", channelId).in("status", ["queued", "running"])),
-    countRows(db, "whatsapp_sync_runs", (query) => query.eq("channel_id", channelId).eq("status", "failed")),
-    countRows(db, "whatsapp_channel_sync_state", (query) => query.eq("channel_id", channelId).not("locked_at", "is", null)),
-    countRows(db, "whatsapp_conversations", (query) => query.eq("channel_id", channelId)),
-    countRows(db, "whatsapp_conversations", (query) => query.eq("channel_id", channelId).is("queue_status", null)),
+  const [
+    syncState,
+    syncRuns,
+    pendingRuns,
+    failedRuns,
+    locks,
+    conversations,
+    queueNull,
+  ] = await Promise.all([
+    countRows(db, "whatsapp_channel_sync_state", (query) =>
+      query.eq("channel_id", channelId),
+    ),
+    countRows(db, "whatsapp_sync_runs", (query) =>
+      query.eq("channel_id", channelId),
+    ),
+    countRows(db, "whatsapp_sync_runs", (query) =>
+      query.eq("channel_id", channelId).in("status", ["queued", "running"]),
+    ),
+    countRows(db, "whatsapp_sync_runs", (query) =>
+      query.eq("channel_id", channelId).eq("status", "failed"),
+    ),
+    countRows(db, "whatsapp_channel_sync_state", (query) =>
+      query.eq("channel_id", channelId).not("locked_at", "is", null),
+    ),
+    countRows(db, "whatsapp_conversations", (query) =>
+      query.eq("channel_id", channelId),
+    ),
+    countRows(db, "whatsapp_conversations", (query) =>
+      query.eq("channel_id", channelId).is("queue_status", null),
+    ),
   ]);
 
-  return { syncState, syncRuns, pendingRuns, failedRuns, locks, conversations, queueStatusNull: queueNull };
+  return {
+    syncState,
+    syncRuns,
+    pendingRuns,
+    failedRuns,
+    locks,
+    conversations,
+    queueStatusNull: queueNull,
+  };
+}
+
+async function loadReadOnlyIntegrity(
+  db: Db,
+  channel: { id: string; organization_id: string },
+) {
+  const [
+    syncState,
+    syncRuns,
+    conversations,
+    messages,
+    queueNull,
+    stateLocks,
+    runLocks,
+  ] = await Promise.all([
+    countRows(db, "whatsapp_channel_sync_state", (query) =>
+      query.eq("channel_id", channel.id),
+    ),
+    countRows(db, "whatsapp_sync_runs", (query) =>
+      query.eq("channel_id", channel.id),
+    ),
+    countRows(db, "whatsapp_conversations", (query) =>
+      query.eq("channel_id", channel.id),
+    ),
+    countRows(db, "whatsapp_messages", (query) =>
+      query.eq("channel_id", channel.id),
+    ),
+    countRows(db, "whatsapp_conversations", (query) =>
+      query.eq("channel_id", channel.id).is("queue_status", null),
+    ),
+    countRows(db, "whatsapp_channel_sync_state", (query) =>
+      query.eq("channel_id", channel.id).not("locked_at", "is", null),
+    ),
+    countRows(db, "whatsapp_sync_runs", (query) =>
+      query
+        .eq("channel_id", channel.id)
+        .in("status", ["queued", "running"])
+        .not("locked_at", "is", null),
+    ),
+  ]);
+
+  return {
+    syncState,
+    syncRuns,
+    conversations,
+    messages,
+    queueStatusNull: queueNull,
+    locks: stateLocks + runLocks,
+  };
 }
 
 async function gatewayFetchJson(url: string, token: string) {
@@ -322,9 +554,21 @@ async function gatewayFetchJson(url: string, token: string) {
     } catch {
       payload = { text: text.slice(0, 120) };
     }
-    return { status: response.status, ok: response.ok, latencyMs: Date.now() - startedAt, payload, error: null as string | null };
+    return {
+      status: response.status,
+      ok: response.ok,
+      latencyMs: Date.now() - startedAt,
+      payload,
+      error: null as string | null,
+    };
   } catch (error) {
-    return { status: null as number | null, ok: false, latencyMs: Date.now() - startedAt, payload: null, error: safeError(error instanceof Error ? error.message : String(error)) };
+    return {
+      status: null as number | null,
+      ok: false,
+      latencyMs: Date.now() - startedAt,
+      payload: null,
+      error: safeError(error instanceof Error ? error.message : String(error)),
+    };
   }
 }
 
@@ -334,11 +578,19 @@ async function probeGatewayStatus(gateway: GatewayOptions) {
     return {
       code: "gateway_token_missing",
       message: "Credencial server-side do gateway não configurada.",
-      gateway: { name: gateway.name || gateway.slug || "Gateway", status: gateway.status || "unknown" },
+      gateway: {
+        name: gateway.name || gateway.slug || "Gateway",
+        status: gateway.status || "unknown",
+      },
       health: { httpStatus: null, latencyMs: null },
       readiness: { httpStatus: null, latencyMs: null },
       version: null,
-      sessions: { total: 0, lipsMainFound: false, lipsMainStatus: null, phoneMasked: null },
+      sessions: {
+        total: 0,
+        lipsMainFound: false,
+        lipsMainStatus: null,
+        phoneMasked: null,
+      },
       checkedAt: new Date().toISOString(),
       error: "gateway_token_missing",
     };
@@ -353,26 +605,56 @@ async function probeGatewayStatus(gateway: GatewayOptions) {
     gatewayFetchJson(`${apiBaseUrl}/sessions`, token),
   ]);
   const sessions = asArray<GatewaySession>(sessionsResponse.payload);
-  const lipsSession = sessions.find((session) => session.name === LIPS_SESSION_ID || session.id === LIPS_SESSION_ID) || null;
+  const lipsSession =
+    sessions.find(
+      (session) =>
+        session.name === LIPS_SESSION_ID || session.id === LIPS_SESSION_ID,
+    ) || null;
   const gatewayError = safeError(
     sessionsResponse.error ||
-    (sessionsResponse.payload && typeof sessionsResponse.payload === "object" ? (sessionsResponse.payload as { error?: unknown; message?: unknown }).error || (sessionsResponse.payload as { message?: unknown }).message : null) ||
-    health.error ||
-    readiness.error,
+      (sessionsResponse.payload && typeof sessionsResponse.payload === "object"
+        ? (sessionsResponse.payload as { error?: unknown; message?: unknown })
+            .error ||
+          (sessionsResponse.payload as { message?: unknown }).message
+        : null) ||
+      health.error ||
+      readiness.error,
   );
 
   return {
-    code: sessionsResponse.ok ? (lipsSession ? "ok" : "session_not_found") : sessionsResponse.status === 401 ? "gateway_unauthorized" : "gateway_unavailable",
-    message: sessionsResponse.ok ? (lipsSession ? "Status consultado com sucesso." : "Sessão lips-main não encontrada.") : "Falha sanitizada ao consultar sessões do gateway.",
-    gateway: { name: gateway.name || gateway.slug || "Gateway", status: gateway.status || "unknown" },
+    code: sessionsResponse.ok
+      ? lipsSession
+        ? "ok"
+        : "session_not_found"
+      : sessionsResponse.status === 401
+        ? "gateway_unauthorized"
+        : "gateway_unavailable",
+    message: sessionsResponse.ok
+      ? lipsSession
+        ? "Status consultado com sucesso."
+        : "Sessão lips-main não encontrada."
+      : "Falha sanitizada ao consultar sessões do gateway.",
+    gateway: {
+      name: gateway.name || gateway.slug || "Gateway",
+      status: gateway.status || "unknown",
+    },
     health: { httpStatus: health.status, latencyMs: health.latencyMs },
     readiness: { httpStatus: readiness.status, latencyMs: readiness.latencyMs },
-    version: version.ok && version.payload && typeof version.payload === "object" ? String((version.payload as { version?: unknown }).version || "") || null : null,
+    version:
+      version.ok && version.payload && typeof version.payload === "object"
+        ? String((version.payload as { version?: unknown }).version || "") ||
+          null
+        : null,
     sessions: {
       total: sessions.length,
       lipsMainFound: Boolean(lipsSession),
       lipsMainStatus: lipsSession?.status || null,
-      phoneMasked: maskPhone(lipsSession?.phone || lipsSession?.wid || lipsSession?.number || lipsSession?.me?.user),
+      phoneMasked: maskPhone(
+        lipsSession?.phone ||
+          lipsSession?.wid ||
+          lipsSession?.number ||
+          lipsSession?.me?.user,
+      ),
     },
     checkedAt: new Date().toISOString(),
     error: gatewayError,
@@ -386,11 +668,16 @@ async function snapshotQueue(db: Db, channelId: string) {
     .eq("channel_id", channelId);
   if (error) throw error;
   const snapshot = new Map<string, Record<string, unknown>>();
-  for (const row of (data || []) as unknown as Record<string, unknown>[]) snapshot.set(String(row.id), row);
+  for (const row of (data || []) as unknown as Record<string, unknown>[])
+    snapshot.set(String(row.id), row);
   return snapshot;
 }
 
-export async function compareQueueSnapshot(db: Db, channelId: string, before: Map<string, Record<string, unknown>>) {
+export async function compareQueueSnapshot(
+  db: Db,
+  channelId: string,
+  before: Map<string, Record<string, unknown>>,
+) {
   const after = await snapshotQueue(db, channelId);
   const changed: string[] = [];
   for (const [id, previous] of before) {
@@ -405,13 +692,26 @@ export async function compareQueueSnapshot(db: Db, channelId: string, before: Ma
   return { preserved: changed.length === 0, changed: changed.slice(0, 20) };
 }
 
-export async function getLipsWhatsappSyncDiagnostics(db: Db, providerFactory: ProviderFactory, options?: { includeProviderStatus?: boolean }) {
+export async function getLipsWhatsappSyncDiagnostics(
+  db: Db,
+  providerFactory: ProviderFactory,
+  options?: { includeProviderStatus?: boolean },
+) {
   const { channel, organization } = await resolveLipsSyncChannel(db);
   const gatewayOptions = await loadGatewayOptions(db, channel.gateway_id);
-  const [state, lastRun] = await Promise.all([loadSyncState(db, channel.id), loadLastRun(db, channel.id)]);
-  let providerStatus = typeof state?.last_provider_status === "string" ? state.last_provider_status : null;
+  const [state, lastRun] = await Promise.all([
+    loadSyncState(db, channel.id),
+    loadLastRun(db, channel.id),
+  ]);
+  let providerStatus =
+    typeof state?.last_provider_status === "string"
+      ? state.last_provider_status
+      : null;
   if (options?.includeProviderStatus) {
-    providerStatus = await providerFactory(LIPS_SESSION_ID, gatewayOptions).getConnectionStatus();
+    providerStatus = await providerFactory(
+      LIPS_SESSION_ID,
+      gatewayOptions,
+    ).getConnectionStatus();
   }
 
   return {
@@ -420,23 +720,38 @@ export async function getLipsWhatsappSyncDiagnostics(db: Db, providerFactory: Pr
       organization: organization.name,
       sessionId: channel.session_id,
       provider: "openwa",
-      status: channel.status || (channel.is_active === false || channel.active === false ? "disabled" : "unknown"),
+      status:
+        channel.status ||
+        (channel.is_active === false || channel.active === false
+          ? "disabled"
+          : "unknown"),
     },
     connection: {
       providerStatus,
       connected: isOpenWaConnected(providerStatus),
     },
-    state: state ? {
-      syncStatus: state.sync_status || "idle",
-      lastSuccessAt: state.last_success_at || null,
-      lastError: state.last_error ? safeError(state.last_error) : null,
-      lastMode: state.last_mode || null,
-      lastRunId: maskId(state.last_run_id),
-      lock: state.locked_at ? { lockedAt: state.locked_at, expiresAt: state.lock_expires_at, lockedBy: maskId(state.locked_by) } : null,
-      checkpoint: { chat: state.last_chat_checkpoint || null, message: state.last_message_checkpoint || null },
-      nextReconciliationAt: state.next_reconciliation_at || null,
-      stats: state.stats || null,
-    } : null,
+    state: state
+      ? {
+          syncStatus: state.sync_status || "idle",
+          lastSuccessAt: state.last_success_at || null,
+          lastError: state.last_error ? safeError(state.last_error) : null,
+          lastMode: state.last_mode || null,
+          lastRunId: maskId(state.last_run_id),
+          lock: state.locked_at
+            ? {
+                lockedAt: state.locked_at,
+                expiresAt: state.lock_expires_at,
+                lockedBy: maskId(state.locked_by),
+              }
+            : null,
+          checkpoint: {
+            chat: state.last_chat_checkpoint || null,
+            message: state.last_message_checkpoint || null,
+          },
+          nextReconciliationAt: state.next_reconciliation_at || null,
+          stats: state.stats || null,
+        }
+      : null,
     lastRun: sanitizeSyncRun(lastRun),
   };
 }
@@ -450,7 +765,11 @@ export async function getLipsWhatsappReadOnlyStatus(db: Db) {
     loadReadOnlyInventory(db, channel.id),
     probeGatewayStatus(gatewayOptions),
   ]);
-  const providerStatus = gatewayStatus.sessions.lipsMainStatus || (typeof state?.last_provider_status === "string" ? state.last_provider_status : null);
+  const providerStatus =
+    gatewayStatus.sessions.lipsMainStatus ||
+    (typeof state?.last_provider_status === "string"
+      ? state.last_provider_status
+      : null);
 
   return {
     action: "status" as const,
@@ -469,93 +788,287 @@ export async function getLipsWhatsappReadOnlyStatus(db: Db) {
         organization: organization.name,
         sessionId: channel.session_id,
         provider: "openwa",
-        status: channel.status || (channel.is_active === false || channel.active === false ? "disabled" : "unknown"),
+        status:
+          channel.status ||
+          (channel.is_active === false || channel.active === false
+            ? "disabled"
+            : "unknown"),
       },
       connection: {
         providerStatus,
         connected: isOpenWaConnected(providerStatus),
       },
-      state: state ? {
-        syncStatus: state.sync_status || "idle",
-        lastSuccessAt: state.last_success_at || null,
-        lastError: state.last_error ? safeError(state.last_error) : null,
-        lastMode: state.last_mode || null,
-        lastRunId: maskId(state.last_run_id),
-        lock: state.locked_at ? { lockedAt: state.locked_at, expiresAt: state.lock_expires_at, lockedBy: maskId(state.locked_by) } : null,
-        checkpoint: { chat: state.last_chat_checkpoint || null, message: state.last_message_checkpoint || null },
-        nextReconciliationAt: state.next_reconciliation_at || null,
-        stats: state.stats || null,
-      } : null,
+      state: state
+        ? {
+            syncStatus: state.sync_status || "idle",
+            lastSuccessAt: state.last_success_at || null,
+            lastError: state.last_error ? safeError(state.last_error) : null,
+            lastMode: state.last_mode || null,
+            lastRunId: maskId(state.last_run_id),
+            lock: state.locked_at
+              ? {
+                  lockedAt: state.locked_at,
+                  expiresAt: state.lock_expires_at,
+                  lockedBy: maskId(state.locked_by),
+                }
+              : null,
+            checkpoint: {
+              chat: state.last_chat_checkpoint || null,
+              message: state.last_message_checkpoint || null,
+            },
+            nextReconciliationAt: state.next_reconciliation_at || null,
+            stats: state.stats || null,
+          }
+        : null,
       lastRun: sanitizeSyncRun(lastRun),
     },
     gatewayStatus,
     inventory,
-    limits: { chatLimit: BOOTSTRAP_CHAT_LIMIT, messageLimit: BOOTSTRAP_MESSAGE_LIMIT, maxAgeDays: 30, groupsIgnored: true },
+    limits: {
+      chatLimit: BOOTSTRAP_CHAT_LIMIT,
+      messageLimit: BOOTSTRAP_MESSAGE_LIMIT,
+      maxAgeDays: 30,
+      groupsIgnored: true,
+    },
   };
 }
 
-export async function probeLipsWhatsappChatsReadOnly(db: Db, providerFactory: ProviderFactory, input?: { limit?: number }) {
+async function listProbeChatPage(
+  provider: OpenWaSyncProvider,
+  input: { limit: number; offset: number },
+) {
+  const startedAt = Date.now();
+  try {
+    const chats = await provider.listChats({
+      limit: input.limit,
+      offset: input.offset,
+    });
+    const durationMs = Date.now() - startedAt;
+    return {
+      success: true,
+      ok: true,
+      code: "ok",
+      limit: input.limit,
+      offset: input.offset,
+      durationMs,
+      duration_ms: durationMs,
+      count: chats.length,
+      returned: chats.length,
+      has_more: null as boolean | null,
+      timeoutMs: PROVIDER_TIMEOUT_MS.listChats,
+      timeout_ms: PROVIDER_TIMEOUT_MS.listChats,
+      error: null as string | null,
+      chats,
+    };
+  } catch (error) {
+    const durationMs = Date.now() - startedAt;
+    const code = safeErrorCode(error);
+    return {
+      success: false,
+      ok: false,
+      code,
+      limit: input.limit,
+      offset: input.offset,
+      durationMs,
+      duration_ms: durationMs,
+      count: 0,
+      returned: 0,
+      has_more: null as boolean | null,
+      timeoutMs: PROVIDER_TIMEOUT_MS.listChats,
+      timeout_ms: PROVIDER_TIMEOUT_MS.listChats,
+      error: code,
+      chats: [] as ProviderChatSummary[],
+    };
+  }
+}
+
+export async function probeLipsWhatsappChatsReadOnly(
+  db: Db,
+  providerFactory: ProviderFactory,
+  input?: ProbeChatsOptions,
+) {
   const { channel } = await resolveLipsSyncChannel(db);
   const gatewayOptions = await loadGatewayOptions(db, channel.gateway_id);
-  const rawLimit = input?.limit === undefined ? PROBE_CHAT_DEFAULT_LIMIT : Math.trunc(Number(input.limit));
-  const limit = Number.isFinite(rawLimit) ? rawLimit : PROBE_CHAT_DEFAULT_LIMIT;
-  if (limit < 1 || limit > PROBE_CHAT_MAX_LIMIT) {
+  const normalized = normalizeProbeChatsOptions(input);
+  if (!normalized.ok) {
     return {
       action: "probe_chats" as const,
       ok: false,
-      code: "probe_limit_out_of_bounds",
+      success: false,
+      code: normalized.code,
       durationMs: 0,
+      duration_ms: 0,
       returned: 0,
-      requestedLimit: limit,
+      count: 0,
+      requestedLimit: normalized.limit,
+      requestedOffset: normalized.offset,
+      limit: normalized.limit,
+      offset: normalized.offset,
       maxLimit: PROBE_CHAT_MAX_LIMIT,
       paginationAvailable: false,
       paginationIgnored: false,
       timeoutMs: PROVIDER_TIMEOUT_MS.listChats,
+      timeout_ms: PROVIDER_TIMEOUT_MS.listChats,
       checkedAt: new Date().toISOString(),
-      error: `probe_limit_must_be_between_1_and_${PROBE_CHAT_MAX_LIMIT}`,
+      error: normalized.error,
       sentMessages: false,
       returnedSecret: false,
     };
   }
   const provider = providerFactory(LIPS_SESSION_ID, gatewayOptions);
-  const startedAt = Date.now();
-  try {
-    const chats = await provider.listChats({ limit, offset: 0 });
-    return {
-      action: "probe_chats" as const,
-      ok: true,
-      code: "ok",
-      durationMs: Date.now() - startedAt,
-      returned: chats.length,
-      requestedLimit: limit,
-      maxLimit: PROBE_CHAT_MAX_LIMIT,
-      paginationAvailable: chats.length <= limit,
-      paginationIgnored: chats.length > limit,
-      timeoutMs: PROVIDER_TIMEOUT_MS.listChats,
-      checkedAt: new Date().toISOString(),
-      error: null,
-      sentMessages: false,
-      returnedSecret: false,
-    };
-  } catch (error) {
-    const timeout = error instanceof Error && error.message.toLowerCase().includes("timeout");
-    return {
-      action: "probe_chats" as const,
-      ok: false,
-      code: timeout ? "provider_list_chats_timeout" : "provider_list_chats_failed",
-      durationMs: Date.now() - startedAt,
-      returned: 0,
-      requestedLimit: limit,
-      maxLimit: PROBE_CHAT_MAX_LIMIT,
-      paginationAvailable: false,
-      paginationIgnored: false,
-      timeoutMs: PROVIDER_TIMEOUT_MS.listChats,
-      checkedAt: new Date().toISOString(),
-      error: safeError(error instanceof Error ? error.message : String(error)),
-      sentMessages: false,
-      returnedSecret: false,
-    };
-  }
+  const page = await listProbeChatPage(provider, normalized);
+  return {
+    action: "probe_chats" as const,
+    ok: page.ok,
+    success: page.success,
+    code: page.code,
+    durationMs: page.durationMs,
+    duration_ms: page.duration_ms,
+    returned: page.returned,
+    count: page.count,
+    requestedLimit: normalized.limit,
+    requestedOffset: normalized.offset,
+    limit: normalized.limit,
+    offset: normalized.offset,
+    maxLimit: PROBE_CHAT_MAX_LIMIT,
+    paginationAvailable: page.count <= normalized.limit,
+    paginationIgnored: page.count > normalized.limit,
+    has_more: page.has_more,
+    timeoutMs: page.timeoutMs,
+    timeout_ms: page.timeout_ms,
+    checkedAt: new Date().toISOString(),
+    error: page.error,
+    sentMessages: false,
+    returnedSecret: false,
+  };
+}
+
+export async function validateLipsWhatsappChatPaginationReadOnly(
+  db: Db,
+  providerFactory: ProviderFactory,
+) {
+  const { channel } = await resolveLipsSyncChannel(db);
+  const gatewayOptions = await loadGatewayOptions(db, channel.gateway_id);
+  const provider = providerFactory(LIPS_SESSION_ID, gatewayOptions);
+  const beforeIntegrity = await loadReadOnlyIntegrity(db, channel);
+  const beforeQueue = await snapshotQueue(db, channel.id);
+  const page1 = await listProbeChatPage(provider, { limit: 5, offset: 0 });
+  const page2 = await listProbeChatPage(provider, { limit: 5, offset: 5 });
+  const afterIntegrity = await loadReadOnlyIntegrity(db, channel);
+  const queue = await compareQueueSnapshot(db, channel.id, beforeQueue);
+  const page1Fingerprints = page1.chats.map((chat) =>
+    fingerprintChat(LIPS_SESSION_ID, chat),
+  );
+  const page2Fingerprints = page2.chats.map((chat) =>
+    fingerprintChat(LIPS_SESSION_ID, chat),
+  );
+  const page1Set = new Set(page1Fingerprints);
+  const page2Set = new Set(page2Fingerprints);
+  const overlapCount = page2Fingerprints.filter((fingerprint) =>
+    page1Set.has(fingerprint),
+  ).length;
+  const uniquePage1 = page1Fingerprints.filter(
+    (fingerprint) => !page2Set.has(fingerprint),
+  ).length;
+  const uniquePage2 = page2Fingerprints.filter(
+    (fingerprint) => !page1Set.has(fingerprint),
+  ).length;
+  const limitRespected =
+    page1.count <= page1.limit && page2.count <= page2.limit;
+  const enoughVolume = page1.count === 5 && page2.count === 5;
+  const distinctPages = page2.count > 0 && overlapCount === 0;
+  const paginationProved = Boolean(
+    page1.success &&
+    page2.success &&
+    limitRespected &&
+    enoughVolume &&
+    distinctPages,
+  );
+  const integrityPreserved =
+    JSON.stringify(beforeIntegrity) === JSON.stringify(afterIntegrity) &&
+    queue.preserved;
+
+  const code = paginationProved
+    ? "pagination_validated"
+    : !page1.success || !page2.success
+      ? "pagination_probe_failed"
+      : !limitRespected
+        ? "pagination_limit_ignored"
+        : !integrityPreserved
+          ? "read_only_integrity_changed"
+          : enoughVolume && !distinctPages
+            ? "pagination_overlap_detected"
+            : "pagination_not_enough_volume";
+
+  return {
+    action: "validate_chat_pagination" as const,
+    ok:
+      page1.success &&
+      page2.success &&
+      limitRespected &&
+      integrityPreserved &&
+      (paginationProved || !enoughVolume),
+    code,
+    status: paginationProved
+      ? "aprovado"
+      : !page1.success || !page2.success
+        ? page1.code === "gateway_unauthorized" ||
+          page2.code === "gateway_unauthorized"
+          ? "erro de autorização"
+          : page1.code.includes("timeout") || page2.code.includes("timeout")
+            ? "timeout"
+            : "gateway indisponível"
+        : !limitRespected || !distinctPages
+          ? "paginação não comprovada"
+          : "paginação não comprovada",
+    pages: {
+      page1: {
+        success: page1.success,
+        limit: page1.limit,
+        offset: page1.offset,
+        duration_ms: page1.duration_ms,
+        count: page1.count,
+        has_more: page1.has_more,
+        timeout_ms: page1.timeout_ms,
+        error: page1.error,
+      },
+      page2: {
+        success: page2.success,
+        limit: page2.limit,
+        offset: page2.offset,
+        duration_ms: page2.duration_ms,
+        count: page2.count,
+        has_more: page2.has_more,
+        timeout_ms: page2.timeout_ms,
+        error: page2.error,
+      },
+    },
+    comparison: {
+      fingerprints_page_1: page1Fingerprints,
+      fingerprints_page_2: page2Fingerprints,
+      overlap_count: overlapCount,
+      unique_page_1: uniquePage1,
+      unique_page_2: uniquePage2,
+      distinct_pages: distinctPages,
+      limit_respected: limitRespected,
+      offset_proved: paginationProved,
+      enough_volume: enoughVolume,
+      ordering_stable: true,
+      ordering_basis:
+        "OpenWA sorts chats by timestamp before applying limit/offset",
+    },
+    integrity: {
+      before: beforeIntegrity,
+      after: afterIntegrity,
+      queuePreserved: queue.preserved,
+      queueChanged: queue.changed,
+    },
+    queuePreserved: queue.preserved,
+    queueChanged: queue.changed,
+    sentMessages: false,
+    returnedSecret: false,
+    checkedAt: new Date().toISOString(),
+  };
 }
 
 function actionMode(action: SyncDiagnosticsAction): WhatsappSyncMode | null {
@@ -574,7 +1087,11 @@ function actionLimits(action: SyncDiagnosticsAction) {
   return { chatLimit: 1, messageLimit: 1 };
 }
 
-export async function runLipsWhatsappSyncDiagnostics(db: Db, providerFactory: ProviderFactory, input: { action: SyncDiagnosticsAction; actorUserId: string }) {
+export async function runLipsWhatsappSyncDiagnostics(
+  db: Db,
+  providerFactory: ProviderFactory,
+  input: { action: SyncDiagnosticsAction; actorUserId: string },
+) {
   const { channel } = await resolveLipsSyncChannel(db);
   const gatewayOptions = await loadGatewayOptions(db, channel.gateway_id);
   const provider = providerFactory(LIPS_SESSION_ID, gatewayOptions);
@@ -595,25 +1112,46 @@ export async function runLipsWhatsappSyncDiagnostics(db: Db, providerFactory: Pr
       requestedByAppUserId: input.actorUserId,
       chatLimit: limits.chatLimit,
       messageLimit: limits.messageLimit,
-      metadata: { source: "admin_diagnostics", maxAgeDays: input.action === "bootstrap" ? 30 : null, sendsMessages: false },
+      metadata: {
+        source: "admin_diagnostics",
+        maxAgeDays: input.action === "bootstrap" ? 30 : null,
+        sendsMessages: false,
+      },
     });
   }
 
-  const processResult = await processQueuedWhatsappSyncRunsForChannel(db, channel.id, 1, (sessionId) => {
-    if (sessionId !== LIPS_SESSION_ID) throw new Error("A homologacao interna aceita somente lips-main.");
-    return provider;
-  });
+  const processResult = await processQueuedWhatsappSyncRunsForChannel(
+    db,
+    channel.id,
+    1,
+    (sessionId) => {
+      if (sessionId !== LIPS_SESSION_ID)
+        throw new Error("A homologacao interna aceita somente lips-main.");
+      return provider;
+    },
+  );
   const queue = await compareQueueSnapshot(db, channel.id, before);
-  if (!queue.preserved) throw new Error(`Queue fields changed during sync: ${queue.changed.join(", ")}`);
+  if (!queue.preserved)
+    throw new Error(
+      `Queue fields changed during sync: ${queue.changed.join(", ")}`,
+    );
   const snapshot = await getLipsWhatsappSyncDiagnostics(db, providerFactory);
 
   return {
     action: input.action,
     providerStatus,
     connected: isOpenWaConnected(providerStatus),
-    enqueue: enqueueResult ? { created: Boolean(enqueueResult.created), runId: maskId(String(enqueueResult.runId || "")), status: enqueueResult.status || null } : null,
+    enqueue: enqueueResult
+      ? {
+          created: Boolean(enqueueResult.created),
+          runId: maskId(String(enqueueResult.runId || "")),
+          status: enqueueResult.status || null,
+        }
+      : null,
     processedRuns: processResult.processedRuns,
-    runs: processResult.runs.map((run) => sanitizeProcessedRun(run as Record<string, unknown>)),
+    runs: processResult.runs.map((run) =>
+      sanitizeProcessedRun(run as Record<string, unknown>),
+    ),
     queuePreserved: queue.preserved,
     queueChanged: queue.changed,
     snapshot,
