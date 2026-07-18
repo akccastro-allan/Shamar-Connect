@@ -3,6 +3,8 @@ import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import {
   canExecuteSyncDiagnostics,
+  captureLipsGoLiveIntegritySnapshotReadOnly,
+  compareLipsGoLiveIntegrityCounts,
   getLipsWhatsappReadOnlyStatus,
   getLipsWhatsappSyncDiagnostics,
   isReadOnlySyncDiagnosticsAction,
@@ -229,6 +231,75 @@ function createDb(seed?: Partial<Tables>) {
   };
 }
 
+function createGoLiveDb(seed?: Partial<Tables>) {
+  return createDb({
+    channels: [
+      {
+        id: "1f65f8d2-2609-42d9-ae57-709aecdb43da",
+        tenant_id: "e6abeaae-29fc-4186-b56a-361a69cb846d",
+        organization_id: "8f074193-bf58-4537-9842-720619a9f259",
+        session_id: "lips-main",
+        provider: "openwa",
+        status: "active",
+        active: true,
+        is_active: true,
+        gateway_id: "8dc7091e-6d7f-40b9-9008-17f31d748423",
+      },
+    ],
+    internal_messaging_gateways: [
+      {
+        id: "8dc7091e-6d7f-40b9-9008-17f31d748423",
+        name: "Gateway Lips",
+        provider: "openwa",
+        environment: "production",
+        status: "active",
+        base_url: "https://gateway.example.com",
+      },
+    ],
+    organizations: [
+      {
+        id: "8f074193-bf58-4537-9842-720619a9f259",
+        slug: "auto-pecas-auto-center-lips",
+        name: "Lips",
+        status: "active",
+      },
+    ],
+    whatsapp_channel_sync_state: [
+      {
+        id: "state-lips",
+        tenant_id: "e6abeaae-29fc-4186-b56a-361a69cb846d",
+        organization_id: "8f074193-bf58-4537-9842-720619a9f259",
+        channel_id: "1f65f8d2-2609-42d9-ae57-709aecdb43da",
+        sync_status: "idle",
+        last_message_checkpoint: "2026-07-15T10:00:00.000Z",
+        stats: {},
+      },
+    ],
+    whatsapp_sync_runs: [
+      {
+        id: "run-lips-1",
+        channel_id: "1f65f8d2-2609-42d9-ae57-709aecdb43da",
+        status: "completed",
+        mode: "bootstrap",
+        created_at: "2026-07-15T10:00:00.000Z",
+      },
+    ],
+    whatsapp_conversations: Array.from({ length: 13 }, (_, index) => ({
+      id: `conv-lips-${index}`,
+      channel_id: "1f65f8d2-2609-42d9-ae57-709aecdb43da",
+      external_chat_id: `55219999988${String(index).padStart(2, "0")}@c.us`,
+      queue_status: null,
+      updated_at: `2026-07-15T10:${String(index).padStart(2, "0")}:00.000Z`,
+    })),
+    whatsapp_messages: Array.from({ length: 94 }, (_, index) => ({
+      id: `msg-lips-${index}`,
+      channel_id: "1f65f8d2-2609-42d9-ae57-709aecdb43da",
+      external_message_id: `sensitive-message-${index}`,
+    })),
+    ...(seed || {}),
+  });
+}
+
 function providerFactory(
   calls: string[] = [],
   optionsCalls: Array<Record<string, unknown> | undefined> = [],
@@ -439,8 +510,16 @@ test("status is read-only even when execute flag is false and write actions stay
     isReadOnlySyncDiagnosticsAction("validate_chat_pagination"),
     true,
   );
+  assert.equal(
+    isReadOnlySyncDiagnosticsAction("capture_lips_integrity_snapshot"),
+    true,
+  );
   assert.equal(isWriteSyncDiagnosticsAction("bootstrap"), true);
   assert.equal(isWriteSyncDiagnosticsAction("validate_chat_pagination"), false);
+  assert.equal(
+    isWriteSyncDiagnosticsAction("capture_lips_integrity_snapshot"),
+    false,
+  );
   assert.equal(isWriteSyncDiagnosticsAction("incremental"), true);
   assert.equal(isWriteSyncDiagnosticsAction("reconciliation"), true);
   assert.equal(isWriteSyncDiagnosticsAction("process_next"), true);
@@ -824,6 +903,123 @@ test("read-only status handles missing token gateway 401 and missing session saf
   assert.equal(absent.gatewayStatus.sessions.lipsMainFound, false);
 });
 
+test("go-live integrity comparison approves growth and blocks losses or locks", () => {
+  const approved = compareLipsGoLiveIntegrityCounts(
+    {
+      syncState: 1,
+      syncRuns: 1,
+      pendingRuns: 0,
+      failedRuns: 0,
+      conversations: 13,
+      messages: 94,
+      queueStatusNull: 13,
+      locks: 0,
+    },
+    {
+      syncState: 1,
+      syncRuns: 2,
+      pendingRuns: 0,
+      failedRuns: 0,
+      conversations: 14,
+      messages: 120,
+      queueStatusNull: 13,
+      locks: 0,
+    },
+  );
+  assert.equal(approved.decision.level, "approved");
+  assert.equal(approved.deltas.messages, 26);
+
+  const blocked = compareLipsGoLiveIntegrityCounts(
+    approved.current,
+    { ...approved.current, messages: 119, locks: 1 },
+  );
+  assert.equal(blocked.decision.level, "blocked");
+  assert.equal(
+    blocked.checks.some(
+      (check) => check.code === "messages_not_lost" && check.status === "blocker",
+    ),
+    true,
+  );
+});
+
+test("go-live integrity snapshot uses fixed Lips production scope without writes or leaks", async () => {
+  const { db, tables, writes } = createGoLiveDb();
+  const before = JSON.stringify(tables);
+  const result = await withGatewayEnv(
+    "server-token",
+    gatewayFetch({
+      "/health": { status: 200, body: { ok: true } },
+      "/readiness": { status: 200, body: { ready: true } },
+      "/api/version": { status: 200, body: { version: "0.8.7" } },
+      "/api/sessions": {
+        status: 200,
+        body: [
+          {
+            id: "lips-main",
+            name: "lips-main",
+            status: "ready",
+            phone: "5521999998888",
+            token: "must-not-leak",
+          },
+        ],
+      },
+    }),
+    () => captureLipsGoLiveIntegritySnapshotReadOnly(db),
+  );
+
+  assert.equal(result.action, "capture_lips_integrity_snapshot");
+  assert.equal(result.ok, true);
+  assert.equal(result.scope.fixedProductionScope, true);
+  assert.equal(result.scope.sessionId, "lips-main");
+  assert.equal(result.integrity.syncState, 1);
+  assert.equal(result.integrity.syncRuns, 1);
+  assert.equal(result.integrity.conversations, 13);
+  assert.equal(result.integrity.messages, 94);
+  assert.equal(result.integrity.queueStatusNull, 13);
+  assert.equal(result.integrity.locks, 0);
+  assert.equal(result.readOnly.preserved, true);
+  assert.equal(result.sentMessages, false);
+  assert.equal(result.returnedSecret, false);
+  assert.equal(result.decision.level, "approved");
+  assert.equal(result.gatewayStatus.version, "0.8.7");
+  assert.equal(writes.length, 0);
+  assert.equal(JSON.stringify(tables), before);
+
+  const payload = JSON.stringify(result);
+  assert.equal(payload.includes("https://gateway.example.com"), false);
+  assert.equal(payload.includes("server-token"), false);
+  assert.equal(payload.includes("must-not-leak"), false);
+  assert.equal(payload.includes("5521999998888"), false);
+  assert.equal(payload.includes("5521999998800@c.us"), false);
+  assert.equal(
+    payload.includes("1f65f8d2-2609-42d9-ae57-709aecdb43da"),
+    false,
+  );
+});
+
+test("go-live integrity snapshot fails closed when fixed scope diverges", async () => {
+  const { db } = createGoLiveDb({
+    channels: [
+      {
+        id: "1f65f8d2-2609-42d9-ae57-709aecdb43da",
+        tenant_id: "wrong-tenant",
+        organization_id: "8f074193-bf58-4537-9842-720619a9f259",
+        session_id: "lips-main",
+        provider: "openwa",
+        status: "active",
+        active: true,
+        is_active: true,
+        gateway_id: "8dc7091e-6d7f-40b9-9008-17f31d748423",
+      },
+    ],
+  });
+
+  await assert.rejects(
+    captureLipsGoLiveIntegritySnapshotReadOnly(db),
+    /Escopo fixo da Lips diverge/,
+  );
+});
+
 test("diagnostic uses only lips-main, processes one run and preserves queue", async () => {
   const { db, tables } = createDb();
   const calls: string[] = [];
@@ -1114,6 +1310,10 @@ test("diagnostics page states fixed Lips scope and does not use internal API key
   assert.match(client, /OpenWA/);
   assert.match(client, /Verificar status/);
   assert.match(client, /Validar paginação/);
+  assert.match(client, /Capturar integridade Lips/);
+  assert.match(client, /Integridade do Go-Live da Lips/);
+  assert.match(client, /lips-go-live-integrity-/);
+  assert.match(client, /Resetar baseline local/);
   assert.match(client, /Consultas de status são somente leitura/);
   assert.match(client, /Execução de sincronização está[\s\S]*desabilitada/);
   assert.match(client, /Consultando\.\.\./);
@@ -1121,6 +1321,8 @@ test("diagnostics page states fixed Lips scope and does not use internal API key
   assert.doesNotMatch(actions, /INTERNAL_API_KEY/);
   assert.match(actions, /validate_chat_pagination/);
   assert.match(actions, /validateLipsWhatsappChatPaginationReadOnly/);
+  assert.match(actions, /capture_lips_integrity_snapshot/);
+  assert.match(actions, /captureLipsGoLiveIntegritySnapshotReadOnly/);
   assert.match(actions, /isReadOnlySyncDiagnosticsAction\(action\)/);
   const actionBody = actions.slice(
     actions.indexOf("const action = safeAction"),

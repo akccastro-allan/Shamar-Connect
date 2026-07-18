@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { useFormStatus } from "react-dom";
-import { CheckCircle2, RefreshCcw, ShieldCheck } from "lucide-react";
+import { CheckCircle2, Download, RefreshCcw, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +15,80 @@ import {
 type Snapshot = NonNullable<
   WhatsappSyncDiagnosticsActionState["result"]
 >["snapshot"];
+
+const INTEGRITY_COUNT_FIELDS = [
+  "syncState",
+  "syncRuns",
+  "pendingRuns",
+  "failedRuns",
+  "conversations",
+  "messages",
+  "queueStatusNull",
+  "locks",
+] as const;
+
+function integrityFileName(capturedAt?: string | null) {
+  const date = capturedAt ? new Date(capturedAt) : new Date();
+  const stamp = Number.isNaN(date.getTime())
+    ? "unknown"
+    : date
+        .toISOString()
+        .slice(0, 16)
+        .replaceAll("-", "")
+        .replaceAll(":", "")
+        .replace("T", "");
+  return `lips-go-live-integrity-${stamp}.json`;
+}
+
+function compareLocalIntegritySnapshots(baseline: any, current: any) {
+  const deltas = Object.fromEntries(
+    INTEGRITY_COUNT_FIELDS.map((field) => [
+      field,
+      Number(current?.integrity?.[field] || 0) -
+        Number(baseline?.integrity?.[field] || 0),
+    ]),
+  );
+  const blocked =
+    Number(deltas.conversations || 0) < 0 ||
+    Number(deltas.messages || 0) < 0 ||
+    Number(deltas.syncRuns || 0) < 0 ||
+    Number(current?.integrity?.locks || 0) > 0;
+  const warning =
+    Number(current?.integrity?.pendingRuns || 0) > 0 ||
+    Number(deltas.failedRuns || 0) > 0 ||
+    Number(deltas.queueStatusNull || 0) > 0;
+
+  return {
+    baselineCapturedAt: baseline?.capturedAt || null,
+    currentCapturedAt: current?.capturedAt || null,
+    deltas,
+    decision: {
+      level: blocked ? "blocked" : warning ? "review" : "approved",
+      summary: blocked
+        ? "Comparação local bloqueada: houve perda de contagem ou lock ativo."
+        : warning
+          ? "Comparação local exige revisão manual."
+          : "Comparação local aprovada.",
+    },
+  };
+}
+
+function downloadIntegritySnapshot(snapshot: any, comparison: any) {
+  const payload = {
+    snapshot,
+    localComparison: comparison || null,
+    exportedAt: new Date().toISOString(),
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = integrityFileName(snapshot?.capturedAt);
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
 
 function SubmitButton({
   children,
@@ -309,6 +383,108 @@ function PaginationValidationCard({ result }: { result: any }) {
   );
 }
 
+function LipsIntegrityCard({
+  snapshot,
+  baseline,
+  comparison,
+  onResetBaseline,
+}: {
+  snapshot: any;
+  baseline: any;
+  comparison: any;
+  onResetBaseline: () => void;
+}) {
+  if (snapshot?.action !== "capture_lips_integrity_snapshot") return null;
+  const decision = comparison?.decision || snapshot.decision;
+  const decisionClass =
+    decision?.level === "approved"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+      : decision?.level === "blocked"
+        ? "border-red-200 bg-red-50 text-red-700"
+        : "border-amber-200 bg-amber-50 text-amber-800";
+
+  return (
+    <Card className="rounded-[2rem] border-[#1B2F5B]/20 bg-white">
+      <CardHeader>
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <CardTitle className="text-lg font-black text-[#1B2F5B]">
+              Integridade do Go-Live da Lips
+            </CardTitle>
+            <p className="mt-2 text-sm font-bold text-slate-500">
+              Snapshot read-only com escopo fixo Production: Lips, lips-main,
+              OpenWA.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              onClick={() => downloadIntegritySnapshot(snapshot, comparison)}
+              className="rounded-full bg-[#2ABFAB] font-black text-white hover:bg-[#239f91]"
+            >
+              <Download className="mr-2 h-4 w-4" /> Baixar JSON
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onResetBaseline}
+              className="rounded-full font-black"
+            >
+              Resetar baseline local
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <div className={`rounded-2xl border p-4 text-sm font-black ${decisionClass}`}>
+          {decision?.summary || "Snapshot capturado."}
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Stat label="Capturado em" value={snapshot.capturedAt || "—"} />
+          <Stat label="Baseline local" value={baseline?.capturedAt || "primeira captura"} />
+          <Stat label="Sessão" value={snapshot.scope?.sessionId || "lips-main"} />
+          <Stat label="Gateway" value={snapshot.gatewayStatus?.code || "—"} />
+          <Stat label="Sync state" value={snapshot.integrity?.syncState ?? 0} />
+          <Stat label="Runs" value={snapshot.integrity?.syncRuns ?? 0} />
+          <Stat label="Conversas" value={snapshot.integrity?.conversations ?? 0} />
+          <Stat label="Mensagens" value={snapshot.integrity?.messages ?? 0} />
+          <Stat label="Fila null" value={snapshot.integrity?.queueStatusNull ?? 0} />
+          <Stat label="Locks" value={snapshot.integrity?.locks ?? 0} />
+          <Stat label="Runs pendentes" value={snapshot.integrity?.pendingRuns ?? 0} />
+          <Stat label="Runs failed" value={snapshot.integrity?.failedRuns ?? 0} />
+        </div>
+        {comparison?.deltas ? (
+          <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+            <p className="font-black text-[#1B2F5B]">Delta contra baseline local</p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {INTEGRITY_COUNT_FIELDS.map((field) => (
+                <Stat key={field} label={field} value={comparison.deltas[field] ?? 0} />
+              ))}
+            </div>
+          </div>
+        ) : null}
+        <div className="grid gap-3 lg:grid-cols-2">
+          {(snapshot.decision?.checks || []).map((check: any) => (
+            <div
+              key={check.code}
+              className="rounded-2xl border border-slate-100 bg-white p-4 text-sm"
+            >
+              <p className="font-black text-[#1B2F5B]">
+                {check.code}: {check.status}
+              </p>
+              <p className="mt-1 text-slate-600">{check.message}</p>
+            </div>
+          ))}
+        </div>
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-800">
+          Read-only preservado: {snapshot.readOnly?.preserved ? "sim" : "não"}.
+          Mensagens enviadas: não. Secrets retornados: não.
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function WhatsappSyncDiagnosticsClient({
   initialSnapshot,
   canExecute,
@@ -323,6 +499,21 @@ export function WhatsappSyncDiagnosticsClient({
   } as WhatsappSyncDiagnosticsActionState);
   const result = state.result;
   const snapshot = result?.snapshot || initialSnapshot;
+  const integritySnapshot =
+    result?.action === "capture_lips_integrity_snapshot" ? result : null;
+  const [integrityBaseline, setIntegrityBaseline] = useState<any>(null);
+
+  useEffect(() => {
+    if (integritySnapshot && !integrityBaseline)
+      setIntegrityBaseline(integritySnapshot);
+  }, [integritySnapshot, integrityBaseline]);
+
+  const integrityComparison = integritySnapshot
+    ? compareLocalIntegritySnapshots(
+        integrityBaseline || integritySnapshot,
+        integritySnapshot,
+      )
+    : null;
 
   return (
     <div className="space-y-8">
@@ -385,6 +576,12 @@ export function WhatsappSyncDiagnosticsClient({
       <GatewayStatusCard status={result?.gatewayStatus} />
       <ProbeChatsCard result={result} />
       <PaginationValidationCard result={result} />
+      <LipsIntegrityCard
+        snapshot={integritySnapshot}
+        baseline={integrityBaseline}
+        comparison={integrityComparison}
+        onResetBaseline={() => setIntegrityBaseline(integritySnapshot)}
+      />
 
       <Card className="rounded-[2rem]">
         <CardHeader>
@@ -413,6 +610,16 @@ export function WhatsappSyncDiagnosticsClient({
             />
             <SubmitButton pendingLabel="Validando...">
               Validar paginação
+            </SubmitButton>
+          </form>
+          <form action={formAction}>
+            <input
+              type="hidden"
+              name="action"
+              value="capture_lips_integrity_snapshot"
+            />
+            <SubmitButton pendingLabel="Capturando...">
+              Capturar integridade Lips
             </SubmitButton>
           </form>
           <form action={formAction}>

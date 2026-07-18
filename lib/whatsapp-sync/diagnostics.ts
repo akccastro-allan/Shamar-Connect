@@ -44,12 +44,17 @@ export type SyncDiagnosticsAction =
   | "status"
   | "probe_chats"
   | "validate_chat_pagination"
+  | "capture_lips_integrity_snapshot"
   | "diagnostic"
   | "bootstrap"
   | "incremental"
   | "reconciliation"
   | "process_next";
 
+const LIPS_TENANT_ID = "e6abeaae-29fc-4186-b56a-361a69cb846d";
+const LIPS_ORGANIZATION_ID = "8f074193-bf58-4537-9842-720619a9f259";
+const LIPS_CHANNEL_ID = "1f65f8d2-2609-42d9-ae57-709aecdb43da";
+const LIPS_GATEWAY_ID = "8dc7091e-6d7f-40b9-9008-17f31d748423";
 const LIPS_SESSION_ID = "lips-main";
 const LIPS_ORGANIZATION_SLUG = "auto-pecas-auto-center-lips";
 const GATEWAY_PROBE_TIMEOUT_MS = 15_000;
@@ -58,6 +63,16 @@ const BOOTSTRAP_MESSAGE_LIMIT = 100;
 const PROBE_CHAT_DEFAULT_LIMIT = 5;
 const PROBE_CHAT_MAX_LIMIT = 10;
 const PROBE_CHAT_DEFAULT_OFFSET = 0;
+const LIPS_GO_LIVE_KNOWN_BASELINE = {
+  syncState: 1,
+  syncRuns: 1,
+  pendingRuns: 0,
+  failedRuns: 0,
+  conversations: 13,
+  messages: 94,
+  queueStatusNull: 13,
+  locks: 0,
+} as const;
 const QUEUE_FIELDS = [
   "queue_status",
   "priority",
@@ -109,7 +124,8 @@ export function isReadOnlySyncDiagnosticsAction(action: SyncDiagnosticsAction) {
   return (
     action === "status" ||
     action === "probe_chats" ||
-    action === "validate_chat_pagination"
+    action === "validate_chat_pagination" ||
+    action === "capture_lips_integrity_snapshot"
   );
 }
 
@@ -174,6 +190,12 @@ function safeErrorCode(error: unknown) {
 
 function fingerprintChat(sessionId: string, chat: ProviderChatSummary) {
   return createHash("sha256").update(`${sessionId}:${chat.id}`).digest("hex");
+}
+
+function fingerprintValue(scope: string, value?: string | null) {
+  return createHash("sha256")
+    .update(`${scope}:${String(value || "")}`)
+    .digest("hex");
 }
 
 function normalizeProbeChatsOptions(input?: ProbeChatsOptions) {
@@ -539,6 +561,187 @@ async function loadReadOnlyIntegrity(
   };
 }
 
+async function resolveLipsGoLiveIntegrityScope(db: Db) {
+  const { data: channel, error: channelError } = await db
+    .from("channels")
+    .select(
+      "id, tenant_id, organization_id, session_id, provider, provider_type, channel_type, status, active, is_active, gateway_id",
+    )
+    .eq("id", LIPS_CHANNEL_ID)
+    .maybeSingle();
+  if (channelError) throw channelError;
+  if (!channel) throw new Error("Canal fixo da Lips nao encontrado.");
+
+  if (
+    channel.tenant_id !== LIPS_TENANT_ID ||
+    channel.organization_id !== LIPS_ORGANIZATION_ID ||
+    channel.session_id !== LIPS_SESSION_ID ||
+    channel.gateway_id !== LIPS_GATEWAY_ID
+  ) {
+    throw new Error("Escopo fixo da Lips diverge do banco.");
+  }
+  if (channel.provider && !["whatsapp_web", "openwa"].includes(channel.provider))
+    throw new Error("Canal fixo da Lips nao e OpenWA/WhatsApp Web.");
+
+  const { data: organization, error: organizationError } = await db
+    .from("organizations")
+    .select("id, slug, name, status")
+    .eq("id", LIPS_ORGANIZATION_ID)
+    .eq("slug", LIPS_ORGANIZATION_SLUG)
+    .eq("status", "active")
+    .maybeSingle();
+  if (organizationError) throw organizationError;
+  if (!organization) throw new Error("Organizacao fixa da Lips nao encontrada.");
+
+  const gatewayOptions = await loadGatewayOptions(db, LIPS_GATEWAY_ID);
+  return { channel, organization, gatewayOptions };
+}
+
+async function loadLipsGoLiveIntegrityCounts(db: Db, channelId: string) {
+  const [integrity, pendingRuns, failedRuns] = await Promise.all([
+    loadReadOnlyIntegrity(db, {
+      id: channelId,
+      organization_id: LIPS_ORGANIZATION_ID,
+    }),
+    countRows(db, "whatsapp_sync_runs", (query) =>
+      query.eq("channel_id", channelId).in("status", ["queued", "running"]),
+    ),
+    countRows(db, "whatsapp_sync_runs", (query) =>
+      query.eq("channel_id", channelId).eq("status", "failed"),
+    ),
+  ]);
+
+  return {
+    ...integrity,
+    pendingRuns,
+    failedRuns,
+  };
+}
+
+async function loadLipsConversationFingerprints(db: Db, channelId: string) {
+  const { data, error } = await db
+    .from("whatsapp_conversations")
+    .select(
+      "id, external_chat_id, is_group, queue_status, updated_at, last_message_at",
+    )
+    .eq("channel_id", channelId)
+    .order("updated_at", { ascending: false })
+    .limit(10);
+  if (error) throw error;
+
+  return ((data || []) as Array<Record<string, unknown>>).map((row) => {
+    const externalChatId = String(row.external_chat_id || row.id || "");
+    return {
+      fingerprint: fingerprintValue(LIPS_SESSION_ID, externalChatId),
+      isGroup: row.is_group === true || externalChatId.endsWith("@g.us"),
+      queueStatus:
+        typeof row.queue_status === "string" ? row.queue_status : null,
+      updatedAt: typeof row.updated_at === "string" ? row.updated_at : null,
+      lastMessageAt:
+        typeof row.last_message_at === "string" ? row.last_message_at : null,
+    };
+  });
+}
+
+type LipsGoLiveIntegrityCounts = typeof LIPS_GO_LIVE_KNOWN_BASELINE;
+
+function normalizeIntegrityCounts(
+  input: Partial<Record<keyof LipsGoLiveIntegrityCounts, number>>,
+) {
+  return {
+    syncState: Number(input.syncState || 0),
+    syncRuns: Number(input.syncRuns || 0),
+    pendingRuns: Number(input.pendingRuns || 0),
+    failedRuns: Number(input.failedRuns || 0),
+    conversations: Number(input.conversations || 0),
+    messages: Number(input.messages || 0),
+    queueStatusNull: Number(input.queueStatusNull || 0),
+    locks: Number(input.locks || 0),
+  };
+}
+
+export function compareLipsGoLiveIntegrityCounts(
+  baselineInput: Partial<Record<keyof LipsGoLiveIntegrityCounts, number>>,
+  currentInput: Partial<Record<keyof LipsGoLiveIntegrityCounts, number>>,
+) {
+  const baseline = normalizeIntegrityCounts(baselineInput);
+  const current = normalizeIntegrityCounts(currentInput);
+  const deltas = {
+    syncState: current.syncState - baseline.syncState,
+    syncRuns: current.syncRuns - baseline.syncRuns,
+    pendingRuns: current.pendingRuns - baseline.pendingRuns,
+    failedRuns: current.failedRuns - baseline.failedRuns,
+    conversations: current.conversations - baseline.conversations,
+    messages: current.messages - baseline.messages,
+    queueStatusNull: current.queueStatusNull - baseline.queueStatusNull,
+    locks: current.locks - baseline.locks,
+  };
+  const checks = [
+    {
+      code: "sync_state_present",
+      status: current.syncState === 1 ? "pass" : "blocker",
+      message: "Deve existir exatamente um estado de sync para lips-main.",
+    },
+    {
+      code: "no_active_locks",
+      status: current.locks === 0 ? "pass" : "blocker",
+      message: "Nao deve haver lock ativo antes/depois do go-live.",
+    },
+    {
+      code: "no_pending_runs",
+      status: current.pendingRuns === 0 ? "pass" : "warning",
+      message: "Runs pendentes ou em execucao exigem revisao manual.",
+    },
+    {
+      code: "conversations_not_lost",
+      status: deltas.conversations >= 0 ? "pass" : "blocker",
+      message: "Conversas nao podem diminuir entre capturas.",
+    },
+    {
+      code: "messages_not_lost",
+      status: deltas.messages >= 0 ? "pass" : "blocker",
+      message: "Mensagens nao podem diminuir entre capturas.",
+    },
+    {
+      code: "runs_not_lost",
+      status: deltas.syncRuns >= 0 ? "pass" : "blocker",
+      message: "Runs de sync nao podem diminuir entre capturas.",
+    },
+    {
+      code: "queue_status_review",
+      status: deltas.queueStatusNull <= 0 ? "pass" : "warning",
+      message: "Crescimento em queue_status null exige revisao de fila.",
+    },
+    {
+      code: "failed_runs_review",
+      status: deltas.failedRuns <= 0 ? "pass" : "warning",
+      message: "Crescimento em runs failed exige revisao.",
+    },
+  ] as const;
+  const hasBlocker = checks.some((check) => check.status === "blocker");
+  const hasWarning = checks.some((check) => check.status === "warning");
+
+  return {
+    baseline,
+    current,
+    deltas,
+    checks,
+    decision: {
+      level: hasBlocker ? "blocked" : hasWarning ? "review" : "approved",
+      code: hasBlocker
+        ? "integrity_blocked"
+        : hasWarning
+          ? "integrity_review_required"
+          : "integrity_approved",
+      summary: hasBlocker
+        ? "Integridade bloqueada: ha perda de dados, lock ou escopo inconsistente."
+        : hasWarning
+          ? "Integridade exige revisao manual antes de prosseguir."
+          : "Integridade aprovada para o proximo passo operacional.",
+    },
+  };
+}
+
 async function gatewayFetchJson(url: string, token: string) {
   const startedAt = Date.now();
   try {
@@ -830,6 +1033,109 @@ export async function getLipsWhatsappReadOnlyStatus(db: Db) {
       maxAgeDays: 30,
       groupsIgnored: true,
     },
+  };
+}
+
+export async function captureLipsGoLiveIntegritySnapshotReadOnly(db: Db) {
+  const { channel, organization, gatewayOptions } =
+    await resolveLipsGoLiveIntegrityScope(db);
+  const beforeIntegrity = await loadLipsGoLiveIntegrityCounts(db, channel.id);
+  const beforeQueue = await snapshotQueue(db, channel.id);
+  const [state, lastRun, gatewayStatus, conversationFingerprints] =
+    await Promise.all([
+      loadSyncState(db, channel.id),
+      loadLastRun(db, channel.id),
+      probeGatewayStatus(gatewayOptions),
+      loadLipsConversationFingerprints(db, channel.id),
+    ]);
+  const afterIntegrity = await loadLipsGoLiveIntegrityCounts(db, channel.id);
+  const queue = await compareQueueSnapshot(db, channel.id, beforeQueue);
+  const readOnlyPreserved =
+    JSON.stringify(beforeIntegrity) === JSON.stringify(afterIntegrity) &&
+    queue.preserved;
+  const comparison = compareLipsGoLiveIntegrityCounts(
+    LIPS_GO_LIVE_KNOWN_BASELINE,
+    afterIntegrity,
+  );
+  const gatewayCheck = {
+    code: "gateway_session_ready",
+    status:
+      gatewayStatus.code === "ok" && isOpenWaConnected(gatewayStatus.sessions.lipsMainStatus)
+        ? "pass"
+        : "warning",
+    message: "Gateway deve responder e expor lips-main conectada.",
+  };
+  const readOnlyCheck = {
+    code: "read_only_preserved",
+    status: readOnlyPreserved ? "pass" : "blocker",
+    message: "A captura nao pode alterar contadores nem campos de fila.",
+  };
+  const checks = [...comparison.checks, gatewayCheck, readOnlyCheck];
+  const hasBlocker = checks.some((check) => check.status === "blocker");
+  const hasWarning = checks.some((check) => check.status === "warning");
+  const decision = {
+    level: hasBlocker ? "blocked" : hasWarning ? "review" : "approved",
+    code: hasBlocker
+      ? "integrity_blocked"
+      : hasWarning
+        ? "integrity_review_required"
+        : "integrity_approved",
+    summary: hasBlocker
+      ? "Captura bloqueada por falha de integridade ou violacao read-only."
+      : hasWarning
+        ? "Captura concluida; revise alertas antes do proximo passo."
+        : "Captura concluida e integridade aprovada.",
+  };
+
+  return {
+    action: "capture_lips_integrity_snapshot" as const,
+    ok: !hasBlocker,
+    capturedAt: new Date().toISOString(),
+    scope: {
+      tenantId: maskId(LIPS_TENANT_ID),
+      organizationId: maskId(LIPS_ORGANIZATION_ID),
+      channelId: maskId(LIPS_CHANNEL_ID),
+      gatewayId: maskId(LIPS_GATEWAY_ID),
+      organization: organization.name,
+      sessionId: LIPS_SESSION_ID,
+      provider: "openwa",
+      environment: "production",
+      fixedProductionScope: true,
+    },
+    integrity: afterIntegrity,
+    knownBaseline: LIPS_GO_LIVE_KNOWN_BASELINE,
+    comparisonToKnownBaseline: comparison,
+    decision: {
+      ...decision,
+      checks,
+    },
+    gatewayStatus,
+    sync: {
+      syncStatus: state?.sync_status || "idle",
+      lastSuccessAt: state?.last_success_at || null,
+      lastError: state?.last_error ? safeError(state.last_error) : null,
+      lastMode: state?.last_mode || null,
+      lastRunId: maskId(state?.last_run_id),
+      lastRun: sanitizeSyncRun(lastRun),
+      checkpoint: {
+        chat: state?.last_chat_checkpoint || null,
+        message: state?.last_message_checkpoint || null,
+      },
+    },
+    samples: {
+      conversationFingerprints,
+    },
+    readOnly: {
+      preserved: readOnlyPreserved,
+      queuePreserved: queue.preserved,
+      queueChanged: queue.changed,
+      sentMessages: false,
+      returnedSecret: false,
+    },
+    queuePreserved: queue.preserved,
+    queueChanged: queue.changed,
+    sentMessages: false,
+    returnedSecret: false,
   };
 }
 

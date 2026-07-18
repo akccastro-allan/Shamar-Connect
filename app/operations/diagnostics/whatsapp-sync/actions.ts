@@ -4,6 +4,7 @@ import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 import { createDefaultOpenWaSyncProvider } from "@/lib/whatsapp-sync/providers/openwa-sync-provider-default";
 import {
   canExecuteSyncDiagnostics,
+  captureLipsGoLiveIntegritySnapshotReadOnly,
   getLipsWhatsappReadOnlyStatus,
   isReadOnlySyncDiagnosticsAction,
   probeLipsWhatsappChatsReadOnly,
@@ -25,6 +26,7 @@ function safeAction(value: FormDataEntryValue | null): SyncDiagnosticsAction {
     [
       "probe_chats",
       "validate_chat_pagination",
+      "capture_lips_integrity_snapshot",
       "diagnostic",
       "bootstrap",
       "incremental",
@@ -61,6 +63,11 @@ export async function runWhatsappSyncDiagnosticsAction(
             db,
             createDefaultOpenWaSyncProvider,
           ),
+        };
+      if (action === "capture_lips_integrity_snapshot")
+        return {
+          ok: true,
+          result: await captureLipsGoLiveIntegritySnapshotReadOnly(db),
         };
       return { ok: true, result: await getLipsWhatsappReadOnlyStatus(db) };
     }
