@@ -1310,7 +1310,8 @@ test("diagnostics page states fixed Lips scope and does not use internal API key
   assert.match(client, /OpenWA/);
   assert.match(client, /Verificar status/);
   assert.match(client, /Validar paginação/);
-  assert.match(client, /Capturar integridade Lips/);
+  assert.match(client, /Capturar baseline/);
+  assert.match(client, /Capturar estado atual/);
   assert.match(client, /Integridade do Go-Live da Lips/);
   assert.match(client, /lips-go-live-integrity-/);
   assert.match(client, /Resetar baseline local/);

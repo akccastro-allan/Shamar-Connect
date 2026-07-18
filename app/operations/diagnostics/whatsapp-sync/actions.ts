@@ -38,6 +38,10 @@ function safeAction(value: FormDataEntryValue | null): SyncDiagnosticsAction {
   return "status";
 }
 
+function safeCaptureRole(value: FormDataEntryValue | null) {
+  return String(value || "") === "baseline" ? "baseline" : "current";
+}
+
 export async function runWhatsappSyncDiagnosticsAction(
   _previous: WhatsappSyncDiagnosticsActionState,
   formData: FormData,
@@ -67,7 +71,10 @@ export async function runWhatsappSyncDiagnosticsAction(
       if (action === "capture_lips_integrity_snapshot")
         return {
           ok: true,
-          result: await captureLipsGoLiveIntegritySnapshotReadOnly(db),
+          result: {
+            ...(await captureLipsGoLiveIntegritySnapshotReadOnly(db)),
+            captureRole: safeCaptureRole(formData.get("captureRole")),
+          },
         };
       return { ok: true, result: await getLipsWhatsappReadOnlyStatus(db) };
     }

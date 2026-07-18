@@ -19,7 +19,7 @@ O navegador nao envia IDs. A Server Action valida os IDs fixos antes de consulta
 ## Captura Pre
 
 1. Acessar `/operations/diagnostics/whatsapp-sync` com usuario do Centro de Comando.
-2. Clicar em `Capturar integridade Lips`.
+2. Clicar em `Capturar baseline`.
 3. Confirmar que `Read-only preservado` esta como `sim`.
 4. Baixar o JSON `lips-go-live-integrity-YYYYMMDD-HHmm.json`.
 5. Guardar este arquivo como baseline pre-operacao.
@@ -27,7 +27,7 @@ O navegador nao envia IDs. A Server Action valida os IDs fixos antes de consulta
 ## Captura Pos
 
 1. Voltar a `/operations/diagnostics/whatsapp-sync` apos a operacao autorizada fora desta ferramenta.
-2. Clicar novamente em `Capturar integridade Lips`.
+2. Clicar em `Capturar estado atual`.
 3. Comparar o delta local exibido no navegador contra a primeira captura.
 4. Baixar o novo JSON.
 

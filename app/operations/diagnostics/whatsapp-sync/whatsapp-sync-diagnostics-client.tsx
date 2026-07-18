@@ -504,7 +504,10 @@ export function WhatsappSyncDiagnosticsClient({
   const [integrityBaseline, setIntegrityBaseline] = useState<any>(null);
 
   useEffect(() => {
-    if (integritySnapshot && !integrityBaseline)
+    if (
+      integritySnapshot &&
+      (integritySnapshot.captureRole === "baseline" || !integrityBaseline)
+    )
       setIntegrityBaseline(integritySnapshot);
   }, [integritySnapshot, integrityBaseline]);
 
@@ -618,8 +621,20 @@ export function WhatsappSyncDiagnosticsClient({
               name="action"
               value="capture_lips_integrity_snapshot"
             />
+            <input type="hidden" name="captureRole" value="baseline" />
             <SubmitButton pendingLabel="Capturando...">
-              Capturar integridade Lips
+              Capturar baseline
+            </SubmitButton>
+          </form>
+          <form action={formAction}>
+            <input
+              type="hidden"
+              name="action"
+              value="capture_lips_integrity_snapshot"
+            />
+            <input type="hidden" name="captureRole" value="current" />
+            <SubmitButton pendingLabel="Capturando...">
+              Capturar estado atual
             </SubmitButton>
           </form>
           <form action={formAction}>
