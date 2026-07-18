@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 import { LIPS_ORGANIZATION_ID } from "../agents/auto-reply-config.ts";
 import { resolveOrCreateContactByIdentity, type IdentityType } from "../inbox/contacts.ts";
+import { OpenWaGatewayError, PROVIDER_TIMEOUT_MS } from "../providers/whatsapp-web-gateway-client.ts";
 import type { createSupabaseWriteClient } from "../supabase/server-write.ts";
 import { isOpenWaConnected, type OpenWaSyncProvider } from "./providers/openwa-sync-provider.ts";
 import type { ProviderChatSummary, ProviderSyncedMessage } from "../../types/messaging-provider.ts";
@@ -50,7 +51,18 @@ type SyncCounters = {
   nextCursorOffset: number | null;
   providerStatus: string | null;
   skippedReason: string | null;
+  diagnostics: Record<string, unknown>;
 };
+
+class SyncStageError extends Error {
+  diagnostics: Record<string, unknown>;
+
+  constructor(message: string, diagnostics: Record<string, unknown>) {
+    super(message);
+    this.name = "SyncStageError";
+    this.diagnostics = diagnostics;
+  }
+}
 
 const BOOTSTRAP_CHAT_LIMIT = 100;
 const BOOTSTRAP_MESSAGE_LIMIT = 100;
@@ -65,6 +77,42 @@ const CONNECTED_EVENT_DEDUPE_MS = 60 * 1000;
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function safeDiagnosticError(value: unknown) {
+  return String(value || "")
+    .replace(/https?:\/\/\S+/g, "[url-redacted]")
+    .replace(/Bearer\s+[^\s]+/gi, "Bearer [token-redacted]")
+    .replace(/\b\d{8,}\b/g, "[number-redacted]")
+    .replace(/[A-Za-z0-9_-]{24,}/g, "[token-redacted]")
+    .slice(0, 220);
+}
+
+function stageFailure(stage: string, startedAt: number, error: unknown, fallbackTimeoutMs?: number) {
+  const elapsedMs = Date.now() - startedAt;
+  const isGatewayError = error instanceof OpenWaGatewayError;
+  const timeout = isGatewayError && error.code === "openwa_timeout";
+  const code = stage === "list_chats" && timeout ? "provider_list_chats_timeout" : isGatewayError ? error.code : "sync_stage_failed";
+  const message = code === "provider_list_chats_timeout"
+    ? "O gateway excedeu o tempo permitido ao listar os chats."
+    : safeDiagnosticError(error instanceof Error ? error.message : String(error));
+  return {
+    failed_stage: stage,
+    code,
+    message,
+    elapsed_ms: elapsedMs,
+    timeout_ms: isGatewayError ? error.timeoutMs || fallbackTimeoutMs || null : fallbackTimeoutMs || null,
+    attempt: isGatewayError ? error.attempts : 1,
+    retryable: isGatewayError ? error.retryable : false,
+    upstream_status: isGatewayError ? error.status || null : null,
+    retry_skipped_reason: isGatewayError ? error.retrySkippedReason || null : null,
+    error: safeDiagnosticError(error instanceof Error ? error.message : String(error)),
+  };
+}
+
+function throwStage(stage: string, startedAt: number, error: unknown, timeoutMs?: number): never {
+  const diagnostics = stageFailure(stage, startedAt, error, timeoutMs);
+  throw new SyncStageError(String(diagnostics.message || "Falha na sincronizacao."), diagnostics);
 }
 
 function clampInt(value: unknown, fallback: number, min: number, max: number) {
@@ -605,6 +653,7 @@ async function syncChat(db: Db, channel: ChannelForSync, chat: ProviderChatSumma
   const sortedMessages = [...messages].sort((a, b) => new Date(messageTime(a)).getTime() - new Date(messageTime(b)).getTime());
   const latestMessage = sortedMessages.at(-1) || null;
   const contactId = latestMessage ? await resolveContact(db, channel, latestMessage, chat) : null;
+  counters.diagnostics.stage = "persist_conversation";
   const conversationId = await upsertConversation(db, channel, chat, latestMessage, contactId);
 
   for (const message of sortedMessages) {
@@ -614,6 +663,7 @@ async function syncChat(db: Db, channel: ChannelForSync, chat: ProviderChatSumma
     }
     counters.messagesScanned += 1;
     const messageContactId = await resolveContact(db, channel, message, chat) || contactId;
+    counters.diagnostics.stage = "persist_messages";
     const result = await upsertMessage(db, channel, message, conversationId, messageContactId);
     if (result === "inserted") counters.messagesSaved += 1;
     else counters.messagesUpdated += 1;
@@ -624,10 +674,13 @@ async function syncChat(db: Db, channel: ChannelForSync, chat: ProviderChatSumma
 }
 
 async function executeRun(db: Db, run: SyncRunRow, providerFactory: SyncProviderFactory): Promise<SyncCounters> {
+  let stageStartedAt = Date.now();
+  let stage = "resolve_channel";
   const channel = await getChannel(db, run.channel_id);
   if (!channel?.session_id) throw new Error("Canal sem session_id para sincronizacao.");
   if (!isSupportedOpenWaProvider(channel.provider)) throw new Error("Canal nao e OpenWA/WhatsApp Web.");
 
+  stage = "resolve_gateway";
   const provider = providerFactory(channel.session_id);
 
   const counters: SyncCounters = {
@@ -643,9 +696,17 @@ async function executeRun(db: Db, run: SyncRunRow, providerFactory: SyncProvider
     nextCursorOffset: null,
     providerStatus: null,
     skippedReason: null,
+    diagnostics: { stage: "resolve_gateway", stages: [] },
   };
 
-  const providerStatus = await provider.getConnectionStatus();
+  stage = "provider_status";
+  stageStartedAt = Date.now();
+  let providerStatus: string;
+  try {
+    providerStatus = await provider.getConnectionStatus();
+  } catch (error) {
+    throwStage(stage, stageStartedAt, error, PROVIDER_TIMEOUT_MS.status);
+  }
   counters.providerStatus = providerStatus;
   if (!isOpenWaConnected(providerStatus)) {
     counters.skippedReason = "whatsapp_disconnected";
@@ -657,7 +718,18 @@ async function executeRun(db: Db, run: SyncRunRow, providerFactory: SyncProvider
   const cursorOffset = selectedChatIds.length > 0 ? 0 : cursorOffsetFromMetadata(run.metadata);
   const cutoffMs = run.mode === "manual_diagnostic" || run.mode === "incremental" ? null : Date.now() - THIRTY_DAYS_MS;
   const incrementalCheckpoint = run.mode === "incremental" ? await getIncrementalCheckpoint(db, run) : null;
-  const allChats = await provider.listChats();
+  stage = "list_chats";
+  stageStartedAt = Date.now();
+  let allChats: ProviderChatSummary[];
+  try {
+    allChats = await provider.listChats({ limit: limits.chatLimit, offset: cursorOffset });
+  } catch (error) {
+    throwStage(stage, stageStartedAt, error, PROVIDER_TIMEOUT_MS.listChats);
+  }
+  const providerLikelyAppliedLimit = allChats.length <= limits.chatLimit;
+  counters.diagnostics.listChats = { requestedLimit: limits.chatLimit, requestedOffset: cursorOffset, returned: allChats.length, paginationLikelyApplied: providerLikelyAppliedLimit, timeoutMs: PROVIDER_TIMEOUT_MS.listChats };
+  stage = "filter_chats";
+  counters.diagnostics.stage = stage;
   const checkpointMs = incrementalCheckpoint ? new Date(incrementalCheckpoint).getTime() : null;
   const candidateChats = checkpointMs && selectedChatIds.length === 0
     ? allChats.filter((chat) => !chat.lastMessageAt || new Date(chat.lastMessageAt).getTime() >= checkpointMs)
@@ -665,8 +737,10 @@ async function executeRun(db: Db, run: SyncRunRow, providerFactory: SyncProvider
   const sortedChats = [...candidateChats].sort((a, b) => new Date(b.lastMessageAt || 0).getTime() - new Date(a.lastMessageAt || 0).getTime());
   const chats = selectedChatIds.length > 0
     ? sortedChats.filter((chat) => selectedChatIds.includes(chat.id))
-    : sortedChats.slice(cursorOffset, cursorOffset + limits.chatLimit);
-  counters.hasMore = selectedChatIds.length === 0 && sortedChats.length > cursorOffset + chats.length;
+    : providerLikelyAppliedLimit
+      ? sortedChats.slice(0, limits.chatLimit)
+      : sortedChats.slice(cursorOffset, cursorOffset + limits.chatLimit);
+  counters.hasMore = selectedChatIds.length === 0 && (providerLikelyAppliedLimit ? allChats.length >= limits.chatLimit : sortedChats.length > cursorOffset + chats.length);
   counters.nextCursorOffset = counters.hasMore ? cursorOffset + chats.length : null;
 
   for (const chat of chats) {
@@ -677,6 +751,7 @@ async function executeRun(db: Db, run: SyncRunRow, providerFactory: SyncProvider
     }
 
     try {
+      counters.diagnostics.stage = "list_messages";
       const rawMessages = await provider.listChatMessages(chat.id, limits.messageLimit);
       const messages = rawMessages.filter((message) => {
         const createdMs = new Date(messageTime(message)).getTime();
@@ -687,10 +762,11 @@ async function executeRun(db: Db, run: SyncRunRow, providerFactory: SyncProvider
       await syncChat(db, channel, chat, messages, counters);
       counters.chatsSynced += 1;
     } catch (error) {
-      counters.errors.push({ chatId: chat.id, step: "syncChat", error: error instanceof Error ? error.message : String(error) });
+      counters.errors.push({ chatId: chat.id, step: String(counters.diagnostics.stage || "syncChat"), error: safeDiagnosticError(error instanceof Error ? error.message : String(error)) });
     }
   }
 
+  counters.diagnostics.stage = "finalize";
   return counters;
 }
 
@@ -727,7 +803,7 @@ async function completeRun(db: Db, run: SyncRunRow, counters: SyncCounters) {
     messages_updated: counters.messagesUpdated,
     errors_count: counters.errors.length,
     error_message: errorMessage || counters.skippedReason,
-    diagnostics: { errors: counters.errors.slice(0, 20), skippedReason: counters.skippedReason, hasMore: counters.hasMore },
+    diagnostics: { ...counters.diagnostics, errors: counters.errors.slice(0, 20), skippedReason: counters.skippedReason, hasMore: counters.hasMore },
     lock_id: null,
     locked_at: null,
     lock_expires_at: null,
@@ -793,12 +869,15 @@ async function completeRun(db: Db, run: SyncRunRow, counters: SyncCounters) {
 async function failRun(db: Db, run: SyncRunRow, error: unknown) {
   const completedAt = nowIso();
   const message = error instanceof Error ? error.message : String(error);
+  const diagnostics = error instanceof SyncStageError
+    ? { ...error.diagnostics, errors: [{ step: error.diagnostics.failed_stage || "executeRun", error: safeDiagnosticError(message) }] }
+    : { failed_stage: "executeRun", errors: [{ step: "executeRun", error: safeDiagnosticError(message) }] };
   await db.from("whatsapp_sync_runs").update({
     status: "failed",
     completed_at: completedAt,
     errors_count: 1,
-    error_message: message,
-    diagnostics: { errors: [{ step: "executeRun", error: message }] },
+    error_message: safeDiagnosticError(message),
+    diagnostics,
     lock_id: null,
     locked_at: null,
     lock_expires_at: null,
@@ -808,13 +887,13 @@ async function failRun(db: Db, run: SyncRunRow, error: unknown) {
     sync_status: "failed",
     last_completed_at: completedAt,
     last_error_at: completedAt,
-    last_error: message,
+    last_error: safeDiagnosticError(message),
     locked_at: null,
     lock_expires_at: null,
     locked_by: null,
     updated_at: completedAt,
   }).eq("channel_id", run.channel_id);
-  return { runId: run.id, status: "failed" as const, error: message };
+  return { runId: run.id, status: "failed" as const, error: safeDiagnosticError(message), diagnostics };
 }
 
 export async function processQueuedWhatsappSyncRuns(db: Db, maxRuns = 1, providerFactory: SyncProviderFactory = missingProviderFactory) {

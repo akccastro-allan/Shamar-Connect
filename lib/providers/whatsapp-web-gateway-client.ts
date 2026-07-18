@@ -3,6 +3,7 @@ import type {
   ProviderChatSummary,
   ProviderGroupParticipant,
   ProviderGroupSummary,
+  ProviderListChatsOptions,
   ProviderMessagePayload,
   ProviderStatus,
   ProviderSyncedMessage,
@@ -12,7 +13,45 @@ type GatewayClientOptions = {
   baseUrl?: string | null;
 };
 
-const GATEWAY_FETCH_TIMEOUT_MS = 15_000;
+export const FUNCTION_BUDGET_MS = 60_000;
+export const FINALIZATION_RESERVE_MS = 8_000;
+export const OPENWA_READ_RETRY_BACKOFF_MS = 250;
+export const MIN_RETRY_BUDGET_MS = 1_000;
+
+export const PROVIDER_TIMEOUT_MS = {
+  status: 6_000,
+  listChats: 20_000,
+  listMessages: 20_000,
+  mutation: 10_000,
+} as const;
+
+export const OPENWA_OPERATION_TIMEOUTS_MS = PROVIDER_TIMEOUT_MS;
+
+export class OpenWaGatewayError extends Error {
+  code: string;
+  status?: number | null;
+  timeoutMs?: number;
+  retryable: boolean;
+  attempts: number;
+  retrySkippedReason?: string | null;
+
+  constructor(input: { message: string; code: string; status?: number | null; timeoutMs?: number; retryable?: boolean; attempts?: number; retrySkippedReason?: string | null }) {
+    super(input.message);
+    this.name = "OpenWaGatewayError";
+    this.code = input.code;
+    this.status = input.status;
+    this.timeoutMs = input.timeoutMs;
+    this.retryable = Boolean(input.retryable);
+    this.attempts = input.attempts || 1;
+    this.retrySkippedReason = input.retrySkippedReason || null;
+  }
+}
+
+type OpenWaRequestOptions = {
+  timeoutMs?: number;
+  retryRead?: boolean;
+  deadlineAt?: number;
+};
 
 function getGatewayBaseUrl(options?: GatewayClientOptions) {
   const rawBaseUrl = (options?.baseUrl || process.env.WHATSAPP_WEB_GATEWAY_URL || "").replace(/\/$/, "");
@@ -27,6 +66,41 @@ function getGatewayToken() {
 
 function getDefaultSessionId() {
   return process.env.WHATSAPP_WEB_GATEWAY_SESSION_ID || "hall-main";
+}
+
+function safeGatewayErrorBody(value: string) {
+  return value
+    .replace(/https?:\/\/\S+/g, "[url-redacted]")
+    .replace(/Bearer\s+[^\s]+/gi, "Bearer [token-redacted]")
+    .replace(/\b\d{8,}\b/g, "[number-redacted]")
+    .replace(/[A-Za-z0-9_-]{24,}/g, "[token-redacted]")
+    .slice(0, 220);
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError" || error.message.toLowerCase().includes("aborted"));
+}
+
+function isRetryableStatus(status: number) {
+  return status === 502 || status === 503 || status === 504;
+}
+
+function isTransientNetworkError(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  const text = `${error.name} ${error.message}`.toLowerCase();
+  return text.includes("econnreset") || text.includes("connection reset") || text.includes("socket hang up") || text.includes("networkerror");
+}
+
+function remainingRequestBudget(deadlineAt: number) {
+  return deadlineAt - Date.now() - FINALIZATION_RESERVE_MS;
+}
+
+function retryBudgetAvailable(deadlineAt: number) {
+  return remainingRequestBudget(deadlineAt) >= MIN_RETRY_BUDGET_MS;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 type OpenWaSession = {
@@ -170,35 +244,77 @@ function normalizeMessage(message: OpenWaMessage, fallbackChatId: string): Provi
   };
 }
 
-async function openWaFetch<T>(path: string, init?: RequestInit, options?: GatewayClientOptions): Promise<T> {
+async function openWaFetch<T>(path: string, init?: RequestInit, options?: GatewayClientOptions, requestOptions?: OpenWaRequestOptions): Promise<T> {
   const baseUrl = getGatewayBaseUrl(options);
   if (!baseUrl) throw new Error("WHATSAPP_WEB_GATEWAY_URL is not configured.");
   const token = getGatewayToken();
+  const operationTimeoutMs = requestOptions?.timeoutMs || PROVIDER_TIMEOUT_MS.status;
+  const deadlineAt = requestOptions?.deadlineAt || Date.now() + FUNCTION_BUDGET_MS;
+  const method = String(init?.method || "GET").toUpperCase();
+  const maxAttempts = requestOptions?.retryRead && method === "GET" ? 2 : 1;
 
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  const response = await fetch(`${baseUrl}${normalizedPath}`, {
-    ...init,
-    signal: init?.signal || AbortSignal.timeout(GATEWAY_FETCH_TIMEOUT_MS),
-    headers: {
-      "content-type": "application/json",
-      ...(token ? { "x-api-key": token, authorization: `Bearer ${token}` } : {}),
-      ...(init?.headers || {}),
-    },
-    cache: "no-store",
-  });
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const requestBudgetMs = Math.min(operationTimeoutMs, remainingRequestBudget(deadlineAt));
+    if (requestBudgetMs <= 0) {
+      throw new OpenWaGatewayError({ message: "OpenWA request skipped: insufficient time budget", code: "openwa_time_budget_exhausted", timeoutMs: 0, retryable: false, attempts: attempt - 1 || 1, retrySkippedReason: "insufficient_time_budget" });
+    }
+    try {
+      const response = await fetch(`${baseUrl}${normalizedPath}`, {
+        ...init,
+        signal: init?.signal || AbortSignal.timeout(requestBudgetMs),
+        headers: {
+          "content-type": "application/json",
+          ...(token ? { "x-api-key": token, authorization: `Bearer ${token}` } : {}),
+          ...(init?.headers || {}),
+        },
+        cache: "no-store",
+      });
 
-  if (response.status === 204) return undefined as T;
-  if (response.ok) return response.json() as Promise<T>;
-  const errorBody = await response.text();
-  throw new Error(`OpenWA error ${response.status}: ${errorBody}`);
+      if (response.status === 204) return undefined as T;
+      if (response.ok) return response.json() as Promise<T>;
+      const errorBody = safeGatewayErrorBody(await response.text());
+      const retryable = isRetryableStatus(response.status);
+      if (retryable && attempt < maxAttempts) {
+        if (!retryBudgetAvailable(deadlineAt)) {
+          throw new OpenWaGatewayError({ message: `OpenWA error ${response.status}: ${errorBody}`, code: "openwa_http_error", status: response.status, timeoutMs: requestBudgetMs, retryable: true, attempts: attempt, retrySkippedReason: "insufficient_time_budget" });
+        }
+        await sleep(OPENWA_READ_RETRY_BACKOFF_MS);
+        continue;
+      }
+      throw new OpenWaGatewayError({ message: `OpenWA error ${response.status}: ${errorBody}`, code: response.status === 401 || response.status === 403 ? "openwa_unauthorized" : response.status === 404 ? "openwa_not_found" : "openwa_http_error", status: response.status, timeoutMs: requestBudgetMs, retryable, attempts: attempt });
+    } catch (error) {
+      if (error instanceof OpenWaGatewayError) throw error;
+      if (isAbortError(error)) {
+        if (attempt < maxAttempts) {
+          if (!retryBudgetAvailable(deadlineAt)) {
+            throw new OpenWaGatewayError({ message: `OpenWA timeout after ${requestBudgetMs}ms`, code: "openwa_timeout", timeoutMs: requestBudgetMs, retryable: true, attempts: attempt, retrySkippedReason: "insufficient_time_budget" });
+          }
+          await sleep(OPENWA_READ_RETRY_BACKOFF_MS);
+          continue;
+        }
+        throw new OpenWaGatewayError({ message: `OpenWA timeout after ${requestBudgetMs}ms`, code: "openwa_timeout", timeoutMs: requestBudgetMs, retryable: true, attempts: attempt });
+      }
+      if (isTransientNetworkError(error) && attempt < maxAttempts) {
+        if (!retryBudgetAvailable(deadlineAt)) {
+          throw new OpenWaGatewayError({ message: error instanceof Error ? safeGatewayErrorBody(error.message) : "OpenWA request failed", code: "openwa_request_failed", timeoutMs: requestBudgetMs, retryable: true, attempts: attempt, retrySkippedReason: "insufficient_time_budget" });
+        }
+        await sleep(OPENWA_READ_RETRY_BACKOFF_MS);
+        continue;
+      }
+      throw new OpenWaGatewayError({ message: error instanceof Error ? safeGatewayErrorBody(error.message) : "OpenWA request failed", code: "openwa_request_failed", timeoutMs: requestBudgetMs, retryable: isTransientNetworkError(error), attempts: attempt });
+    }
+  }
+  throw new OpenWaGatewayError({ message: "OpenWA request failed", code: "openwa_request_failed", retryable: false, attempts: maxAttempts });
 }
 
-async function resolveOpenWaSessionId(sessionName: string, options?: GatewayClientOptions) {
+async function resolveOpenWaSessionId(sessionName: string, options?: GatewayClientOptions, requestOptions?: OpenWaRequestOptions) {
   const cacheKey = `${getGatewayBaseUrl(options) || "default"}:${sessionName}`;
   const cached = sessionIdCache.get(cacheKey);
   if (cached) return cached;
+  const sessionRequestOptions = { timeoutMs: PROVIDER_TIMEOUT_MS.status, retryRead: requestOptions?.retryRead, deadlineAt: requestOptions?.deadlineAt };
 
-  const sessions = asArray<OpenWaSession>(await openWaFetch<unknown>("/sessions", undefined, options));
+  const sessions = asArray<OpenWaSession>(await openWaFetch<unknown>("/sessions", undefined, options, sessionRequestOptions));
   const existing = sessions.find((session) => session.name === sessionName || session.id === sessionName);
   if (existing?.id) {
     sessionIdCache.set(cacheKey, existing.id);
@@ -209,13 +325,13 @@ async function resolveOpenWaSessionId(sessionName: string, options?: GatewayClie
     const created = await openWaFetch<OpenWaSession>("/sessions", {
       method: "POST",
       body: JSON.stringify({ name: sessionName }),
-    }, options);
+    }, options, { timeoutMs: PROVIDER_TIMEOUT_MS.mutation, deadlineAt: requestOptions?.deadlineAt });
     const id = created.id || created.name || sessionName;
     sessionIdCache.set(cacheKey, id);
     return id;
   } catch (error) {
     if (!(error instanceof Error) || !error.message.includes("409")) throw error;
-    const refreshed = asArray<OpenWaSession>(await openWaFetch<unknown>("/sessions", undefined, options));
+    const refreshed = asArray<OpenWaSession>(await openWaFetch<unknown>("/sessions", undefined, options, sessionRequestOptions));
     const session = refreshed.find((item) => item.name === sessionName || item.id === sessionName);
     if (session?.id) {
       sessionIdCache.set(cacheKey, session.id);
@@ -225,20 +341,22 @@ async function resolveOpenWaSessionId(sessionName: string, options?: GatewayClie
   }
 }
 
-async function openWaSessionFetch<T>(sessionName: string, path: string, init?: RequestInit, options?: GatewayClientOptions): Promise<T> {
-  const sessionId = await resolveOpenWaSessionId(sessionName, options);
+async function openWaSessionFetch<T>(sessionName: string, path: string, init?: RequestInit, options?: GatewayClientOptions, requestOptions?: OpenWaRequestOptions): Promise<T> {
+  const deadlineAt = requestOptions?.deadlineAt || Date.now() + FUNCTION_BUDGET_MS;
+  const requestOptionsWithDeadline = { ...requestOptions, deadlineAt };
+  const sessionId = await resolveOpenWaSessionId(sessionName, options, requestOptionsWithDeadline);
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  return openWaFetch<T>(`/sessions/${encodeURIComponent(sessionId)}${normalizedPath}`, init, options);
+  return openWaFetch<T>(`/sessions/${encodeURIComponent(sessionId)}${normalizedPath}`, init, options, requestOptionsWithDeadline);
 }
 
 async function getSessionStatus(sessionName: string, options?: GatewayClientOptions) {
-  const session = await openWaSessionFetch<OpenWaSession>(sessionName, "", undefined, options);
+  const session = await openWaSessionFetch<OpenWaSession>(sessionName, "", undefined, options, { timeoutMs: PROVIDER_TIMEOUT_MS.status, retryRead: true });
   return normalizeStatus(session);
 }
 
 async function startSession(sessionName: string, options?: GatewayClientOptions) {
   try {
-    const session = await openWaSessionFetch<OpenWaSession>(sessionName, "/start", { method: "POST" }, options);
+    const session = await openWaSessionFetch<OpenWaSession>(sessionName, "/start", { method: "POST" }, options, { timeoutMs: PROVIDER_TIMEOUT_MS.mutation });
     return normalizeStatus(session);
   } catch (error) {
     if (!(error instanceof Error) || !error.message.includes("400")) throw error;
@@ -247,7 +365,7 @@ async function startSession(sessionName: string, options?: GatewayClientOptions)
 }
 
 async function getSessionQr(sessionName: string, options?: GatewayClientOptions) {
-  const qr = await openWaSessionFetch<OpenWaQrResponse>(sessionName, "/qr", undefined, options);
+  const qr = await openWaSessionFetch<OpenWaQrResponse>(sessionName, "/qr", undefined, options, { timeoutMs: PROVIDER_TIMEOUT_MS.status, retryRead: true });
   return normalizeStatus(qr, qr.qrCode || qr.qr);
 }
 
@@ -255,13 +373,13 @@ async function sendSessionMessage(sessionName: string, payload: ProviderMessageP
   const response = await openWaSessionFetch<OpenWaMessageResponse>(sessionName, "/messages/send-text", {
     method: "POST",
     body: JSON.stringify({ chatId: normalizeChatId(payload.to), text: payload.body }),
-  }, options);
+  }, options, { timeoutMs: PROVIDER_TIMEOUT_MS.mutation });
 
   return { id: String(response.messageId || response.id || `openwa_${Date.now()}`), status: "sent" as const };
 }
 
 async function stopSession(sessionName: string, options?: GatewayClientOptions) {
-  const session = await openWaSessionFetch<OpenWaSession>(sessionName, "/stop", { method: "POST" }, options);
+  const session = await openWaSessionFetch<OpenWaSession>(sessionName, "/stop", { method: "POST" }, options, { timeoutMs: PROVIDER_TIMEOUT_MS.mutation });
   return normalizeStatus(session);
 }
 
@@ -310,6 +428,14 @@ export function isAllowedSessionId(value: unknown): value is AllowedSessionId {
   return typeof value === "string" && ALLOWED_SESSION_ID_SET.has(value);
 }
 
+function chatsPath(options?: ProviderListChatsOptions) {
+  const params = new URLSearchParams();
+  if (options?.limit && Number.isFinite(options.limit)) params.set("limit", String(Math.max(1, Math.trunc(options.limit))));
+  if (options?.offset && Number.isFinite(options.offset)) params.set("offset", String(Math.max(0, Math.trunc(options.offset))));
+  const query = params.toString();
+  return query ? `/chats?${query}` : "/chats";
+}
+
 // Factory: creates a gateway client scoped to a specific session.
 // The default export (whatsappWebGatewayClient) uses the env-configured session.
 export function createWhatsappGatewayClient(sessionId: AllowedSessionId, options?: GatewayClientOptions): MessagingProviderClient {
@@ -318,18 +444,18 @@ export function createWhatsappGatewayClient(sessionId: AllowedSessionId, options
     connect: () => startSession(sessionId, options),
     getQr: () => getSessionQr(sessionId, options),
     sendMessage: (payload: ProviderMessagePayload) => sendSessionMessage(sessionId, payload, options),
-    listChats: async () => asArray<OpenWaChat>(await openWaSessionFetch<unknown>(sessionId, "/chats", undefined, options)).map(normalizeChat).filter((chat) => chat.id),
+    listChats: async (listOptions?: ProviderListChatsOptions) => asArray<OpenWaChat>(await openWaSessionFetch<unknown>(sessionId, chatsPath(listOptions), undefined, options, { timeoutMs: PROVIDER_TIMEOUT_MS.listChats, retryRead: true })).map(normalizeChat).filter((chat) => chat.id),
     listGroups: async () =>
-      asArray<OpenWaChat>(await openWaSessionFetch<unknown>(sessionId, "/groups", undefined, options))
+      asArray<OpenWaChat>(await openWaSessionFetch<unknown>(sessionId, "/groups", undefined, options, { timeoutMs: PROVIDER_TIMEOUT_MS.listChats, retryRead: true }))
         .map((group) => {
           const chat = normalizeChat(group);
           return { id: chat.id, name: chat.name, participantCount: undefined };
         })
         .filter((group) => group.id),
     listGroupParticipants: (groupId: string) =>
-      openWaSessionFetch<ProviderGroupParticipant[]>(sessionId, `/groups/${encodeURIComponent(groupId)}/participants`, undefined, options),
+      openWaSessionFetch<ProviderGroupParticipant[]>(sessionId, `/groups/${encodeURIComponent(groupId)}/participants`, undefined, options, { timeoutMs: PROVIDER_TIMEOUT_MS.listMessages, retryRead: true }),
     listChatMessages: (chatId: string, limit = 50) =>
-      openWaSessionFetch<unknown>(sessionId, `/messages/${encodeURIComponent(chatId)}/history?limit=${limit}`, undefined, options).then((payload) =>
+      openWaSessionFetch<unknown>(sessionId, `/messages/${encodeURIComponent(chatId)}/history?limit=${limit}`, undefined, options, { timeoutMs: PROVIDER_TIMEOUT_MS.listMessages, retryRead: true }).then((payload) =>
         asArray<OpenWaMessage>(payload).map((message) => normalizeMessage(message, chatId)),
       ),
     logout: () => stopSession(sessionId, options),
@@ -355,8 +481,8 @@ export const whatsappWebGatewayClient: MessagingProviderClient = {
     return defaultClient.sendMessage(payload);
   },
 
-  listChats() {
-    return defaultClient.listChats();
+  listChats(options?: ProviderListChatsOptions) {
+    return defaultClient.listChats(options);
   },
 
   listGroups() {

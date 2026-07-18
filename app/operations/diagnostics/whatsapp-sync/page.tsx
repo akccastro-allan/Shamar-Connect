@@ -6,6 +6,7 @@ import { WhatsappSyncDiagnosticsClient } from "./whatsapp-sync-diagnostics-clien
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+export const maxDuration = 60;
 export const metadata = { title: "Sincronização WhatsApp — Centro de Comando" };
 
 export default async function OperationsWhatsappSyncDiagnosticsPage() {

@@ -6,6 +6,7 @@ import {
   canExecuteSyncDiagnostics,
   getLipsWhatsappReadOnlyStatus,
   isReadOnlySyncDiagnosticsAction,
+  probeLipsWhatsappChatsReadOnly,
   requireWhatsappSyncDiagnosticsOperator,
   runLipsWhatsappSyncDiagnostics,
   type SyncDiagnosticsAction,
@@ -19,7 +20,7 @@ export type WhatsappSyncDiagnosticsActionState = {
 
 function safeAction(value: FormDataEntryValue | null): SyncDiagnosticsAction {
   const action = String(value || "status");
-  if (["diagnostic", "bootstrap", "incremental", "reconciliation", "process_next"].includes(action)) return action as SyncDiagnosticsAction;
+  if (["probe_chats", "diagnostic", "bootstrap", "incremental", "reconciliation", "process_next"].includes(action)) return action as SyncDiagnosticsAction;
   return "status";
 }
 
@@ -29,6 +30,7 @@ export async function runWhatsappSyncDiagnosticsAction(_previous: WhatsappSyncDi
     const operator = await requireWhatsappSyncDiagnosticsOperator(db);
     const action = safeAction(formData.get("action"));
     if (isReadOnlySyncDiagnosticsAction(action)) {
+      if (action === "probe_chats") return { ok: true, result: await probeLipsWhatsappChatsReadOnly(db, createDefaultOpenWaSyncProvider, { limit: 5 }) };
       return { ok: true, result: await getLipsWhatsappReadOnlyStatus(db) };
     }
 
