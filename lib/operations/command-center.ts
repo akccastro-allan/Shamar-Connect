@@ -17,6 +17,7 @@ export type OperationsPeriod = "7d" | "30d" | "90d";
 export type OperationsFilters = {
   company?: string;
   period?: string;
+  q?: string;
 };
 
 export type OperationsCompany = {
@@ -49,6 +50,7 @@ export type OperationsSnapshot = {
   companies: OperationsCompany[];
   selectedCompany: OperationsCompany | null;
   selectedSlug: string;
+  search: string;
   period: OperationsPeriod;
   summary: {
     activeCompanies: number;
@@ -90,10 +92,10 @@ export const operationsPeriods: Array<{ value: OperationsPeriod; label: string }
 ];
 
 export const operationsNavItems = [
-  { href: "/operations", label: "Resumo" },
+  { href: "/operations", label: "Visão Geral" },
   { href: "/operations/companies", label: "Empresas" },
   { href: "/operations/channels", label: "Canais" },
-  { href: "/operations/social", label: "Social" },
+  { href: "/operations/social", label: "Redes Sociais" },
   { href: "/operations/content", label: "Conteúdo" },
   { href: "/operations/calendar", label: "Agenda" },
   { href: "/operations/tasks", label: "Tarefas" },
@@ -382,6 +384,19 @@ function safeText(value?: string | null, max = 180) {
   return String(value || "").replace(/https?:\/\/\S+/g, "[url]").slice(0, max);
 }
 
+function normalizeSearch(value?: string) {
+  return String(value || "").trim().toLowerCase().slice(0, 80);
+}
+
+function matchesSearch(values: Array<string | number | null | undefined>, search: string) {
+  if (!search) return true;
+  return values.some((value) => String(value || "").toLowerCase().includes(search));
+}
+
+function companyNameFromId(companies: OperationsCompany[], organizationId?: string | null) {
+  return companies.find((company) => company.organizationId === organizationId)?.name || "";
+}
+
 function buildIntegrations(channels: ChannelRow[], distributionChannels: DistributionChannelRow[], socialAccounts: SocialAccountRow[], sources: IntegrationSourceRow[], agents: IntegrationAgentRow[]): IntegrationStatus[] {
   const hasWhatsappWeb = channels.some((channel) => channel.provider === "whatsapp_web" || channel.channel_type === "whatsapp_web");
   const hasDistribution = distributionChannels.some((channel) => channel.active !== false);
@@ -432,6 +447,7 @@ export function getCompanyBySlug(slug: string) {
 export async function getOperationsSnapshot(context: AppContext, filters: OperationsFilters = {}): Promise<OperationsSnapshot> {
   const db = createSupabaseWriteClient();
   const period = normalizePeriod(filters.period);
+  const search = normalizeSearch(filters.q);
   const selectedSlug = filters.company && allowedSlugs.has(filters.company) ? filters.company : "all";
   const organizations = await loadOrganizations(db, context.tenantId);
   const orgByName = new Map(organizations.map((organization) => [organization.name, organization]));
@@ -460,7 +476,7 @@ export async function getOperationsSnapshot(context: AppContext, filters: Operat
   const socialAccounts = filterBySelected(
     allSocialAccountsRaw.map((account) => ({ ...account, masked_external_account_id: maskExternalId(account.external_account_id) })),
     selectedOrgIds,
-  );
+  ).filter((account) => matchesSearch([account.name, account.provider, companyNameFromId(companies, account.organization_id)], search));
   const normalizedChannels = allChannels
     .filter((channel) => !channel.session_id || internalWhatsappSessionSet.has(channel.session_id))
     .filter((channel) => channel.session_id !== "lips-main" && channel.session_id !== "hall-main")
@@ -472,14 +488,14 @@ export async function getOperationsSnapshot(context: AppContext, filters: Operat
       recentMessages: 0,
       currentError: null,
     }));
-  const channels = filterBySelected(normalizedChannels, selectedOrgIds);
-  const distributionChannels = filterBySelected(allDistributionChannels, selectedOrgIds);
-  const broadcasts = filterBySelected(allBroadcasts, selectedOrgIds);
-  const conversations = filterBySelected(allConversations, selectedOrgIds);
-  const tasks = filterBySelected(allTasks, selectedOrgIds);
-  const events = filterBySelected(allEvents, selectedOrgIds);
-  const opportunities = filterBySelected(allOpportunities, selectedOrgIds);
-  const integrationSources = filterBySelected(allIntegrationSources, selectedOrgIds);
+  const channels = filterBySelected(normalizedChannels, selectedOrgIds).filter((channel) => matchesSearch([channel.name, channel.session_id, channel.provider, channel.companyName], search));
+  const distributionChannels = filterBySelected(allDistributionChannels, selectedOrgIds).filter((channel) => matchesSearch([channel.name, channel.provider, channel.description], search));
+  const broadcasts = filterBySelected(allBroadcasts, selectedOrgIds).filter((broadcast) => matchesSearch([broadcast.title, broadcast.status], search));
+  const conversations = filterBySelected(allConversations, selectedOrgIds).filter((conversation) => matchesSearch([conversation.name, conversation.status, conversation.queue_status], search));
+  const tasks = filterBySelected(allTasks, selectedOrgIds).filter((task) => matchesSearch([task.title, task.status, task.priority], search));
+  const events = filterBySelected(allEvents, selectedOrgIds).filter((event) => matchesSearch([event.title, event.status], search));
+  const opportunities = filterBySelected(allOpportunities, selectedOrgIds).filter((opportunity) => matchesSearch([opportunity.title], search));
+  const integrationSources = filterBySelected(allIntegrationSources, selectedOrgIds).filter((source) => matchesSearch([source.name, source.source_type, source.status], search));
   const integrationAgents = filterBySelected(allIntegrationAgents, selectedOrgIds);
   const integrationRuns = filterBySelected(allIntegrationRuns, selectedOrgIds);
   const visibleCompanies = selectedCompany ? [selectedCompany] : companies;
@@ -541,6 +557,7 @@ export async function getOperationsSnapshot(context: AppContext, filters: Operat
     companies,
     selectedCompany,
     selectedSlug,
+    search,
     period,
     summary: {
       activeCompanies: visibleCompanies.filter((company) => company.status === "active" || company.status === "production_initial").length,

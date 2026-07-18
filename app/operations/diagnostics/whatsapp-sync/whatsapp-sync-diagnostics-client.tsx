@@ -589,99 +589,90 @@ export function WhatsappSyncDiagnosticsClient({
       <Card className="rounded-[2rem]">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg font-black text-[#1B2F5B]">
-            <RefreshCcw className="h-5 w-5" /> Ações de homologação
+            <RefreshCcw className="h-5 w-5" /> Operação assistida
           </CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          <form action={formAction}>
-            <input type="hidden" name="action" value="status" />
-            <SubmitButton pendingLabel="Consultando...">
-              Verificar status
-            </SubmitButton>
-          </form>
-          <form action={formAction}>
-            <input type="hidden" name="action" value="probe_chats" />
-            <SubmitButton pendingLabel="Testando...">
-              Testar leitura de chats
-            </SubmitButton>
-          </form>
-          <form action={formAction}>
-            <input
-              type="hidden"
-              name="action"
-              value="validate_chat_pagination"
-            />
-            <SubmitButton pendingLabel="Validando...">
-              Validar paginação
-            </SubmitButton>
-          </form>
-          <form action={formAction}>
-            <input
-              type="hidden"
-              name="action"
-              value="capture_lips_integrity_snapshot"
-            />
-            <input type="hidden" name="captureRole" value="baseline" />
-            <SubmitButton pendingLabel="Capturando...">
-              Capturar baseline
-            </SubmitButton>
-          </form>
-          <form action={formAction}>
-            <input
-              type="hidden"
-              name="action"
-              value="capture_lips_integrity_snapshot"
-            />
-            <input type="hidden" name="captureRole" value="current" />
-            <SubmitButton pendingLabel="Capturando...">
-              Capturar estado atual
-            </SubmitButton>
-          </form>
-          <form action={formAction}>
-            <input type="hidden" name="action" value="diagnostic" />
-            <SubmitButton
-              disabled={!canExecute}
-              confirmText="Executar diagnóstico? Será processado no máximo um run, sem envio de mensagens."
-            >
-              Executar diagnóstico
-            </SubmitButton>
-          </form>
-          <form action={formAction}>
-            <input type="hidden" name="action" value="bootstrap" />
-            <SubmitButton
-              disabled={!canExecute}
-              confirmText="Executar bootstrap controlado? Serão consultados chats e mensagens recentes da Lips. Nenhuma mensagem será enviada."
-            >
-              Bootstrap controlado
-            </SubmitButton>
-          </form>
-          <form action={formAction}>
-            <input type="hidden" name="action" value="incremental" />
-            <SubmitButton
-              disabled={!canExecute}
-              confirmText="Executar incremental usando checkpoints existentes? Nenhuma mensagem será enviada."
-            >
-              Incremental
-            </SubmitButton>
-          </form>
-          <form action={formAction}>
-            <input type="hidden" name="action" value="reconciliation" />
-            <SubmitButton
-              disabled={!canExecute}
-              confirmText="Executar reconciliação? Nenhuma mensagem será enviada."
-            >
-              Reconciliation
-            </SubmitButton>
-          </form>
-          <form action={formAction}>
-            <input type="hidden" name="action" value="process_next" />
-            <SubmitButton
-              disabled={!canExecute}
-              confirmText="Processar próximo job de lips-main? Não executa em paralelo."
-            >
-              Processar próximo job
-            </SubmitButton>
-          </form>
+        <CardContent className="space-y-6">
+          <section className="rounded-[2rem] border border-emerald-100 bg-emerald-50 p-4">
+            <p className="font-black text-emerald-900">Consultas seguras</p>
+            <p className="mt-1 text-sm font-bold text-emerald-700">
+              Somente leitura. Não cria runs, não altera fila e não envia mensagens.
+            </p>
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <form action={formAction}>
+                <input type="hidden" name="action" value="status" />
+                <SubmitButton pendingLabel="Consultando...">
+                  Verificar status
+                </SubmitButton>
+              </form>
+              <form action={formAction}>
+                <input type="hidden" name="action" value="probe_chats" />
+                <SubmitButton pendingLabel="Testando...">
+                  Testar leitura de chats
+                </SubmitButton>
+              </form>
+              <form action={formAction}>
+                <input type="hidden" name="action" value="validate_chat_pagination" />
+                <SubmitButton pendingLabel="Validando...">
+                  Validar paginação
+                </SubmitButton>
+              </form>
+              <form action={formAction}>
+                <input type="hidden" name="action" value="capture_lips_integrity_snapshot" />
+                <input type="hidden" name="captureRole" value="baseline" />
+                <SubmitButton pendingLabel="Capturando...">
+                  Capturar baseline
+                </SubmitButton>
+              </form>
+              <form action={formAction}>
+                <input type="hidden" name="action" value="capture_lips_integrity_snapshot" />
+                <input type="hidden" name="captureRole" value="current" />
+                <SubmitButton pendingLabel="Capturando...">
+                  Capturar estado atual
+                </SubmitButton>
+              </form>
+            </div>
+          </section>
+          <section className="rounded-[2rem] border border-amber-100 bg-amber-50 p-4">
+            <p className="font-black text-amber-900">Execuções controladas</p>
+            <p className="mt-1 text-sm font-bold text-amber-700">
+              {canExecute
+                ? "Ações com escrita exigem confirmação e autorização do Centro de Comando."
+                : "Execuções de escrita desabilitadas. A flag interna não está ativa neste ambiente."}
+            </p>
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <form action={formAction}>
+                <input type="hidden" name="action" value="diagnostic" />
+                <SubmitButton disabled={!canExecute} confirmText="Executar diagnóstico? Será processado no máximo um run, sem envio de mensagens.">
+                  Executar diagnóstico
+                </SubmitButton>
+              </form>
+              <form action={formAction}>
+                <input type="hidden" name="action" value="bootstrap" />
+                <SubmitButton disabled={!canExecute} confirmText="Executar bootstrap controlado? Serão consultados chats e mensagens recentes da Lips. Nenhuma mensagem será enviada.">
+                  Bootstrap controlado
+                </SubmitButton>
+              </form>
+              <form action={formAction}>
+                <input type="hidden" name="action" value="incremental" />
+                <SubmitButton disabled={!canExecute} confirmText="Executar incremental usando checkpoints existentes? Nenhuma mensagem será enviada.">
+                  Incremental
+                </SubmitButton>
+              </form>
+              <form action={formAction}>
+                <input type="hidden" name="action" value="reconciliation" />
+                <SubmitButton disabled={!canExecute} confirmText="Executar reconciliação? Nenhuma mensagem será enviada.">
+                  Reconciliação
+                </SubmitButton>
+              </form>
+              <form action={formAction}>
+                <input type="hidden" name="action" value="process_next" />
+                <SubmitButton disabled={!canExecute} confirmText="Processar próximo job de lips-main? Não executa em paralelo.">
+                  Processar próximo job
+                </SubmitButton>
+              </form>
+            </div>
+          </section>
         </CardContent>
       </Card>
 
