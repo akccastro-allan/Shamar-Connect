@@ -11,5 +11,6 @@ export async function resolveOperationsFilters(searchParams: SearchParams): Prom
   return {
     company: first(params?.company),
     period: first(params?.period),
+    q: first(params?.q),
   };
 }
