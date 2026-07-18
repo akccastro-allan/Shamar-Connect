@@ -7,6 +7,7 @@ import {
   getLipsWhatsappSyncDiagnostics,
   isReadOnlySyncDiagnosticsAction,
   isWriteSyncDiagnosticsAction,
+  probeLipsWhatsappChatsReadOnly,
   isWhatsappSyncDiagnosticsOperatorCandidate,
   runLipsWhatsappSyncDiagnostics,
   sanitizeSyncRun,
@@ -93,14 +94,15 @@ function createDb(seed?: Partial<Tables>) {
   return { db: { from: (table: string) => new Query(table) } as any, tables, writes };
 }
 
-function providerFactory(calls: string[] = [], optionsCalls: Array<Record<string, unknown> | undefined> = []): (sessionId: string, options?: Record<string, unknown>) => OpenWaSyncProvider {
+function providerFactory(calls: string[] = [], optionsCalls: Array<Record<string, unknown> | undefined> = [], listOptionsCalls: Array<Record<string, unknown> | undefined> = []): (sessionId: string, options?: Record<string, unknown>) => OpenWaSyncProvider {
   return (sessionId: string, options?: Record<string, unknown>) => {
     calls.push(sessionId);
     optionsCalls.push(options);
     return {
       sessionId,
       async getConnectionStatus() { return "ready"; },
-      async listChats() {
+      async listChats(options?: Record<string, unknown>) {
+        listOptionsCalls.push(options);
         return [
           { id: "551100000000@c.us", name: "Cliente", isGroup: false, lastMessageAt: "2026-07-15T11:00:00.000Z" },
           { id: "120363@g.us", name: "Grupo", isGroup: true, lastMessageAt: "2026-07-15T11:00:00.000Z" },
@@ -159,10 +161,61 @@ test("production blocks execution without explicit internal flag and preview all
 test("status is read-only even when execute flag is false and write actions stay classified as writes", () => {
   assert.equal(canExecuteSyncDiagnostics({ vercelEnv: "production", metadata: { features: { command_center: true } } }), false);
   assert.equal(isReadOnlySyncDiagnosticsAction("status"), true);
+  assert.equal(isReadOnlySyncDiagnosticsAction("probe_chats"), true);
   assert.equal(isWriteSyncDiagnosticsAction("bootstrap"), true);
   assert.equal(isWriteSyncDiagnosticsAction("incremental"), true);
   assert.equal(isWriteSyncDiagnosticsAction("reconciliation"), true);
   assert.equal(isWriteSyncDiagnosticsAction("process_next"), true);
+});
+
+test("read-only chat probe lists a small page without writing sync or queue state", async () => {
+  const { db, tables, writes } = createDb({ whatsapp_channel_sync_state: [], whatsapp_sync_runs: [] });
+  const before = JSON.stringify(tables);
+  const calls: string[] = [];
+  const optionsCalls: Array<Record<string, unknown> | undefined> = [];
+  const listOptionsCalls: Array<Record<string, unknown> | undefined> = [];
+
+  const result = await probeLipsWhatsappChatsReadOnly(db, providerFactory(calls, optionsCalls, listOptionsCalls), { limit: 5 });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.code, "ok");
+  assert.equal(result.requestedLimit, 5);
+  assert.equal(result.returned, 2);
+  assert.equal(result.paginationAvailable, true);
+  assert.deepEqual(calls, ["lips-main"]);
+  assert.equal(optionsCalls[0]?.baseUrl, "https://gateway.example.com");
+  assert.deepEqual(listOptionsCalls[0], { limit: 5, offset: 0 });
+  assert.equal(writes.length, 0);
+  assert.equal(tables.whatsapp_channel_sync_state.length, 0);
+  assert.equal(tables.whatsapp_sync_runs.length, 0);
+  assert.equal(JSON.stringify(tables), before);
+  assert.equal(JSON.stringify(result).includes("gateway.example.com"), false);
+});
+
+test("read-only chat probe defaults to 5 rejects more than 10 and detects ignored pagination", async () => {
+  const defaultListOptions: Array<Record<string, unknown> | undefined> = [];
+  const defaultResult = await probeLipsWhatsappChatsReadOnly(createDb().db, providerFactory([], [], defaultListOptions));
+  assert.equal(defaultResult.requestedLimit, 5);
+  assert.deepEqual(defaultListOptions[0], { limit: 5, offset: 0 });
+
+  const calls: string[] = [];
+  const rejected = await probeLipsWhatsappChatsReadOnly(createDb().db, providerFactory(calls), { limit: 11 });
+  assert.equal(rejected.ok, false);
+  assert.equal(rejected.code, "probe_limit_out_of_bounds");
+  assert.equal(rejected.maxLimit, 10);
+  assert.deepEqual(calls, []);
+
+  const ignoredFactory = () => ({
+    sessionId: "lips-main",
+    async getConnectionStatus() { return "ready" as const; },
+    async listChats() {
+      return Array.from({ length: 6 }, (_, index) => ({ id: `55110000000${index}@c.us`, name: `Cliente ${index}`, isGroup: false }));
+    },
+    async listChatMessages() { return []; },
+  });
+  const ignored = await probeLipsWhatsappChatsReadOnly(createDb().db, ignoredFactory, { limit: 5 });
+  assert.equal(ignored.paginationIgnored, true);
+  assert.equal(ignored.paginationAvailable, false);
 });
 
 test("read-only status probes gateway from database URL with env token and returns sanitized DTO", async () => {

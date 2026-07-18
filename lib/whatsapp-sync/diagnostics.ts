@@ -1,4 +1,5 @@
 import type { createSupabaseWriteClient } from "../supabase/server-write.ts";
+import { PROVIDER_TIMEOUT_MS } from "../providers/whatsapp-web-gateway-client.ts";
 import { enqueueWhatsappSync, processQueuedWhatsappSyncRunsForChannel, type WhatsappSyncMode } from "./service.ts";
 import { isOpenWaConnected, type OpenWaSyncProvider } from "./providers/openwa-sync-provider.ts";
 
@@ -27,13 +28,15 @@ type GatewaySession = {
   me?: { user?: string | null } | null;
 };
 
-export type SyncDiagnosticsAction = "status" | "diagnostic" | "bootstrap" | "incremental" | "reconciliation" | "process_next";
+export type SyncDiagnosticsAction = "status" | "probe_chats" | "diagnostic" | "bootstrap" | "incremental" | "reconciliation" | "process_next";
 
 const LIPS_SESSION_ID = "lips-main";
 const LIPS_ORGANIZATION_SLUG = "auto-pecas-auto-center-lips";
 const GATEWAY_PROBE_TIMEOUT_MS = 15_000;
 const BOOTSTRAP_CHAT_LIMIT = 100;
 const BOOTSTRAP_MESSAGE_LIMIT = 100;
+const PROBE_CHAT_DEFAULT_LIMIT = 5;
+const PROBE_CHAT_MAX_LIMIT = 10;
 const QUEUE_FIELDS = [
   "queue_status",
   "priority",
@@ -67,7 +70,7 @@ export function canExecuteSyncDiagnostics(input: { vercelEnv?: string | null; me
 }
 
 export function isReadOnlySyncDiagnosticsAction(action: SyncDiagnosticsAction) {
-  return action === "status";
+  return action === "status" || action === "probe_chats";
 }
 
 export function isWriteSyncDiagnosticsAction(action: SyncDiagnosticsAction) {
@@ -93,6 +96,7 @@ function safeError(value: unknown) {
   const text = String(value || "")
     .replace(/https?:\/\/\S+/g, "[url-redacted]")
     .replace(/Bearer\s+[^\s]+/gi, "Bearer [token-redacted]")
+    .replace(/\b\d{8,}\b/g, "[number-redacted]")
     .replace(/[A-Za-z0-9_-]{24,}/g, "[token-redacted]");
   return text.slice(0, 220);
 }
@@ -488,6 +492,70 @@ export async function getLipsWhatsappReadOnlyStatus(db: Db) {
     inventory,
     limits: { chatLimit: BOOTSTRAP_CHAT_LIMIT, messageLimit: BOOTSTRAP_MESSAGE_LIMIT, maxAgeDays: 30, groupsIgnored: true },
   };
+}
+
+export async function probeLipsWhatsappChatsReadOnly(db: Db, providerFactory: ProviderFactory, input?: { limit?: number }) {
+  const { channel } = await resolveLipsSyncChannel(db);
+  const gatewayOptions = await loadGatewayOptions(db, channel.gateway_id);
+  const rawLimit = input?.limit === undefined ? PROBE_CHAT_DEFAULT_LIMIT : Math.trunc(Number(input.limit));
+  const limit = Number.isFinite(rawLimit) ? rawLimit : PROBE_CHAT_DEFAULT_LIMIT;
+  if (limit < 1 || limit > PROBE_CHAT_MAX_LIMIT) {
+    return {
+      action: "probe_chats" as const,
+      ok: false,
+      code: "probe_limit_out_of_bounds",
+      durationMs: 0,
+      returned: 0,
+      requestedLimit: limit,
+      maxLimit: PROBE_CHAT_MAX_LIMIT,
+      paginationAvailable: false,
+      paginationIgnored: false,
+      timeoutMs: PROVIDER_TIMEOUT_MS.listChats,
+      checkedAt: new Date().toISOString(),
+      error: `probe_limit_must_be_between_1_and_${PROBE_CHAT_MAX_LIMIT}`,
+      sentMessages: false,
+      returnedSecret: false,
+    };
+  }
+  const provider = providerFactory(LIPS_SESSION_ID, gatewayOptions);
+  const startedAt = Date.now();
+  try {
+    const chats = await provider.listChats({ limit, offset: 0 });
+    return {
+      action: "probe_chats" as const,
+      ok: true,
+      code: "ok",
+      durationMs: Date.now() - startedAt,
+      returned: chats.length,
+      requestedLimit: limit,
+      maxLimit: PROBE_CHAT_MAX_LIMIT,
+      paginationAvailable: chats.length <= limit,
+      paginationIgnored: chats.length > limit,
+      timeoutMs: PROVIDER_TIMEOUT_MS.listChats,
+      checkedAt: new Date().toISOString(),
+      error: null,
+      sentMessages: false,
+      returnedSecret: false,
+    };
+  } catch (error) {
+    const timeout = error instanceof Error && error.message.toLowerCase().includes("timeout");
+    return {
+      action: "probe_chats" as const,
+      ok: false,
+      code: timeout ? "provider_list_chats_timeout" : "provider_list_chats_failed",
+      durationMs: Date.now() - startedAt,
+      returned: 0,
+      requestedLimit: limit,
+      maxLimit: PROBE_CHAT_MAX_LIMIT,
+      paginationAvailable: false,
+      paginationIgnored: false,
+      timeoutMs: PROVIDER_TIMEOUT_MS.listChats,
+      checkedAt: new Date().toISOString(),
+      error: safeError(error instanceof Error ? error.message : String(error)),
+      sentMessages: false,
+      returnedSecret: false,
+    };
+  }
 }
 
 function actionMode(action: SyncDiagnosticsAction): WhatsappSyncMode | null {

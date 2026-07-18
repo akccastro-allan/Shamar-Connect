@@ -11,8 +11,9 @@ test("OpenWA sync adapter reuses the existing session client", async () => {
         calls.push("getStatus");
         return { provider: "whatsapp_web" as const, status: "ready" as const };
       },
-      async listChats() {
+      async listChats(options?: { limit?: number; offset?: number }) {
         calls.push("listChats");
+        assert.deepEqual(options, { limit: 5, offset: 10 });
         return [{ id: "5511999999999@c.us", name: "Cliente", isGroup: false }];
       },
       async listChatMessages(chatId: string, limit?: number) {
@@ -31,7 +32,7 @@ test("OpenWA sync adapter reuses the existing session client", async () => {
   const provider = createOpenWaSyncProvider("lips-main", resolver);
 
   assert.equal(await provider.getConnectionStatus(), "ready");
-  assert.deepEqual(await provider.listChats(), [{ id: "5511999999999@c.us", name: "Cliente", isGroup: false }]);
+  assert.deepEqual(await provider.listChats({ limit: 5, offset: 10 }), [{ id: "5511999999999@c.us", name: "Cliente", isGroup: false }]);
   assert.equal((await provider.listChatMessages("5511999999999@c.us", 50))[0]?.id, "m1");
   assert.deepEqual(calls, ["getStatus", "listChats", "listChatMessages:5511999999999@c.us:50"]);
 });

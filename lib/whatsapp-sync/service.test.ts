@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { OpenWaGatewayError } from "../providers/whatsapp-web-gateway-client.ts";
 import {
   enqueueDueWhatsappReconciliations,
   enqueueWhatsappSyncForConnectedSession,
@@ -115,12 +116,12 @@ function seedBase(extra?: Partial<Tables>) {
   });
 }
 
-function providerFactory(options?: { status?: "ready" | "disconnected"; chatCount?: number; onListChats?: () => void }): () => OpenWaSyncProvider {
+function providerFactory(options?: { status?: "ready" | "disconnected"; chatCount?: number; onListChats?: (listOptions?: Record<string, unknown>) => void }): () => OpenWaSyncProvider {
   return () => ({
     sessionId: "lips-main",
     async getConnectionStatus() { return options?.status || "ready"; },
-    async listChats() {
-      options?.onListChats?.();
+    async listChats(listOptions?: Record<string, unknown>) {
+      options?.onListChats?.(listOptions);
       const count = options?.chatCount ?? 1;
       return Array.from({ length: count }, (_, index) => ({ id: `55119999999${index}@c.us`, name: `Cliente ${index}`, isGroup: false, unreadCount: 1, lastMessageAt: "2026-07-15T12:00:00.000Z" }));
     },
@@ -158,6 +159,105 @@ test("worker calls OpenWA provider and persists chat, contact, conversation, mes
   assert.ok(tables.whatsapp_channel_sync_state[0].last_message_checkpoint);
 });
 
+test("worker records sanitized list_chats timeout diagnostics and releases locks", async () => {
+  const queueFields = { queue_status: "in_progress", priority: "urgent", requires_human: true, assigned_user_id: "user-1" };
+  const { db, tables } = seedBase({
+    whatsapp_conversations: [{ id: "conv-existing", tenant_id: tenantId, organization_id: organizationId, channel_id: channelId, external_chat_id: "5521999998888@c.us", provider: "whatsapp_web", ...queueFields }],
+    whatsapp_sync_runs: [{ id: "run-1", tenant_id: tenantId, organization_id: organizationId, channel_id: channelId, sync_state_id: "state-1", mode: "bootstrap", status: "queued", selected_chat_ids: [], chat_limit: 100, message_limit: 100, scheduled_at: "2026-07-15T00:00:00.000Z", metadata: {} }],
+  });
+  const beforeQueue = JSON.stringify(tables.whatsapp_conversations);
+  const provider = () => ({
+    sessionId: "lips-main",
+    async getConnectionStatus() { return "ready" as const; },
+    async listChats() {
+      throw new OpenWaGatewayError({
+        message: "OpenWA timeout after 20000ms https://gateway.example.com Bearer very-secret-token-value-that-must-not-leak phone 5521999998888",
+        code: "openwa_timeout",
+        timeoutMs: 20_000,
+        retryable: true,
+        attempts: 2,
+        retrySkippedReason: "insufficient_time_budget",
+      });
+    },
+    async listChatMessages() { return []; },
+  });
+
+  await processQueuedWhatsappSyncRuns(db, 1, provider);
+
+  const run = tables.whatsapp_sync_runs[0];
+  assert.equal(run.status, "failed");
+  assert.equal(run.errors_count, 1);
+  assert.equal(run.locked_at, null);
+  assert.equal(run.diagnostics.failed_stage, "list_chats");
+  assert.equal(run.diagnostics.code, "provider_list_chats_timeout");
+  assert.equal(run.diagnostics.timeout_ms, 20_000);
+  assert.equal(run.diagnostics.attempt, 2);
+  assert.equal(run.diagnostics.retryable, true);
+  assert.equal(run.diagnostics.retry_skipped_reason, "insufficient_time_budget");
+  const payload = JSON.stringify(run.diagnostics);
+  assert.equal(payload.includes("gateway.example.com"), false);
+  assert.equal(payload.includes("very-secret-token"), false);
+  assert.equal(payload.includes("5521999998888"), false);
+  assert.equal(tables.whatsapp_channel_sync_state[0].sync_status, "failed");
+  assert.equal(tables.whatsapp_channel_sync_state[0].locked_at, null);
+  assert.equal(JSON.stringify(tables.whatsapp_conversations), beforeQueue);
+  assert.equal(tables.whatsapp_messages.length, 0);
+});
+
+test("continuation run consumes provider-paginated offset without slicing it away", async () => {
+  const listOptionsCalls: Array<Record<string, unknown> | undefined> = [];
+  const { db, tables } = seedBase({
+    whatsapp_sync_runs: [{ id: "run-1", tenant_id: tenantId, organization_id: organizationId, channel_id: channelId, sync_state_id: "state-1", mode: "bootstrap", status: "queued", selected_chat_ids: [], chat_limit: 100, message_limit: 100, scheduled_at: "2026-07-15T00:00:00.000Z", metadata: { cursorOffset: 100 } }],
+  });
+  const provider = () => ({
+    sessionId: "lips-main",
+    async getConnectionStatus() { return "ready" as const; },
+    async listChats(listOptions?: Record<string, unknown>) {
+      listOptionsCalls.push(listOptions);
+      return [{ id: "5511999999100@c.us", name: "Cliente 100", isGroup: false, unreadCount: 1, lastMessageAt: "2026-07-15T12:00:00.000Z" }];
+    },
+    async listChatMessages(chatId: string) {
+      return [{ id: `msg-${chatId}`, chatId, direction: "inbound" as const, from: chatId, body: "pagina 2", timestamp: 1_783_000_000 }];
+    },
+  });
+
+  await processQueuedWhatsappSyncRuns(db, 1, provider);
+
+  assert.deepEqual(listOptionsCalls[0], { limit: 100, offset: 100 });
+  assert.equal(tables.whatsapp_sync_runs[0].status, "completed");
+  assert.equal(tables.whatsapp_sync_runs[0].diagnostics.listChats.paginationLikelyApplied, true);
+  assert.equal(tables.whatsapp_conversations.length, 1);
+  assert.equal(tables.whatsapp_conversations[0].external_chat_id, "5511999999100@c.us");
+});
+
+test("bootstrap processes provider-paginated chat pages up to the requested total", async () => {
+  const listOptionsCalls: Array<Record<string, unknown> | undefined> = [];
+  const { db, tables } = seedBase({
+    whatsapp_sync_runs: [{ id: "run-1", tenant_id: tenantId, organization_id: organizationId, channel_id: channelId, sync_state_id: "state-1", mode: "bootstrap", status: "queued", selected_chat_ids: [], chat_limit: 100, message_limit: 1, scheduled_at: "2026-07-15T00:00:00.000Z", metadata: {} }],
+  });
+  const provider = () => ({
+    sessionId: "lips-main",
+    async getConnectionStatus() { return "ready" as const; },
+    async listChats(listOptions?: Record<string, unknown>) {
+      listOptionsCalls.push(listOptions);
+      const offset = Number(listOptions?.offset || 0);
+      const count = offset === 0 ? 100 : 1;
+      return Array.from({ length: count }, (_, index) => ({ id: `55119999${offset + index}@c.us`, name: `Cliente ${offset + index}`, isGroup: false, unreadCount: 1, lastMessageAt: "2026-07-15T12:00:00.000Z" }));
+    },
+    async listChatMessages(chatId: string) {
+      return [{ id: `msg-${chatId}`, chatId, direction: "inbound" as const, from: chatId, body: "pagina", timestamp: 1_783_000_000 }];
+    },
+  });
+
+  const result = await processQueuedWhatsappSyncRuns(db, 2, provider);
+
+  assert.equal(result.processedRuns, 2);
+  assert.deepEqual(listOptionsCalls, [{ limit: 100, offset: 0 }, { limit: 100, offset: 100 }]);
+  assert.equal(tables.whatsapp_sync_runs[0].status, "partial");
+  assert.equal(tables.whatsapp_sync_runs[1].status, "completed");
+  assert.equal(tables.whatsapp_conversations.length, 101);
+});
+
 test("0035 keeps sync tables server-only", () => {
   assert.match(migration0035, /revoke all on table public\.whatsapp_channel_sync_state from public, anon, authenticated/);
   assert.match(migration0035, /revoke all on table public\.whatsapp_sync_runs from public, anon, authenticated/);
@@ -186,6 +286,7 @@ test("partial run stores continuation job", async () => {
   await processQueuedWhatsappSyncRuns(db, 1, providerFactory({ chatCount: 101 }));
 
   assert.equal(tables.whatsapp_sync_runs[0].status, "partial");
+  assert.equal(tables.whatsapp_sync_runs[0].diagnostics.listChats.paginationLikelyApplied, false);
   assert.equal(tables.whatsapp_sync_runs[1].status, "queued");
   assert.equal(tables.whatsapp_sync_runs[1].metadata.cursorOffset, 100);
 });

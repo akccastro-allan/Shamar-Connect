@@ -64,6 +64,26 @@ function GatewayStatusCard({ status }: { status: any }) {
   );
 }
 
+function ProbeChatsCard({ result }: { result: any }) {
+  if (result?.action !== "probe_chats") return null;
+  return (
+    <Card className="rounded-[2rem] border-amber-200 bg-amber-50">
+      <CardHeader><CardTitle className="text-lg font-black text-[#1B2F5B]">Teste read-only de chats</CardTitle></CardHeader>
+      <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Stat label="Resultado" value={result.ok ? "sucesso" : result.code || "falha"} />
+        <Stat label="Duração" value={`${result.durationMs ?? 0}ms`} />
+        <Stat label="Limite solicitado" value={result.requestedLimit ?? 5} />
+        <Stat label="Limite máximo probe" value={result.maxLimit ?? 10} />
+        <Stat label="Quantidade retornada" value={result.returned ?? 0} />
+        <Stat label="Paginação/limite" value={result.paginationIgnored ? "ignorada" : result.paginationAvailable ? "aparentemente aplicado" : "não confirmado"} />
+        <Stat label="Timeout" value={`${result.timeoutMs ?? 0}ms`} />
+        <Stat label="Consultado em" value={result.checkedAt || "—"} />
+        <Stat label="Erro seguro" value={result.error || "—"} />
+      </CardContent>
+    </Card>
+  );
+}
+
 export function WhatsappSyncDiagnosticsClient({ initialSnapshot, canExecute, vercelEnv }: { initialSnapshot: Snapshot; canExecute: boolean; vercelEnv: string }) {
   const [state, formAction] = useActionState(runWhatsappSyncDiagnosticsAction, { ok: true } as WhatsappSyncDiagnosticsActionState);
   const result = state.result;
@@ -88,8 +108,9 @@ export function WhatsappSyncDiagnosticsClient({ initialSnapshot, canExecute, ver
 
       <SnapshotCards snapshot={snapshot} />
       <GatewayStatusCard status={result?.gatewayStatus} />
+      <ProbeChatsCard result={result} />
 
-      <Card className="rounded-[2rem]"><CardHeader><CardTitle className="flex items-center gap-2 text-lg font-black text-[#1B2F5B]"><RefreshCcw className="h-5 w-5" /> Ações de homologação</CardTitle></CardHeader><CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3"><form action={formAction}><input type="hidden" name="action" value="status" /><SubmitButton pendingLabel="Consultando...">Verificar status</SubmitButton></form><form action={formAction}><input type="hidden" name="action" value="diagnostic" /><SubmitButton disabled={!canExecute} confirmText="Executar diagnóstico? Será processado no máximo um run, sem envio de mensagens.">Executar diagnóstico</SubmitButton></form><form action={formAction}><input type="hidden" name="action" value="bootstrap" /><SubmitButton disabled={!canExecute} confirmText="Executar bootstrap controlado? Serão consultados chats e mensagens recentes da Lips. Nenhuma mensagem será enviada.">Bootstrap controlado</SubmitButton></form><form action={formAction}><input type="hidden" name="action" value="incremental" /><SubmitButton disabled={!canExecute} confirmText="Executar incremental usando checkpoints existentes? Nenhuma mensagem será enviada.">Incremental</SubmitButton></form><form action={formAction}><input type="hidden" name="action" value="reconciliation" /><SubmitButton disabled={!canExecute} confirmText="Executar reconciliação? Nenhuma mensagem será enviada.">Reconciliation</SubmitButton></form><form action={formAction}><input type="hidden" name="action" value="process_next" /><SubmitButton disabled={!canExecute} confirmText="Processar próximo job de lips-main? Não executa em paralelo.">Processar próximo job</SubmitButton></form></CardContent></Card>
+      <Card className="rounded-[2rem]"><CardHeader><CardTitle className="flex items-center gap-2 text-lg font-black text-[#1B2F5B]"><RefreshCcw className="h-5 w-5" /> Ações de homologação</CardTitle></CardHeader><CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3"><form action={formAction}><input type="hidden" name="action" value="status" /><SubmitButton pendingLabel="Consultando...">Verificar status</SubmitButton></form><form action={formAction}><input type="hidden" name="action" value="probe_chats" /><SubmitButton pendingLabel="Testando...">Testar leitura de chats</SubmitButton></form><form action={formAction}><input type="hidden" name="action" value="diagnostic" /><SubmitButton disabled={!canExecute} confirmText="Executar diagnóstico? Será processado no máximo um run, sem envio de mensagens.">Executar diagnóstico</SubmitButton></form><form action={formAction}><input type="hidden" name="action" value="bootstrap" /><SubmitButton disabled={!canExecute} confirmText="Executar bootstrap controlado? Serão consultados chats e mensagens recentes da Lips. Nenhuma mensagem será enviada.">Bootstrap controlado</SubmitButton></form><form action={formAction}><input type="hidden" name="action" value="incremental" /><SubmitButton disabled={!canExecute} confirmText="Executar incremental usando checkpoints existentes? Nenhuma mensagem será enviada.">Incremental</SubmitButton></form><form action={formAction}><input type="hidden" name="action" value="reconciliation" /><SubmitButton disabled={!canExecute} confirmText="Executar reconciliação? Nenhuma mensagem será enviada.">Reconciliation</SubmitButton></form><form action={formAction}><input type="hidden" name="action" value="process_next" /><SubmitButton disabled={!canExecute} confirmText="Processar próximo job de lips-main? Não executa em paralelo.">Processar próximo job</SubmitButton></form></CardContent></Card>
 
       {result?.runs?.length ? <Card className="rounded-[2rem]"><CardHeader><CardTitle className="text-lg font-black text-[#1B2F5B]">Contadores</CardTitle></CardHeader><CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{result.runs.map((run: any) => <div key={`${run.id}-${run.status}`} className="rounded-2xl border border-slate-100 bg-white p-4"><p className="font-black text-[#1B2F5B]">Run {run.id}</p><p className="mt-1 text-sm text-slate-600">Status: {run.status}</p><p className="mt-1 text-sm text-slate-600">Chats: {run.chatsSynced}/{run.chatsScanned} · grupos ignorados {run.chatsSkipped}</p><p className="mt-1 text-sm text-slate-600">Mensagens: {run.messagesScanned} examinadas · {run.messagesSaved} salvas · {run.messagesUpdated} atualizadas</p><p className="mt-1 text-sm text-slate-600">Erros: {run.errorsCount}</p></div>)}</CardContent></Card> : null}
 
