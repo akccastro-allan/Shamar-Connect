@@ -95,3 +95,49 @@ test("operations command center has no fake controls or SaaS client leakage", ()
       diagnostics.indexOf("Execuções controladas"),
   );
 });
+
+test("operations core actions validate command center internal company and audit writes", () => {
+  const actions = readFileSync("lib/operations/actions.ts", "utf8");
+  const panels = readFileSync("components/operations/operations-action-panels.tsx", "utf8");
+  const source = readFileSync("components/operations/operations-command-center.tsx", "utf8");
+
+  assert.match(actions, /getRequiredAppContext/);
+  assert.match(actions, /canAccessCommandCenter/);
+  assert.match(actions, /isAllowedOperationsCompanySlug/);
+  assert.match(actions, /loadInternalOrganizationIds/);
+  assert.match(actions, /eq\("tenant_id", actor\.tenantId\)/);
+  assert.match(actions, /audit_trail/);
+  assert.match(actions, /operations\.task\.create/);
+  assert.match(actions, /operations\.event\.create/);
+  assert.match(actions, /operations\.content\.create/);
+  assert.match(actions, /operations\.alert\.update/);
+  assert.match(actions, /metadata\.operations/);
+  assert.doesNotMatch(actions, /sendMessage|publish\(/);
+  assert.doesNotMatch(actions, /lips-main|hall-main/);
+  assert.match(panels, /useActionState/);
+  assert.match(panels, /status\.pending/);
+  assert.match(panels, /disabled=\{status\.pending\}/);
+  assert.match(source, /TaskOperationsForm/);
+  assert.match(source, /EventOperationsForm/);
+  assert.match(source, /ContentOperationsForm/);
+  assert.match(source, /CompanyOperationsForm/);
+  assert.match(source, /AlertOperationsForm/);
+});
+
+test("operations sanitizer removes urls bearer tokens and long tokens", () => {
+  const actions = readFileSync("lib/operations/actions.ts", "utf8");
+  assert.match(actions, /replace\(\/https\?:\\\/\\\/\\S\+\/g, "\[url\]"\)/);
+  assert.match(actions, /replace\(\/Bearer\\s\+\[\^\\s\]\+\/gi, "Bearer \[token\]"\)/);
+  assert.match(actions, /replace\(\/\[A-Za-z0-9_-\]\{32,\}\/g, "\[redacted\]"\)/);
+});
+
+test("operations snapshot includes alerts audit and restricted search without messages", () => {
+  const loader = readFileSync("lib/operations/command-center.ts", "utf8");
+  assert.match(loader, /system_alerts/);
+  assert.match(loader, /audit_trail/);
+  assert.match(loader, /contains\("metadata", \{ source: "operations_command_center" \}\)/);
+  assert.match(loader, /orgIdSet\.has/);
+  assert.match(loader, /matchesSearch\(\[alert\.title/);
+  assert.match(loader, /whatsapp_conversations"\).*select\("id, organization_id, name, status/);
+  assert.doesNotMatch(loader, /body|message_text\], search/);
+});

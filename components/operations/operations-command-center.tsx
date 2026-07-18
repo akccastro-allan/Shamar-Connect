@@ -23,6 +23,13 @@ import {
   ResponsiveDataList,
   SectionHeader,
 } from "@/components/operations/ui";
+import {
+  AlertOperationsForm,
+  CompanyOperationsForm,
+  ContentOperationsForm,
+  EventOperationsForm,
+  TaskOperationsForm,
+} from "@/components/operations/operations-action-panels";
 import { cn } from "@/lib/utils";
 
 type FrameProps = {
@@ -352,6 +359,7 @@ export function OperationsCompanyDetailPage({ snapshot, company }: { snapshot: O
           <div className="rounded-2xl bg-slate-50 p-4"><p className="font-black text-[#1B2F5B]">Canais planejados</p><div className="mt-3 flex flex-wrap gap-2">{company.channels.map((channel) => <Pill key={channel.key} tone={channel.status}>{channel.label}</Pill>)}</div></div>
         </div>
       </section>
+      {company.organizationId ? <CompanyOperationsForm company={company} /> : null}
       <section id="canais" className="scroll-mt-6 rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm">
         <SectionHeader title="Canais" description="Canais reais vinculados à empresa selecionada." />
         <div className="mt-4"><SimpleRows rows={snapshot.channels} emptyTitle="Nenhum canal real" render={(item) => <Row key={item.id} title={item.name} meta={`Sessão: ${item.session_id || "sem sessão"} · Provider: ${item.provider || "whatsapp_web"} · Última atividade: ${formatDate(item.updated_at)}`} tone={item.active === false ? "disconnected" : item.status || "connected"} icon={MessageCircle} />} /></div>
@@ -438,6 +446,7 @@ export function OperationsContentPage({ snapshot }: { snapshot: OperationsSnapsh
       <FilterBar>
         <SectionHeader title="Supervisão de conteúdo" description="Somente leitura nesta fase. A tela não cria publicação externa e não exibe tokens de plataforma." />
       </FilterBar>
+      <ContentOperationsForm companies={snapshot.companies} />
       <SimpleRows rows={snapshot.broadcasts} emptyTitle="Nenhuma publicação programada" render={(item) => <Row key={item.id} title={`${companyName(snapshot, item.organization_id)} · ${item.title}`} meta={`Resumo: ${safeText(item.message_text)} · Responsável: ${item.created_by || "Não informado"} · Programado: ${formatDate(item.scheduled_at)} · Última alteração: ${formatDate(item.updated_at || item.created_at)}`} tone={item.status} icon={FileText} />} />
     </OperationsFrame>
   );
@@ -447,6 +456,7 @@ export function OperationsCalendarPage({ snapshot }: { snapshot: OperationsSnaps
   const scheduledPosts = snapshot.broadcasts.filter((item) => item.scheduled_at && item.status !== "published");
   return (
     <OperationsFrame snapshot={snapshot} activeHref="/operations/calendar" title="Agenda" description="Compromissos, eventos, publicações programadas, follow-ups e tarefas com data.">
+      <EventOperationsForm companies={snapshot.companies} />
       <SimpleRows rows={[...snapshot.events, ...scheduledPosts]} emptyTitle="Nenhum evento interno encontrado" render={(item) => "starts_at" in item ? <Row key={item.id} title={`${companyName(snapshot, item.organization_id)} · ${item.title}`} meta={`Status: ${item.status || "scheduled"} · Início: ${formatDate(item.starts_at)}`} tone={item.status} icon={Clock} /> : <Row key={item.id} title={`${companyName(snapshot, item.organization_id)} · ${item.title}`} meta={`Publicação programada: ${formatDate(item.scheduled_at)}`} tone={item.status} icon={FileText} />} />
     </OperationsFrame>
   );
@@ -455,6 +465,7 @@ export function OperationsCalendarPage({ snapshot }: { snapshot: OperationsSnaps
 export function OperationsTasksPage({ snapshot }: { snapshot: OperationsSnapshot }) {
   return (
     <OperationsFrame snapshot={snapshot} activeHref="/operations/tasks" title="Tarefas" description="Pendências operacionais e comerciais acompanhadas por empresa, sem criar um segundo sistema de tarefas.">
+      <TaskOperationsForm companies={snapshot.companies} />
       <SimpleRows rows={snapshot.tasks} emptyTitle="Nenhuma tarefa encontrada" render={(item) => <Row key={item.id} title={`${companyName(snapshot, item.organization_id)} · ${item.title}`} meta={`Módulo: CRM · Responsável: não informado · Prioridade: ${item.priority || "normal"} · Prazo: ${formatDate(item.due_at)} · Origem: crm_tasks`} tone={item.status} icon={ListChecks} />} />
     </OperationsFrame>
   );
@@ -492,6 +503,10 @@ export function OperationsDiagnosticsPage({ snapshot }: { snapshot: OperationsSn
         <Row title="Integrações" meta={`${snapshot.summary.integrationErrors} erro(s) em fontes ou execuções de integração.`} tone={snapshot.summary.integrationErrors > 0 ? "failed" : "healthy"} icon={Activity} />
         <Row title="Deploy" meta="Deploy automático Vercel/GitHub monitorado fora desta tela. Nenhuma ação manual é disparada aqui." tone="not_configured" icon={ShieldCheck} />
       </section>
+      <section className="grid gap-4 lg:grid-cols-2">
+        {snapshot.systemAlerts.map((alert) => <AlertRow key={alert.id} alert={alert} />)}
+      </section>
+      {snapshot.systemAlerts.length === 0 ? <OperationsEmptyState title="Nenhum alerta aberto" description="Alertas do sistema aparecerão aqui para reconhecimento, tratamento e resolução sem apagar histórico." /> : null}
     </OperationsFrame>
   );
 }
@@ -503,7 +518,7 @@ export function OperationsAuditPage({ snapshot }: { snapshot: OperationsSnapshot
         <SectionHeader title="Filtros disponíveis" description="Empresa, período e busca global são preservados nesta rota. Filtros por usuário, ação e resultado serão habilitados quando houver fonte de auditoria multiempresa sanitizada." />
       </FilterBar>
       <section className="grid gap-4 md:grid-cols-2"><Row title="Escopo" meta="Somente tenant plataforma, operador global e Centro de Comando habilitado." tone="connected" icon={ShieldCheck} /><Row title="Última atualização" meta={formatDate(snapshot.generatedAt)} tone="planned" icon={Clock} /></section>
-      <OperationsEmptyState title="Nenhum evento de auditoria exibido" description="A leitura de eventos brutos não foi ativada para evitar payloads sensíveis. Quando a fonte sanitizada estiver disponível, os detalhes aparecerão aqui sem tokens, cookies ou metadata integral." />
+      <SimpleRows rows={snapshot.auditTrail} emptyTitle="Nenhum evento de auditoria exibido" render={(item) => <Row key={item.id} title={`${item.action} · ${item.entity_type}`} meta={`Usuário: ${item.actor_name || item.actor_email || "sistema"} · Campos: ${(item.changed_fields || []).join(", ") || "não informado"} · Data: ${formatDate(item.created_at)}`} tone="connected" icon={ShieldCheck} />} />
     </OperationsFrame>
   );
 }
@@ -511,6 +526,21 @@ export function OperationsAuditPage({ snapshot }: { snapshot: OperationsSnapshot
 function SimpleRows<T>({ rows, emptyTitle, render }: { rows: T[]; emptyTitle: string; render: (row: T) => React.ReactNode }) {
   if (rows.length === 0) return <EmptyState title={emptyTitle} description="Os registros aparecerão aqui quando existirem para as empresas internas selecionadas." />;
   return <section className="grid gap-4 lg:grid-cols-2">{rows.map(render)}</section>;
+}
+
+function AlertRow({ alert }: { alert: OperationsSnapshot["systemAlerts"][number] }) {
+  return (
+    <div className="rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm">
+      <div className="flex items-start gap-4">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-50 text-amber-700"><ShieldCheck className="h-5 w-5" strokeWidth={2.4} /></span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2"><p className="font-black text-[#1B2F5B]">{alert.title}</p><OperationalStatus status={alert.status || alert.severity} /></div>
+          <p className="mt-2 text-sm leading-6 text-slate-500">{safeText(alert.description)} · Módulo: {alert.module || "geral"} · Criado: {formatDate(alert.created_at)}</p>
+          <AlertOperationsForm alertId={alert.id} />
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function Row({ title, meta, tone, icon: Icon = Sparkles }: { title: string; meta: string; tone?: string | null; icon?: LucideIcon }) {
