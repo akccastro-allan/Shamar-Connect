@@ -140,7 +140,7 @@ export function ContentOperationsForm({ companies }: { companies: OperationsComp
       <div className="grid gap-3 md:grid-cols-2">
         <CompanySelect companies={companies} />
         <Field label="Título"><input name="title" required className={inputClass} /></Field>
-        <Field label="Fluxo"><select name="transition" className={inputClass}><option value="draft">Salvar rascunho</option><option value="review">Enviar para revisão</option><option value="approve">Aprovar internamente</option><option value="reject">Reprovar</option><option value="schedule">Programar internamente</option><option value="cancel_schedule">Cancelar programação</option></select></Field>
+        <Field label="Fluxo"><select name="transition" className={inputClass}><option value="draft">Salvar rascunho</option><option value="review">Enviar para revisão</option><option value="approved">Aprovar internamente</option><option value="scheduled">Programar internamente</option><option value="cancelled">Cancelar</option></select></Field>
         <Field label="Programar para"><input name="scheduledAt" type="datetime-local" className={inputClass} /></Field>
       </div>
       <Field label="Texto"><textarea name="messageText" required className={inputClass} rows={4} /></Field>
@@ -157,6 +157,8 @@ export function AlertOperationsForm({ alertId }: { alertId: string }) {
     <form action={action} className="mt-3 grid gap-2 rounded-2xl bg-slate-50 p-3">
       <input type="hidden" name="id" value={alertId} />
       <select name="status" className={inputClass}>
+        <option value="open">Abrir</option>
+        <option value="active">Ativar</option>
         <option value="acknowledged">Reconhecer</option>
         <option value="in_progress">Em tratamento</option>
         <option value="resolved">Resolver</option>

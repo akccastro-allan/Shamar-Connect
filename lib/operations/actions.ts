@@ -37,14 +37,23 @@ function sanitizeOperationsText(value: string, max = 240) {
     .slice(0, max);
 }
 
-function safeChoice(value: string, allowed: string[], fallback: string) {
-  return allowed.includes(value) ? value : fallback;
+function requireChoice(value: string, allowed: string[], label: string) {
+  if (!allowed.includes(value)) throw new Error(`${label} inválido.`);
+  return value;
 }
 
-function safeDate(value: string) {
+function parseDate(value: string) {
   if (!value) return null;
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function optionalDate(formData: FormData, key: string, label: string) {
+  const value = firstText(formData, key, 80);
+  if (!value) return null;
+  const date = parseDate(value);
+  if (!date) throw new Error(`${label} inválida.`);
+  return date;
 }
 
 function sanitizeError(error: unknown) {
@@ -98,7 +107,7 @@ async function auditOperation(
     metadata?: Record<string, unknown>;
   },
 ) {
-  await db.from("audit_trail").insert({
+  const { error } = await db.from("audit_trail").insert({
     actor_user_id: input.actorUserId,
     actor_name: input.actorName || null,
     actor_email: input.actorEmail || null,
@@ -112,6 +121,7 @@ async function auditOperation(
       ...(input.metadata || {}),
     },
   });
+  if (error) throw error;
 }
 
 function revalidateOperations() {
@@ -136,7 +146,7 @@ export async function saveOperationsCompanyAction(
       businessHours: firstText(formData, "businessHours", 300),
       operationalSettings: firstText(formData, "operationalSettings", 600),
     };
-    const status = safeChoice(firstText(formData, "status", 40), ["active", "inactive", "suspended", "archived"], organization.status || "active");
+    const status = requireChoice(firstText(formData, "status", 40), ["active", "inactive", "suspended", "archived"], "Status");
     const { error } = await db
       .from("organizations")
       .update({
@@ -184,9 +194,9 @@ export async function saveOperationsTaskAction(
       title,
       description: firstText(formData, "description", 600) || null,
       assigned_to: firstText(formData, "assignedTo", 160) || null,
-      priority: safeChoice(firstText(formData, "priority", 40), ["low", "normal", "high", "urgent"], "normal"),
-      status: safeChoice(firstText(formData, "status", 40), ["pending", "in_progress", "blocked", "completed", "cancelled"], "pending"),
-      due_at: safeDate(firstText(formData, "dueAt", 80)),
+      priority: requireChoice(firstText(formData, "priority", 40) || "normal", ["low", "normal", "high", "urgent"], "Prioridade"),
+      status: requireChoice(firstText(formData, "status", 40) || "pending", ["pending", "in_progress", "blocked", "completed", "cancelled"], "Status"),
+      due_at: optionalDate(formData, "dueAt", "Prazo"),
       updated_at: new Date().toISOString(),
     };
     const query = id
@@ -221,17 +231,19 @@ export async function saveOperationsEventAction(
     const organization = await resolveInternalOrganization(db, actor.tenantId, firstText(formData, "companySlug", 80));
     const id = firstText(formData, "id", 80);
     const title = firstText(formData, "title", 180);
-    const startsAt = safeDate(firstText(formData, "startsAt", 80));
+    const startsAt = optionalDate(formData, "startsAt", "Data inicial");
+    const endsAt = optionalDate(formData, "endsAt", "Data final");
     if (!title || !startsAt) throw new Error("Informe título e início do evento.");
+    if (endsAt && new Date(endsAt).getTime() < new Date(startsAt).getTime()) throw new Error("Data final anterior ao início.");
     const payload = {
       tenant_id: actor.tenantId,
       organization_id: organization.id,
       title,
       description: firstText(formData, "description", 600) || null,
-      event_type: safeChoice(firstText(formData, "eventType", 60), ["follow_up", "meeting", "content", "task", "internal"], "follow_up"),
-      status: safeChoice(firstText(formData, "status", 40), ["scheduled", "in_progress", "completed", "cancelled"], "scheduled"),
+      event_type: requireChoice(firstText(formData, "eventType", 60) || "follow_up", ["follow_up", "meeting", "content", "task", "internal"], "Tipo"),
+      status: requireChoice(firstText(formData, "status", 40) || "scheduled", ["scheduled", "in_progress", "completed", "cancelled"], "Status"),
       starts_at: startsAt,
-      ends_at: safeDate(firstText(formData, "endsAt", 80)),
+      ends_at: endsAt,
       location: firstText(formData, "location", 220) || null,
       assigned_to: firstText(formData, "assignedTo", 80) || null,
       updated_at: new Date().toISOString(),
@@ -267,16 +279,17 @@ export async function saveOperationsContentAction(
     const actor = await requireOperationsActor(db);
     const organization = await resolveInternalOrganization(db, actor.tenantId, firstText(formData, "companySlug", 80));
     const id = firstText(formData, "id", 80);
-    const transition = firstText(formData, "transition", 40) || "draft";
+    const transition = requireChoice(firstText(formData, "transition", 40) || "draft", ["draft", "review", "approved", "scheduled", "cancelled"], "Transição");
     const title = firstText(formData, "title", 180);
     const messageText = firstText(formData, "messageText", 1600);
     if (!title || !messageText) throw new Error("Informe título e texto do conteúdo.");
-    const status = transition === "review" || transition === "approve" || transition === "schedule" ? "ready" : transition === "reject" ? "failed" : "draft";
-    const scheduledAt = transition === "schedule" ? safeDate(firstText(formData, "scheduledAt", 80)) : null;
+    const status = transition === "review" || transition === "approved" || transition === "scheduled" ? "ready" : transition === "cancelled" ? "failed" : "draft";
+    const scheduledAt = transition === "scheduled" ? optionalDate(formData, "scheduledAt", "Data de programação") : null;
+    if (transition === "scheduled" && !scheduledAt) throw new Error("Data de programação inválida.");
     const metadata = {
       operations: {
         reviewState: transition,
-        rejectionReason: transition === "reject" ? firstText(formData, "reason", 300) : null,
+        cancellationReason: transition === "cancelled" ? firstText(formData, "reason", 300) : null,
       },
     };
     const payload = {
@@ -321,7 +334,7 @@ export async function updateOperationsAlertAction(
   try {
     const actor = await requireOperationsActor(db);
     const id = firstText(formData, "id", 80);
-    const status = safeChoice(firstText(formData, "status", 40), ["acknowledged", "in_progress", "resolved"], "acknowledged");
+    const status = requireChoice(firstText(formData, "status", 40), ["open", "active", "acknowledged", "in_progress", "resolved"], "Status");
     if (!id) throw new Error("Alerta inválido.");
     const internalOrganizationIds = await loadInternalOrganizationIds(db, actor.tenantId);
     const { data: currentAlert, error: currentAlertError } = await db

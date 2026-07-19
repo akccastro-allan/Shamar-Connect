@@ -100,9 +100,12 @@ test("operations core actions validate command center internal company and audit
   const actions = readFileSync("lib/operations/actions.ts", "utf8");
   const panels = readFileSync("components/operations/operations-action-panels.tsx", "utf8");
   const source = readFileSync("components/operations/operations-command-center.tsx", "utf8");
+  const appContext = readFileSync("lib/auth/app-context.ts", "utf8");
 
   assert.match(actions, /getRequiredAppContext/);
   assert.match(actions, /canAccessCommandCenter/);
+  assert.match(appContext, /select\("is_platform, status"\)/);
+  assert.match(appContext, /eq\("status", "active"\)/);
   assert.match(actions, /isAllowedOperationsCompanySlug/);
   assert.match(actions, /loadInternalOrganizationIds/);
   assert.match(actions, /eq\("tenant_id", actor\.tenantId\)/);
@@ -112,8 +115,12 @@ test("operations core actions validate command center internal company and audit
   assert.match(actions, /operations\.content\.create/);
   assert.match(actions, /operations\.alert\.update/);
   assert.match(actions, /metadata\.operations/);
+  assert.match(actions, /const \{ error \} = await db\.from\("audit_trail"\)\.insert/);
+  assert.match(actions, /if \(error\) throw error/);
   assert.doesNotMatch(actions, /sendMessage|publish\(/);
   assert.doesNotMatch(actions, /lips-main|hall-main/);
+  assert.doesNotMatch(actions, /@(?:gmail|hotmail|moriah|shamar|lips|hall)\./i);
+  assert.doesNotMatch(actions, /formData\.get\("(?:tenant_id|tenantId|organization_id|organizationId|actor|user_id|userId|is_platform|role|metadata|password|cookie|session)"\)/);
   assert.match(panels, /useActionState/);
   assert.match(panels, /status\.pending/);
   assert.match(panels, /disabled=\{status\.pending\}/);
@@ -124,11 +131,33 @@ test("operations core actions validate command center internal company and audit
   assert.match(source, /AlertOperationsForm/);
 });
 
+test("operations core actions block invalid clients transitions dates and protected fields", () => {
+  const actions = readFileSync("lib/operations/actions.ts", "utf8");
+  const panels = readFileSync("components/operations/operations-action-panels.tsx", "utf8");
+
+  assert.equal(isAllowedOperationsCompanySlug("lips"), false);
+  assert.equal(isAllowedOperationsCompanySlug("hall"), false);
+  assert.equal(isAllowedOperationsCompanySlug("nutriflow"), false);
+  assert.equal(isAllowedOperationsCompanySlug("unknown-company"), false);
+  assert.match(actions, /\.eq\("tenant_id", tenantId\)\s*\.eq\("slug", slug\)/);
+  assert.match(actions, /\.eq\("tenant_id", actor\.tenantId\)\.eq\("organization_id", organization\.id\)/);
+  assert.match(actions, /requireChoice\(firstText\(formData, "status", 40\) \|\| "pending", \["pending", "in_progress", "blocked", "completed", "cancelled"\]/);
+  assert.match(actions, /requireChoice\(firstText\(formData, "transition", 40\) \|\| "draft", \["draft", "review", "approved", "scheduled", "cancelled"\]/);
+  assert.match(actions, /requireChoice\(firstText\(formData, "status", 40\), \["open", "active", "acknowledged", "in_progress", "resolved"\]/);
+  assert.match(actions, /Data final anterior ao início/);
+  assert.match(actions, /Data de programação/);
+  assert.match(actions, /optionalDate\(formData, "dueAt", "Prazo"\)/);
+  assert.doesNotMatch(actions, /safeChoice/);
+  assert.doesNotMatch(panels, /value="(?:approve|reject|schedule|cancel_schedule)"/);
+});
+
 test("operations sanitizer removes urls bearer tokens and long tokens", () => {
   const actions = readFileSync("lib/operations/actions.ts", "utf8");
   assert.match(actions, /replace\(\/https\?:\\\/\\\/\\S\+\/g, "\[url\]"\)/);
   assert.match(actions, /replace\(\/Bearer\\s\+\[\^\\s\]\+\/gi, "Bearer \[token\]"\)/);
   assert.match(actions, /replace\(\/\[A-Za-z0-9_-\]\{32,\}\/g, "\[redacted\]"\)/);
+  assert.doesNotMatch(actions, /old_values|new_values|messageText.*metadata|formData.*metadata/i);
+  assert.doesNotMatch(actions, /access_token|refresh_token|cookie|senha|password/i);
 });
 
 test("operations snapshot includes alerts audit and restricted search without messages", () => {
