@@ -4,6 +4,19 @@ Este fluxo usa Playwright com login manual para validar `/operations` sem armaze
 
 Se o navegador do Playwright ainda não existir na máquina, instale localmente com `npx playwright install chromium`. Esse download não deve ser commitado.
 
+## Execução por duplo clique no Windows
+
+1. Feche qualquer launcher antigo aberto.
+2. Clique duas vezes em `E2E-LOGIN-CENTRO-DE-COMANDO.cmd`.
+3. Faça login como operador global no navegador aberto.
+4. Aguarde a mensagem `Sessão salva com segurança.`.
+5. Clique duas vezes em `E2E-VALIDAR-CENTRO-E-LIPS.cmd`.
+6. Copie apenas o resumo sanitizado exibido no terminal.
+7. Clique duas vezes em `E2E-LIMPAR-SESSAO.cmd`.
+8. Digite `APAGAR SESSAO LOCAL E2E` para confirmar.
+
+A sessão fica apenas dentro da pasta local do projeto em `.auth/operations.json` e `.auth/browser-profile`. Esses arquivos são sensíveis, nunca devem ser enviados, compartilhados ou commitados. Os launchers de validação executam somente testes read-only e não chamam o smoke write.
+
 ## Gerar sessão local
 
 1. Rode `npm run e2e:auth` em uma máquina local.

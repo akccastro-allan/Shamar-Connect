@@ -15,6 +15,7 @@ tsconfig.tsbuildinfo
 .vercel
 .artifacts/
 .auth/
+.auth/browser-profile/
 playwright-report/
 test-results/
 *.storage-state.json

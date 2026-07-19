@@ -15,6 +15,7 @@
     "e2e:operations:read": "playwright test tests/e2e/operations/read.spec.ts --project=chromium",
     "e2e:operations:visual": "playwright test tests/e2e/operations/visual.spec.ts --project=chromium",
     "e2e:lips:readiness": "playwright test tests/e2e/operations/lips-readiness.spec.ts --project=chromium",
+    "e2e:operations:all-readonly": "npm run e2e:operations:read && npm run e2e:operations:visual && npm run e2e:lips:readiness",
     "e2e:operations:write": "node scripts/e2e/run-operations-write.mjs"
   },
   "dependencies": {
