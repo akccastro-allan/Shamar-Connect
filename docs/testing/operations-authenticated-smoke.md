@@ -43,6 +43,14 @@ Rode novamente `npm run e2e:auth`. O arquivo `.auth/operations.json` será subst
 
 Remova `.auth/operations.json` quando terminar a validação ou quando a sessão expirar.
 
+Com script seguro:
+
+```bash
+npm run e2e:auth:clear
+```
+
+Esse comando remove somente `.auth/operations.json`.
+
 No Windows Git Bash:
 
 ```bash
@@ -51,7 +59,7 @@ rm .auth/operations.json
 
 ## Por que nunca commitar `.auth/operations.json`
 
-O arquivo contém cookies e tokens de sessão do operador autenticado. Ele dá acesso ao ambiente com os mesmos privilégios do usuário logado enquanto a sessão estiver válida. Por isso `.auth/`, `*.storage-state.json`, `test-results/` e `playwright-report/` ficam no `.gitignore`.
+O arquivo contém cookies e tokens de sessão do operador autenticado, mesmo sem armazenar a senha diretamente. Ele dá acesso ao ambiente com os mesmos privilégios do usuário logado enquanto a sessão estiver válida. Por isso `.auth/`, `*.storage-state.json`, `test-results/` e `playwright-report/` ficam no `.gitignore`.
 
 ## Escrita controlada
 
@@ -79,6 +87,16 @@ Registros de homologação usam o prefixo:
 
 O fluxo é restrito a empresa interna permitida por `OPERATIONS_SMOKE_COMPANY`, com padrão `Moriah Systems`. Nunca use Lips, Hall ou NutriFlow.
 
+## Prontidão read-only da Lips
+
+Rode `npm run e2e:lips:readiness` após gerar `.auth/operations.json`.
+
+O teste abre `/operations/diagnostics/whatsapp-sync`, confirma `feature execute=false`, executa somente botões de consulta read-only (`Verificar status`, `Validar paginação`, `Capturar baseline`, `Capturar estado atual`, `Comparar`) e salva evidência sanitizada em `test-results/operations/lips-readiness.json`.
+
+Ele valida health/readiness HTTP 200, sessão `lips-main` pronta, telefone mascarado, paginação com `limit=5`, offsets `0` e `5`, duração abaixo de 20 segundos, ausência de tokens/URLs privadas/chat IDs/mensagens na página e nenhuma mudança de integridade entre baseline e estado atual.
+
+O arquivo de evidência local não inclui telefone completo, `external_chat_id`, fingerprints individuais, tokens, cookies, headers, `baseUrl`, mensagens ou nomes de contatos.
+
 ## Critérios de parada
 
 Pare a execução se ocorrer qualquer item abaixo:
@@ -92,6 +110,9 @@ Pare a execução se ocorrer qualquer item abaixo:
 - `.auth/operations.json` ausente;
 - erro 500;
 - erro não tratado no console;
+- sessão `lips-main` não estiver pronta;
+- health/readiness do gateway não retornarem HTTP 200;
+- paginação exceder `limit=5` ou alterar integridade;
 - secret, cookie, token, telefone completo ou payload de mensagem aparece no relatório.
 
 ## CI

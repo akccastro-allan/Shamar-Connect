@@ -70,6 +70,8 @@ const LIPS_GO_LIVE_KNOWN_BASELINE = {
   failedRuns: 0,
   conversations: 13,
   messages: 94,
+  media: 0,
+  sentMessages: 0,
   queueStatusNull: 13,
   locks: 0,
 } as const;
@@ -521,6 +523,8 @@ async function loadReadOnlyIntegrity(
     syncRuns,
     conversations,
     messages,
+    media,
+    sentMessages,
     queueNull,
     stateLocks,
     runLocks,
@@ -536,6 +540,12 @@ async function loadReadOnlyIntegrity(
     ),
     countRows(db, "whatsapp_messages", (query) =>
       query.eq("channel_id", channel.id),
+    ),
+    countRows(db, "whatsapp_messages", (query) =>
+      query.eq("channel_id", channel.id).eq("has_media", true),
+    ),
+    countRows(db, "whatsapp_messages", (query) =>
+      query.eq("channel_id", channel.id).eq("direction", "outbound"),
     ),
     countRows(db, "whatsapp_conversations", (query) =>
       query.eq("channel_id", channel.id).is("queue_status", null),
@@ -556,6 +566,8 @@ async function loadReadOnlyIntegrity(
     syncRuns,
     conversations,
     messages,
+    media,
+    sentMessages,
     queueStatusNull: queueNull,
     locks: stateLocks + runLocks,
   };
@@ -655,6 +667,8 @@ function normalizeIntegrityCounts(
     failedRuns: Number(input.failedRuns || 0),
     conversations: Number(input.conversations || 0),
     messages: Number(input.messages || 0),
+    media: Number(input.media || 0),
+    sentMessages: Number(input.sentMessages || 0),
     queueStatusNull: Number(input.queueStatusNull || 0),
     locks: Number(input.locks || 0),
   };
@@ -673,6 +687,8 @@ export function compareLipsGoLiveIntegrityCounts(
     failedRuns: current.failedRuns - baseline.failedRuns,
     conversations: current.conversations - baseline.conversations,
     messages: current.messages - baseline.messages,
+    media: current.media - baseline.media,
+    sentMessages: current.sentMessages - baseline.sentMessages,
     queueStatusNull: current.queueStatusNull - baseline.queueStatusNull,
     locks: current.locks - baseline.locks,
   };

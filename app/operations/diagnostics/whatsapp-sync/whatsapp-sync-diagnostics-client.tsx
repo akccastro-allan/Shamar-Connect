@@ -23,9 +23,15 @@ const INTEGRITY_COUNT_FIELDS = [
   "failedRuns",
   "conversations",
   "messages",
+  "media",
+  "sentMessages",
   "queueStatusNull",
   "locks",
 ] as const;
+
+function isReadySessionStatus(value?: string | null) {
+  return value === "ready" || value === "authenticated";
+}
 
 function integrityFileName(capturedAt?: string | null) {
   const date = capturedAt ? new Date(capturedAt) : new Date();
@@ -94,17 +100,20 @@ function SubmitButton({
   children,
   confirmText,
   disabled,
+  testId,
   pendingLabel = "Executando...",
 }: {
   children: React.ReactNode;
   confirmText?: string;
   disabled?: boolean;
+  testId?: string;
   pendingLabel?: string;
 }) {
   const status = useFormStatus();
   return (
     <Button
       type="submit"
+      data-testid={testId}
       disabled={disabled || status.pending}
       onClick={(event) => {
         if (confirmText && !window.confirm(confirmText)) event.preventDefault();
@@ -244,7 +253,16 @@ function GatewayStatusCard({ status }: { status: any }) {
             ? "não autorizado"
             : "gateway indisponível";
   return (
-    <Card className="rounded-[2rem] border-[#2ABFAB]/30 bg-[#2ABFAB]/5">
+    <Card
+      data-testid="lips-gateway-status"
+      data-health-http-status={status.health?.httpStatus ?? ""}
+      data-readiness-http-status={status.readiness?.httpStatus ?? ""}
+      data-lips-main-found={String(Boolean(status.sessions?.lipsMainFound))}
+      data-lips-main-status={status.sessions?.lipsMainStatus || ""}
+      data-lips-main-ready={String(isReadySessionStatus(status.sessions?.lipsMainStatus))}
+      data-phone-masked={status.sessions?.phoneMasked || ""}
+      className="rounded-[2rem] border-[#2ABFAB]/30 bg-[#2ABFAB]/5"
+    >
       <CardHeader>
         <CardTitle className="text-lg font-black text-[#1B2F5B]">
           Status live do gateway
@@ -334,7 +352,22 @@ function PaginationValidationCard({ result }: { result: any }) {
   const stateLabel =
     result.status || (result.ok ? "aprovado" : "paginação não comprovada");
   return (
-    <Card className="rounded-[2rem] border-[#2ABFAB]/30 bg-[#2ABFAB]/5">
+    <Card
+      data-testid="lips-pagination-validation"
+      data-page1-limit={page1?.limit ?? ""}
+      data-page1-offset={page1?.offset ?? ""}
+      data-page1-count={page1?.count ?? ""}
+      data-page1-duration-ms={page1?.duration_ms ?? ""}
+      data-page2-limit={page2?.limit ?? ""}
+      data-page2-offset={page2?.offset ?? ""}
+      data-page2-count={page2?.count ?? ""}
+      data-page2-duration-ms={page2?.duration_ms ?? ""}
+      data-overlap-count={comparison.overlap_count ?? ""}
+      data-limit-respected={String(Boolean(comparison.limit_respected))}
+      data-offset-proved={String(Boolean(comparison.offset_proved))}
+      data-enough-volume={String(Boolean(comparison.enough_volume))}
+      className="rounded-[2rem] border-[#2ABFAB]/30 bg-[#2ABFAB]/5"
+    >
       <CardHeader>
         <CardTitle className="text-lg font-black text-[#1B2F5B]">
           Validação de paginação
@@ -388,11 +421,15 @@ function LipsIntegrityCard({
   baseline,
   comparison,
   onResetBaseline,
+  onConfirmComparison,
+  comparisonConfirmed,
 }: {
   snapshot: any;
   baseline: any;
   comparison: any;
   onResetBaseline: () => void;
+  onConfirmComparison: () => void;
+  comparisonConfirmed: boolean;
 }) {
   if (snapshot?.action !== "capture_lips_integrity_snapshot") return null;
   const decision = comparison?.decision || snapshot.decision;
@@ -404,7 +441,30 @@ function LipsIntegrityCard({
         : "border-amber-200 bg-amber-50 text-amber-800";
 
   return (
-    <Card className="rounded-[2rem] border-[#1B2F5B]/20 bg-white">
+    <Card
+      data-testid="lips-integrity-snapshot"
+      data-capture-role={snapshot.captureRole || ""}
+      data-decision={decision?.level || ""}
+      data-sync-state={snapshot.integrity?.syncState ?? ""}
+      data-sync-runs={snapshot.integrity?.syncRuns ?? ""}
+      data-conversations={snapshot.integrity?.conversations ?? ""}
+      data-messages={snapshot.integrity?.messages ?? ""}
+      data-media={snapshot.integrity?.media ?? ""}
+      data-queue-status-null={snapshot.integrity?.queueStatusNull ?? ""}
+      data-locks={snapshot.integrity?.locks ?? ""}
+      data-sent-messages={snapshot.integrity?.sentMessages ?? ""}
+      data-read-only-preserved={String(Boolean(snapshot.readOnly?.preserved))}
+      data-delta-sync-state={comparison?.deltas?.syncState ?? ""}
+      data-delta-sync-runs={comparison?.deltas?.syncRuns ?? ""}
+      data-delta-conversations={comparison?.deltas?.conversations ?? ""}
+      data-delta-messages={comparison?.deltas?.messages ?? ""}
+      data-delta-media={comparison?.deltas?.media ?? ""}
+      data-delta-queue-status-null={comparison?.deltas?.queueStatusNull ?? ""}
+      data-delta-locks={comparison?.deltas?.locks ?? ""}
+      data-delta-sent-messages={comparison?.deltas?.sentMessages ?? ""}
+      data-comparison-confirmed={String(comparisonConfirmed)}
+      className="rounded-[2rem] border-[#1B2F5B]/20 bg-white"
+    >
       <CardHeader>
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
@@ -432,6 +492,17 @@ function LipsIntegrityCard({
             >
               Resetar baseline local
             </Button>
+            {comparison?.deltas ? (
+              <Button
+                type="button"
+                data-testid="lips-compare-integrity"
+                variant="outline"
+                onClick={onConfirmComparison}
+                className="rounded-full font-black"
+              >
+                Comparar
+              </Button>
+            ) : null}
           </div>
         </div>
       </CardHeader>
@@ -448,6 +519,8 @@ function LipsIntegrityCard({
           <Stat label="Runs" value={snapshot.integrity?.syncRuns ?? 0} />
           <Stat label="Conversas" value={snapshot.integrity?.conversations ?? 0} />
           <Stat label="Mensagens" value={snapshot.integrity?.messages ?? 0} />
+          <Stat label="Mídias" value={snapshot.integrity?.media ?? 0} />
+          <Stat label="Mensagens enviadas" value={snapshot.integrity?.sentMessages ?? 0} />
           <Stat label="Fila null" value={snapshot.integrity?.queueStatusNull ?? 0} />
           <Stat label="Locks" value={snapshot.integrity?.locks ?? 0} />
           <Stat label="Runs pendentes" value={snapshot.integrity?.pendingRuns ?? 0} />
@@ -480,6 +553,11 @@ function LipsIntegrityCard({
           Read-only preservado: {snapshot.readOnly?.preserved ? "sim" : "não"}.
           Mensagens enviadas: não. Secrets retornados: não.
         </div>
+        {comparisonConfirmed ? (
+          <div data-testid="lips-comparison-confirmed" className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-800">
+            Comparação local confirmada.
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -502,6 +580,7 @@ export function WhatsappSyncDiagnosticsClient({
   const integritySnapshot =
     result?.action === "capture_lips_integrity_snapshot" ? result : null;
   const [integrityBaseline, setIntegrityBaseline] = useState<any>(null);
+  const [comparisonConfirmed, setComparisonConfirmed] = useState(false);
 
   useEffect(() => {
     if (
@@ -509,6 +588,7 @@ export function WhatsappSyncDiagnosticsClient({
       (integritySnapshot.captureRole === "baseline" || !integrityBaseline)
     )
       setIntegrityBaseline(integritySnapshot);
+    if (integritySnapshot) setComparisonConfirmed(false);
   }, [integritySnapshot, integrityBaseline]);
 
   const integrityComparison = integritySnapshot
@@ -519,7 +599,7 @@ export function WhatsappSyncDiagnosticsClient({
     : null;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8" data-testid="lips-readiness-page" data-feature-execute={String(canExecute)} data-environment={vercelEnv}>
       <header className="rounded-[2rem] bg-[#1B2F5B] p-7 text-white shadow-sm md:p-9">
         <div className="flex flex-wrap items-center gap-2 text-sm font-bold text-white/70">
           <Link href="/operations" className="hover:text-white">
@@ -584,6 +664,8 @@ export function WhatsappSyncDiagnosticsClient({
         baseline={integrityBaseline}
         comparison={integrityComparison}
         onResetBaseline={() => setIntegrityBaseline(integritySnapshot)}
+        onConfirmComparison={() => setComparisonConfirmed(true)}
+        comparisonConfirmed={comparisonConfirmed}
       />
 
       <Card className="rounded-[2rem]">
@@ -601,33 +683,33 @@ export function WhatsappSyncDiagnosticsClient({
             <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               <form action={formAction}>
                 <input type="hidden" name="action" value="status" />
-                <SubmitButton pendingLabel="Consultando...">
+                <SubmitButton testId="lips-status-button" pendingLabel="Consultando...">
                   Verificar status
                 </SubmitButton>
               </form>
               <form action={formAction}>
                 <input type="hidden" name="action" value="probe_chats" />
-                <SubmitButton pendingLabel="Testando...">
+                <SubmitButton testId="lips-probe-chats-button" pendingLabel="Testando...">
                   Testar leitura de chats
                 </SubmitButton>
               </form>
               <form action={formAction}>
                 <input type="hidden" name="action" value="validate_chat_pagination" />
-                <SubmitButton pendingLabel="Validando...">
+                <SubmitButton testId="lips-validate-pagination-button" pendingLabel="Validando...">
                   Validar paginação
                 </SubmitButton>
               </form>
               <form action={formAction}>
                 <input type="hidden" name="action" value="capture_lips_integrity_snapshot" />
                 <input type="hidden" name="captureRole" value="baseline" />
-                <SubmitButton pendingLabel="Capturando...">
+                <SubmitButton testId="lips-capture-baseline-button" pendingLabel="Capturando...">
                   Capturar baseline
                 </SubmitButton>
               </form>
               <form action={formAction}>
                 <input type="hidden" name="action" value="capture_lips_integrity_snapshot" />
                 <input type="hidden" name="captureRole" value="current" />
-                <SubmitButton pendingLabel="Capturando...">
+                <SubmitButton testId="lips-capture-current-button" pendingLabel="Capturando...">
                   Capturar estado atual
                 </SubmitButton>
               </form>
@@ -643,31 +725,31 @@ export function WhatsappSyncDiagnosticsClient({
             <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               <form action={formAction}>
                 <input type="hidden" name="action" value="diagnostic" />
-                <SubmitButton disabled={!canExecute} confirmText="Executar diagnóstico? Será processado no máximo um run, sem envio de mensagens.">
+                <SubmitButton testId="lips-diagnostic-button" disabled={!canExecute} confirmText="Executar diagnóstico? Será processado no máximo um run, sem envio de mensagens.">
                   Executar diagnóstico
                 </SubmitButton>
               </form>
               <form action={formAction}>
                 <input type="hidden" name="action" value="bootstrap" />
-                <SubmitButton disabled={!canExecute} confirmText="Executar bootstrap controlado? Serão consultados chats e mensagens recentes da Lips. Nenhuma mensagem será enviada.">
+                <SubmitButton testId="lips-bootstrap-button" disabled={!canExecute} confirmText="Executar bootstrap controlado? Serão consultados chats e mensagens recentes da Lips. Nenhuma mensagem será enviada.">
                   Bootstrap controlado
                 </SubmitButton>
               </form>
               <form action={formAction}>
                 <input type="hidden" name="action" value="incremental" />
-                <SubmitButton disabled={!canExecute} confirmText="Executar incremental usando checkpoints existentes? Nenhuma mensagem será enviada.">
+                <SubmitButton testId="lips-incremental-button" disabled={!canExecute} confirmText="Executar incremental usando checkpoints existentes? Nenhuma mensagem será enviada.">
                   Incremental
                 </SubmitButton>
               </form>
               <form action={formAction}>
                 <input type="hidden" name="action" value="reconciliation" />
-                <SubmitButton disabled={!canExecute} confirmText="Executar reconciliação? Nenhuma mensagem será enviada.">
+                <SubmitButton testId="lips-reconciliation-button" disabled={!canExecute} confirmText="Executar reconciliação? Nenhuma mensagem será enviada.">
                   Reconciliação
                 </SubmitButton>
               </form>
               <form action={formAction}>
                 <input type="hidden" name="action" value="process_next" />
-                <SubmitButton disabled={!canExecute} confirmText="Processar próximo job de lips-main? Não executa em paralelo.">
+                <SubmitButton testId="lips-process-next-button" disabled={!canExecute} confirmText="Processar próximo job de lips-main? Não executa em paralelo.">
                   Processar próximo job
                 </SubmitButton>
               </form>
