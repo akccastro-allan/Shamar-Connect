@@ -59,8 +59,9 @@ export async function getRequiredAppContext(): Promise<AppContext> {
 
   const { data: tenant } = await db
     .from("tenants")
-    .select("is_platform")
+    .select("is_platform, status")
     .eq("id", tenantUser.tenant_id)
+    .eq("status", "active")
     .maybeSingle();
 
   if (!tenantUser.organization_id) {

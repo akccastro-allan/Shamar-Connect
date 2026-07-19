@@ -79,6 +79,8 @@ export type OperationsSnapshot = {
   integrationSources: IntegrationSourceRow[];
   integrationAgents: IntegrationAgentRow[];
   integrationRuns: IntegrationRunRow[];
+  systemAlerts: SystemAlertRow[];
+  auditTrail: AuditTrailRow[];
   recentActivity: ActivityItem[];
   pendingItems: PendingItem[];
   health: HealthItem[];
@@ -246,6 +248,30 @@ export type IntegrationRunRow = {
   error_message: string | null;
 };
 
+export type SystemAlertRow = {
+  id: string;
+  title: string;
+  description: string | null;
+  severity: string | null;
+  status: string | null;
+  module: string | null;
+  related_entity_type: string | null;
+  related_entity_id: string | null;
+  created_at: string | null;
+};
+
+export type AuditTrailRow = {
+  id: string;
+  actor_name: string | null;
+  actor_email: string | null;
+  action: string;
+  entity_type: string;
+  entity_id: string | null;
+  changed_fields: string[] | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string | null;
+};
+
 export type IntegrationStatus = {
   label: string;
   status: "connected" | "preparation" | "planned" | "attention";
@@ -393,6 +419,11 @@ function matchesSearch(values: Array<string | number | null | undefined>, search
   return values.some((value) => String(value || "").toLowerCase().includes(search));
 }
 
+function auditOrganizationId(entry: AuditTrailRow) {
+  const organizationId = entry.metadata?.organization_id;
+  return typeof organizationId === "string" ? organizationId : null;
+}
+
 function companyNameFromId(companies: OperationsCompany[], organizationId?: string | null) {
   return companies.find((company) => company.organizationId === organizationId)?.name || "";
 }
@@ -454,9 +485,10 @@ export async function getOperationsSnapshot(context: AppContext, filters: Operat
   const companies = commandCenterEntities.map((entity) => buildCompany(entity, orgByName.get(entity.name)));
   const selectedCompany = selectedSlug === "all" ? null : companies.find((company) => company.slug === selectedSlug) ?? null;
   const orgIds = companies.map((company) => company.organizationId).filter((id): id is string => Boolean(id));
+  const orgIdSet = new Set(orgIds);
   const selectedOrgIds = new Set(selectedCompany?.organizationId ? [selectedCompany.organizationId] : []);
 
-  const [allSocialAccountsRaw, allChannels, allDistributionChannels, allBroadcasts, allConversations, allTasks, allEvents, allOpportunities, allIntegrationSources, allIntegrationAgents, allIntegrationRuns] = orgIds.length > 0
+  const [allSocialAccountsRaw, allChannels, allDistributionChannels, allBroadcasts, allConversations, allTasks, allEvents, allOpportunities, allIntegrationSources, allIntegrationAgents, allIntegrationRuns, allSystemAlerts, allAuditTrail] = orgIds.length > 0
     ? await Promise.all([
         maybeLoad<SocialAccountDbRow>(() => db.from("social_accounts").select("id, organization_id, provider, external_account_id, name, status, updated_at").eq("tenant_id", context.tenantId).in("organization_id", orgIds)),
         maybeLoad<ChannelDbRow>(() => db.from("channels").select("id, organization_id, name, session_id, phone, provider, provider_type, channel_type, status, active, updated_at").eq("tenant_id", context.tenantId).in("organization_id", orgIds)),
@@ -469,8 +501,10 @@ export async function getOperationsSnapshot(context: AppContext, filters: Operat
         maybeLoad<IntegrationSourceRow>(() => db.from("integration_sources").select("id, organization_id, name, source_type, status, updated_at").eq("tenant_id", context.tenantId).in("organization_id", orgIds)),
         maybeLoad<IntegrationAgentRow>(() => db.from("integration_agents").select("id, organization_id, integration_source_id, agent_name, name, status, last_seen_at, updated_at").eq("tenant_id", context.tenantId).in("organization_id", orgIds)),
         maybeLoad<IntegrationRunRow>(() => db.from("integration_sync_runs").select("id, organization_id, integration_source_id, agent_id, sync_type, status, started_at, finished_at, error_message").eq("tenant_id", context.tenantId).in("organization_id", orgIds)),
+        maybeLoad<SystemAlertRow>(() => db.from("system_alerts").select("id, title, description, severity, status, module, related_entity_type, related_entity_id, created_at").limit(50)),
+        maybeLoad<AuditTrailRow>(() => db.from("audit_trail").select("id, actor_name, actor_email, action, entity_type, entity_id, changed_fields, metadata, created_at").contains("metadata", { source: "operations_command_center" }).order("created_at", { ascending: false }).limit(200)),
       ])
-    : [[], [], [], [], [], [], [], [], [], [], []];
+    : [[], [], [], [], [], [], [], [], [], [], [], [], []];
 
   const orgNameById = new Map(companies.map((company) => [company.organizationId, company.name]).filter(([id]) => Boolean(id)) as Array<[string, string]>);
   const socialAccounts = filterBySelected(
@@ -498,6 +532,17 @@ export async function getOperationsSnapshot(context: AppContext, filters: Operat
   const integrationSources = filterBySelected(allIntegrationSources, selectedOrgIds).filter((source) => matchesSearch([source.name, source.source_type, source.status], search));
   const integrationAgents = filterBySelected(allIntegrationAgents, selectedOrgIds);
   const integrationRuns = filterBySelected(allIntegrationRuns, selectedOrgIds);
+  const systemAlerts = allSystemAlerts.filter((alert) => {
+    if (alert.related_entity_id && !orgIdSet.has(alert.related_entity_id)) return false;
+    if (selectedOrgIds.size > 0 && alert.related_entity_id && !selectedOrgIds.has(alert.related_entity_id)) return false;
+    return matchesSearch([alert.title, alert.description, alert.status, alert.severity, alert.module], search);
+  });
+  const auditTrail = allAuditTrail.filter((entry) => {
+    const organizationId = auditOrganizationId(entry);
+    if (organizationId && !orgIdSet.has(organizationId)) return false;
+    if (selectedOrgIds.size > 0 && organizationId !== selectedCompany?.organizationId) return false;
+    return matchesSearch([entry.action, entry.entity_type, entry.actor_name, entry.actor_email], search);
+  }).slice(0, 50);
   const visibleCompanies = selectedCompany ? [selectedCompany] : companies;
 
   for (const company of companies) {
@@ -529,13 +574,15 @@ export async function getOperationsSnapshot(context: AppContext, filters: Operat
   const pendingApprovals = broadcasts.filter((row) => row.status === "draft" || row.status === "ready").length;
   const breachedSla = conversations.filter((row) => row.sla_status === "breached").length;
   const integrationErrors = integrationSources.filter((row) => row.status === "error").length + integrationRuns.filter((row) => row.status === "failed").length;
-  const operationalAlerts = disconnectedChannels + breachedSla + overdueTasks + integrationErrors;
+  const explicitAlerts = systemAlerts.filter((alert) => alert.status !== "resolved").length;
+  const operationalAlerts = disconnectedChannels + breachedSla + overdueTasks + integrationErrors + explicitAlerts;
   const recentActivity = [
     ...channels.map((row) => ({ module: "Canais", title: row.name, at: row.updated_at, status: row.status })),
     ...conversations.map((row) => ({ module: "Mensagens", title: row.name || "Conversa", at: row.updated_at, status: row.status })),
     ...tasks.map((row) => ({ module: "Tarefas", title: row.title, at: row.updated_at, status: row.status })),
     ...broadcasts.map((row) => ({ module: "Conteúdo", title: row.title, at: row.updated_at || row.created_at, status: row.status })),
     ...integrationRuns.map((row) => ({ module: "Integrações", title: row.sync_type || "Sincronização", at: row.started_at, status: row.status })),
+    ...systemAlerts.map((row) => ({ module: "Alertas", title: row.title, at: row.created_at, status: row.status })),
   ].sort((a, b) => new Date(b.at || 0).getTime() - new Date(a.at || 0).getTime()).slice(0, 8);
   const pendingItems: PendingItem[] = [
     ...visibleCompanies.filter((company) => !company.organizationId).map((company) => ({ title: company.name, description: "Configuração pendente em organizations.", severity: "warning" as const })),
@@ -543,6 +590,7 @@ export async function getOperationsSnapshot(context: AppContext, filters: Operat
     ...(overdueTasks > 0 ? [{ title: "Tarefas vencidas", description: `${overdueTasks} tarefa(s) vencida(s) no escopo atual.`, severity: "danger" as const }] : []),
     ...(pendingApprovals > 0 ? [{ title: "Conteúdos aguardando", description: `${pendingApprovals} conteúdo(s) em rascunho/revisão.`, severity: "warning" as const }] : []),
     ...(integrationErrors > 0 ? [{ title: "Integrações degradadas", description: `${integrationErrors} erro(s) de integração no escopo atual.`, severity: "danger" as const }] : []),
+    ...(explicitAlerts > 0 ? [{ title: "Alertas abertos", description: `${explicitAlerts} alerta(s) aguardando tratamento.`, severity: "danger" as const }] : []),
   ];
   const health: HealthItem[] = [
     { label: "Supabase", status: "ok", description: "Consultas server-side concluídas sem expor credenciais." },
@@ -586,6 +634,8 @@ export async function getOperationsSnapshot(context: AppContext, filters: Operat
     integrationSources,
     integrationAgents,
     integrationRuns,
+    systemAlerts,
+    auditTrail,
     recentActivity,
     pendingItems,
     health,
