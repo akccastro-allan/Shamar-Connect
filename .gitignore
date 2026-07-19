@@ -14,3 +14,7 @@ tsconfig.tsbuildinfo
 *.log
 .vercel
 .artifacts/
+.auth/
+playwright-report/
+test-results/
+*.storage-state.json
