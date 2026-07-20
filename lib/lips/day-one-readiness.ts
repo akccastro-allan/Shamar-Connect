@@ -6,6 +6,8 @@ export const LIPS_OFFICIAL_STAGING_SESSION_ID = "lips-main-6108";
 export const LIPS_OFFICIAL_PHONE = "552133946108";
 export const LIPS_OFFICIAL_PHONE_MASKED = "5521***6108";
 export const LIPS_ACTIVATION_CONFIRMATION = "ATIVAR LIPS 6108";
+export const LIPS_PLATFORM_OPERATOR_EMAIL = "allan@moriahsystems.com.br";
+export const LIPS_OWNER_EMAIL = "lips@moriahsystems.com.br";
 
 export type LipsCutoverState =
   | "sessao_atual_identificada"
@@ -84,6 +86,28 @@ export const LIPS_STAFF_PROFILES: Record<LipsStaffRole, { label: string; permiss
     forbidden: ["conversas_gerais_sem_permissao", "centro_de_comando"],
   },
 };
+
+export const LIPS_GO_LIVE_IDENTITIES = {
+  platformOperator: {
+    email: LIPS_PLATFORM_OPERATOR_EMAIL,
+    allowed: ["operations", "gateway_diagnostics", "qr_generation", "session_cutover"],
+    forbidden: ["lips_staff", "lips_inbox_operator", "customer_service"],
+  },
+  lipsOwner: {
+    email: LIPS_OWNER_EMAIL,
+    tenantId: LIPS_TENANT_ID,
+    organizationId: LIPS_ORGANIZATION_ID,
+    allowed: ["lips_admin", "lips_inbox", "lips_team_management"],
+    forbidden: ["operations", "command_center"],
+  },
+  lipsStaff: {
+    email: null,
+    tenantId: LIPS_TENANT_ID,
+    organizationId: LIPS_ORGANIZATION_ID,
+    allowed: ["lips_inbox", "assigned_department"],
+    forbidden: ["shared_login", "operations", "other_tenants"],
+  },
+} as const;
 
 export function normalizePhone(value?: string | null) {
   return String(value || "").replace(/\D/g, "");

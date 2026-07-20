@@ -14,4 +14,6 @@ Validar em cada computador antes do início do atendimento.
 - Usuário consegue sair da conta.
 - Outro funcionário não fica com sessão aberta na mesma máquina.
 
+Identidade correta: cada funcionário entra com seu próprio e-mail. Não usar `allan@moriahsystems.com.br`, não usar `lips@moriahsystems.com.br` como login compartilhado e não compartilhar senha entre máquinas.
+
 Não armazenar senhas neste documento nem em planilhas compartilhadas.

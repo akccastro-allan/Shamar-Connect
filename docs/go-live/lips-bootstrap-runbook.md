@@ -18,7 +18,7 @@ O navegador nao envia IDs. A Server Action valida os IDs fixos antes de consulta
 
 ## Captura Pre
 
-1. Acessar `/operations/diagnostics/whatsapp-sync` com usuario do Centro de Comando.
+1. Acessar `/operations/diagnostics/whatsapp-sync` com `allan@moriahsystems.com.br` ou outro operador global autorizado da Moriah.
 2. Clicar em `Capturar baseline`.
 3. Confirmar que `Read-only preservado` esta como `sim`.
 4. Baixar o JSON `lips-go-live-integrity-YYYYMMDD-HHmm.json`.
@@ -30,6 +30,8 @@ O navegador nao envia IDs. A Server Action valida os IDs fixos antes de consulta
 2. Clicar em `Capturar estado atual`.
 3. Comparar o delta local exibido no navegador contra a primeira captura.
 4. Baixar o novo JSON.
+
+O operador global não valida o inbox da Lips e não atende clientes. A validação do ambiente Lips deve ser feita com `lips@moriahsystems.com.br`; o atendimento real deve usar contas individuais dos funcionários.
 
 ## Criterios De Bloqueio
 
