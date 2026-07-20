@@ -1,4 +1,4 @@
--- 0036: Respostas rápidas mínimas para o primeiro dia da equipe Lips.
+-- Respostas rápidas mínimas para o primeiro dia da equipe Lips.
 -- Idempotente, escopada pela organização do canal lips-main.
 -- Não habilita agente automático e não envia mensagens.
 
