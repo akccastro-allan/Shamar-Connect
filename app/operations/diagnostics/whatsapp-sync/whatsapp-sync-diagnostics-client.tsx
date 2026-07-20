@@ -8,6 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
+  LIPS_OFFICIAL_PHONE_MASKED,
+  LIPS_OFFICIAL_STAGING_SESSION_ID,
+  evaluateLipsOfficialSession,
+} from "@/lib/lips/day-one-readiness";
+import {
   runWhatsappSyncDiagnosticsAction,
   type WhatsappSyncDiagnosticsActionState,
 } from "./actions";
@@ -287,6 +292,87 @@ function GatewayStatusCard({ status }: { status: any }) {
         <Stat label="Erro seguro" value={status.error || "—"} />
       </CardContent>
     </Card>
+  );
+}
+
+function LipsOfficialNumberCard({ status, canExecute }: { status: any; canExecute: boolean }) {
+  const sessionStatus = status?.sessions?.lipsMainStatus || status?.providerStatus || null;
+  const phoneMasked = status?.sessions?.phoneMasked || null;
+  const evaluation = evaluateLipsOfficialSession({ status: sessionStatus, phone: phoneMasked });
+  const officialConfirmed = evaluation.valid || phoneMasked === LIPS_OFFICIAL_PHONE_MASKED;
+  const readyForTomorrow = officialConfirmed ? "Pronto para teste real" : "Aguardando aparelho";
+
+  const gates = [
+    ["Número oficial confirmado", officialConfirmed],
+    ["Sessão ready", sessionStatus === "ready"],
+    ["Channel correto", true],
+    ["Usuário da equipe ativo", false],
+    ["Inbox acessível", true],
+    ["Fila mínima pronta", true],
+    ["Inbound testado", false],
+    ["Outbound testado", false],
+    ["Persistência testada", false],
+    ["Isolamento testado", false],
+    ["Fallback disponível", true],
+  ] as const;
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-2">
+      <Card className="rounded-[2rem] border-amber-200 bg-amber-50">
+        <CardHeader>
+          <CardTitle className="text-lg font-black text-[#1B2F5B]">Conectar número oficial da Lips</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4 text-sm">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Stat label="Sessão atual" value="lips-main preservada" />
+            <Stat label="Sessão staging" value={LIPS_OFFICIAL_STAGING_SESSION_ID} />
+            <Stat label="Número esperado" value={LIPS_OFFICIAL_PHONE_MASKED} />
+            <Stat label="Estado" value={officialConfirmed ? "número oficial confirmado" : "aguardando aparelho"} />
+          </div>
+          <p className="rounded-2xl border border-amber-200 bg-white p-3 font-bold text-amber-900">
+            Abra o WhatsApp oficial da Lips em Dispositivos conectados e leia este QR. O QR só deve ser gerado quando o aparelho estiver presente.
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {[
+              "Verificar sessão atual",
+              "Verificar número conectado",
+              "Atualizar status",
+              "Verificar final 6108",
+              "Preparar conexão do número oficial",
+              "Gerar QR",
+              "Cancelar tentativa",
+              "Ativar sessão oficial",
+              "Restaurar sessão anterior",
+            ].map((label, index) => (
+              <Button key={label} disabled={index >= 4 || !canExecute} variant={index < 4 ? "outline" : "secondary"} className="justify-start rounded-full">
+                {label}
+              </Button>
+            ))}
+          </div>
+          <p className="text-xs font-bold text-amber-800">Ações futuras estão preparadas no fluxo, mas permanecem bloqueadas visualmente até o aparelho chegar. Nenhuma sessão é apagada ou substituída.</p>
+        </CardContent>
+      </Card>
+      <Card className="rounded-[2rem] border-[#2ABFAB]/30 bg-white">
+        <CardHeader>
+          <CardTitle className="text-lg font-black text-[#1B2F5B]">Prontidão da Lips para amanhã</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-black uppercase tracking-wide text-slate-500">Status geral</p>
+            <p className="mt-1 text-2xl font-black text-[#1B2F5B]">{readyForTomorrow}</p>
+            <p className="mt-2 text-sm font-bold text-slate-600">Não mostrar GO antes dos testes reais inbound/outbound.</p>
+          </div>
+          <div className="grid gap-2">
+            {gates.map(([label, ok]) => (
+              <div key={label} className="flex items-center justify-between rounded-2xl border bg-slate-50 px-4 py-3 text-sm font-bold">
+                <span>{label}</span>
+                <Badge variant={ok ? "success" : "secondary"}>{ok ? "ok" : "pendente"}</Badge>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
@@ -577,6 +663,7 @@ export function WhatsappSyncDiagnosticsClient({
 
       <SnapshotCards snapshot={snapshot} />
       <GatewayStatusCard status={result?.gatewayStatus} />
+      <LipsOfficialNumberCard status={result?.gatewayStatus} canExecute={canExecute} />
       <ProbeChatsCard result={result} />
       <PaginationValidationCard result={result} />
       <LipsIntegrityCard
