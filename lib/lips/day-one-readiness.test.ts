@@ -3,7 +3,13 @@ import test from "node:test";
 import {
   LIPS_ACTIVATION_CONFIRMATION,
   LIPS_DAY_ONE_QUICK_REPLIES,
+  LIPS_GO_LIVE_IDENTITIES,
   LIPS_OFFICIAL_PHONE_MASKED,
+  LIPS_ORGANIZATION_ID,
+  LIPS_OWNER_EMAIL,
+  LIPS_PLATFORM_OPERATOR_EMAIL,
+  LIPS_STAFF_PROFILES,
+  LIPS_TENANT_ID,
   canPreflightActivateLipsOfficialSession,
   canShowLipsOfficialQr,
   evaluateLipsOfficialSession,
@@ -64,6 +70,26 @@ test("QR do número oficial só é exibível para operador global com aparelho p
   assert.equal(canShowLipsOfficialQr({ isGlobalOperator: false, appliancePresent: true, featureExecute: false }), false);
   assert.equal(canShowLipsOfficialQr({ isGlobalOperator: true, appliancePresent: false, featureExecute: false }), false);
   assert.equal(canShowLipsOfficialQr({ isGlobalOperator: true, appliancePresent: true, featureExecute: true }), false);
+});
+
+test("identidades do go-live separam operador global, owner Lips e atendentes", () => {
+  assert.equal(LIPS_GO_LIVE_IDENTITIES.platformOperator.email, LIPS_PLATFORM_OPERATOR_EMAIL);
+  assert.equal(LIPS_GO_LIVE_IDENTITIES.lipsOwner.email, LIPS_OWNER_EMAIL);
+  assert.equal(LIPS_GO_LIVE_IDENTITIES.platformOperator.allowed.includes("operations"), true);
+  assert.equal(LIPS_GO_LIVE_IDENTITIES.platformOperator.forbidden.includes("lips_inbox_operator"), true);
+  assert.equal(LIPS_GO_LIVE_IDENTITIES.platformOperator.forbidden.includes("customer_service"), true);
+  assert.equal(LIPS_GO_LIVE_IDENTITIES.lipsOwner.tenantId, LIPS_TENANT_ID);
+  assert.equal(LIPS_GO_LIVE_IDENTITIES.lipsOwner.organizationId, LIPS_ORGANIZATION_ID);
+  assert.equal(LIPS_GO_LIVE_IDENTITIES.lipsOwner.forbidden.includes("operations"), true);
+  assert.equal(LIPS_GO_LIVE_IDENTITIES.lipsStaff.tenantId, LIPS_TENANT_ID);
+  assert.equal(LIPS_GO_LIVE_IDENTITIES.lipsStaff.organizationId, LIPS_ORGANIZATION_ID);
+  assert.equal(LIPS_GO_LIVE_IDENTITIES.lipsStaff.forbidden.includes("operations"), true);
+  assert.equal(LIPS_GO_LIVE_IDENTITIES.lipsStaff.forbidden.includes("other_tenants"), true);
+  assert.equal(LIPS_GO_LIVE_IDENTITIES.lipsStaff.forbidden.includes("shared_login"), true);
+  assert.notEqual(LIPS_PLATFORM_OPERATOR_EMAIL, LIPS_OWNER_EMAIL);
+  for (const profile of Object.values(LIPS_STAFF_PROFILES)) {
+    assert.equal(profile.forbidden.includes("centro_de_comando"), true);
+  }
 });
 
 test("queue_status null aparece como não atribuída", () => {

@@ -4,6 +4,8 @@
 
 Acesse o Shamar Connect com seu e-mail individual. Não use login compartilhado.
 
+Não use `allan@moriahsystems.com.br`: esse login é operador global da Moriah para diagnóstico, QR e cutover, não atendimento da Lips. `lips@moriahsystems.com.br` é owner/admin da empresa e não substitui contas individuais dos funcionários.
+
 ## 2. Abrir Não Atribuídas
 
 Na central de atendimento, clique em `Não atribuídas` para ver conversas novas sem responsável.

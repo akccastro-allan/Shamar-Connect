@@ -41,11 +41,13 @@ A sessão `lips-main` não pode ser apagada, desconectada ou substituída antes 
 
 ## Próxima Execução Read-Only
 
-1. Entrar como operador global autorizado.
+1. Entrar como `allan@moriahsystems.com.br` ou outro operador global autorizado da Moriah.
 2. Abrir `/operations/diagnostics/whatsapp-sync`.
 3. Clicar apenas em ações read-only: `Verificar status`, `Validar paginação`, `Capturar baseline`, `Capturar estado atual`.
 4. Confirmar que nenhum token, URL privada, telefone completo, QR ou payload bruto aparece na tela/relatório.
 5. Atualizar este documento somente com dados mascarados.
+
+Esta identidade é exclusiva para diagnóstico, geração de QR e cutover. Não usar o operador global para validar ou operar o inbox da Lips; essa validação deve ser feita com `lips@moriahsystems.com.br` ou com contas individuais dos funcionários.
 
 ## Proibições
 

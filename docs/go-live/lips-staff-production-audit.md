@@ -8,6 +8,12 @@ Data: 2026-07-19
 - Organization: `8f074193-bf58-4537-9842-720619a9f259`
 - Owner/admin esperado: `lips@moriahsystems.com.br`
 
+## Identidades Oficiais
+
+- `allan@moriahsystems.com.br`: operador global da plataforma. Usa `/operations` somente para diagnóstico, QR e cutover. Não atende clientes da Lips e não deve constar como funcionário ou atendente da Lips.
+- `lips@moriahsystems.com.br`: owner/admin da empresa Lips. Usa o ambiente da Lips para validar inbox e administrar equipe. Não acessa o Centro de Comando interno.
+- Funcionários da Lips: contas individuais, vinculadas ao tenant e organization da Lips, com departamento e função próprios. Não acessam outras empresas nem `/operations`.
+
 ## Status
 
 Auditoria Production: pendente de execução autenticada read-only.
@@ -27,6 +33,8 @@ Este PR não consulta hashes, senhas, tokens, cookies ou metadata de autenticaç
 - Ausência de acesso a outro tenant.
 - `lips@moriahsystems.com.br` permanece owner/admin da empresa.
 - `lips@moriahsystems.com.br` não acessa Centro de Comando interno.
+- `allan@moriahsystems.com.br` não aparece como funcionário, atendente, responsável ou membro operacional da Lips.
+- Funcionários da Lips têm contas individuais, sem login compartilhado.
 
 ## Dados Humanos Necessários Para Novos Funcionários
 

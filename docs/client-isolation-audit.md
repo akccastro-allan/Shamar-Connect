@@ -65,11 +65,13 @@ Cada usuário vê **somente** os dados do seu próprio `tenant_id` + `organizati
 
 ## Critérios de aceite (logado como lips@moriahsystems.com.br)
 
+`lips@moriahsystems.com.br` é owner/admin da empresa Lips. Não é operador global da Moriah e não deve acessar o Centro de Comando interno.
+
 | Critério | Status |
 |---|---|
 | `/settings/whatsapp` mostra somente Lips | ✅ Garantido via channels filtrado por tenant/org |
 | `/whatsapp-diagnostics` mostra somente Lips | ✅ Garantido via prop derivada do banco |
-| `/operations` mostra somente dados da Lips | ✅ OperationsDashboard usa /api/channels tenant-scoped |
+| `/operations` bloqueia acesso ao Centro de Comando interno | ✅ Cliente Lips não deve acessar `/operations` |
 | `GET /api/whatsapp-web/status?sessionId=lips-main` funciona | ✅ Canal pertence ao tenant Lips |
 | `GET /api/whatsapp-web/status?sessionId=hall-main` retorna 403 | ✅ Canal não encontrado no tenant Lips → 403 |
 | `GET /api/whatsapp-web/sync-chat-messages?sessionId=hall-main` retorna 403 | ✅ Channel query não encontra hall-main no tenant Lips |
