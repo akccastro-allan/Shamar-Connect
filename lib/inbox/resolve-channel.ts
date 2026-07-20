@@ -7,7 +7,7 @@
  */
 
 import type { createSupabaseWriteClient } from "@/lib/supabase/server-write";
-import { normalizeProvider, type CanonicalProvider } from "@/lib/providers/provider-aliases";
+import { normalizeProvider, type CanonicalProvider } from "../providers/provider-aliases.ts";
 
 type Db = ReturnType<typeof createSupabaseWriteClient>;
 
@@ -60,7 +60,7 @@ export async function resolveChannelFromWebhook(
     if (!hints.sessionId) return null;
     // Legado: session_id pode estar duplicado entre orgs (cruft -oriah). Se a
     // resolução for ambígua (>1 linha), tratamos como NÃO resolvido.
-    return bySessionId(db, hints.sessionId);
+    return (await bySessionId(db, hints.sessionId)) || byLegacyExternalInstance(db, hints.sessionId);
   }
 
   return null;
@@ -117,5 +117,23 @@ async function bySessionId(db: Db, sessionId: string): Promise<ChannelResolution
   const ch = data[0];
   if (!ch.tenant_id || !ch.organization_id) return null;
   console.log("[resolve-channel] bySessionId resolved to channelId:", ch.id);
+  return { channelId: ch.id, tenantId: ch.tenant_id, organizationId: ch.organization_id, provider: "whatsapp_web_legacy" };
+}
+
+async function byLegacyExternalInstance(db: Db, externalInstance: string): Promise<ChannelResolution | null> {
+  console.log("[resolve-channel] byLegacyExternalInstance searching for:", externalInstance);
+  const { data } = await db
+    .from("channels")
+    .select("id, tenant_id, organization_id, provider")
+    .eq("external_instance", externalInstance)
+    .limit(3);
+
+  const matches = (data || []).filter((channel) => normalizeProvider(channel.provider) === "whatsapp_web_legacy");
+  console.log("[resolve-channel] byLegacyExternalInstance found rows:", matches.length);
+  if (matches.length !== 1) return null;
+
+  const ch = matches[0];
+  if (!ch.tenant_id || !ch.organization_id) return null;
+  console.log("[resolve-channel] byLegacyExternalInstance resolved to channelId:", ch.id);
   return { channelId: ch.id, tenantId: ch.tenant_id, organizationId: ch.organization_id, provider: "whatsapp_web_legacy" };
 }

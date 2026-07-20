@@ -30,7 +30,13 @@ Atualizado por Allan durante a Fase: Operação Real Assistida.
 
 ## Itens abertos
 
-*(Nenhum registrado ainda — aguardando uso real em produção.)*
+### [Lips] Mensagens recebidas não aparecem no sistema
+- **Problema:** clientes entram em contato com o WhatsApp oficial da Lips, mas as mensagens não aparecem no inbox do Shamar Connect.
+- **Impacto:** atendimento real fica invisível para a equipe, bloqueando o go-live operacional.
+- **Empresa afetada:** Lips
+- **Prioridade:** crítica
+- **Status:** em andamento
+- **Solução aplicada:** identificado mismatch entre o identificador real da sessão do gateway e `channels.session_id = 'lips-main'`. Canal Lips preparado com alias em `channels.external_instance`; patch em andamento para o webhook OpenWA resolver esse alias sem quebrar envio por `lips-main`.
 
 ---
 
