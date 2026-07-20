@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ContactCreateDialog } from "@/components/contact-create-dialog";
 import { phoneFromChatId, formatPhoneDisplay } from "@/lib/phone";
 import { CatalogAssistPanel } from "@/components/catalog/catalog-assist-panel";
+import { isUnassignedConversation, normalizeQueueStatus } from "@/lib/lips/day-one-readiness";
 
 type Conversation = {
   id: string;
@@ -16,6 +17,7 @@ type Conversation = {
   name: string | null;
   is_group: boolean;
   status: string;
+  queue_status?: string | null;
   unread_count: number;
   last_message_at: string | null;
   last_inbound_at?: string | null;
@@ -87,6 +89,13 @@ type QuickReply = {
   category: string;
   tags?: string[];
   usage_count?: number;
+};
+
+type ContactNote = {
+  id: string;
+  note: string;
+  created_by: string | null;
+  created_at: string;
 };
 
 type FlowStep = {
@@ -539,9 +548,12 @@ export function WhatsappServiceCenter() {
   const [quickReplyQuery, setQuickReplyQuery] = useState("");
   const [flowQuery, setFlowQuery] = useState("");
   const [replyBody, setReplyBody] = useState("");
+  const [noteBody, setNoteBody] = useState("");
+  const [notes, setNotes] = useState<ContactNote[]>([]);
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
   const [watchdogRunning, setWatchdogRunning] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [lastAlertKey, setLastAlertKey] = useState("");
@@ -571,12 +583,14 @@ export function WhatsappServiceCenter() {
       .sort((a, b) => a - b)[0];
 
     return {
+      unassigned: conversations.filter(isUnassignedConversation).length,
+      mine: conversations.filter((item) => item.assigned_to === me?.appUserId).length,
       breached,
       requiresHuman,
       unanswered,
       oldestWaitingLabel: oldest ? formatWaiting(new Date(oldest).toISOString()) : "—",
     };
-  }, [conversations]);
+  }, [conversations, me]);
 
   const filteredConversations = useMemo(() => {
     const term = query.trim().toLowerCase();
@@ -585,7 +599,7 @@ export function WhatsappServiceCenter() {
     if (channelFilter) items = items.filter((conversation) => conversation.channel_id === channelFilter);
     if (deptFilter) items = items.filter((conversation) => conversation.department_id === deptFilter);
     if (assignTab === "mine") items = items.filter((conversation) => conversation.assigned_to && conversation.assigned_to === me?.appUserId);
-    else if (assignTab === "waiting") items = items.filter((conversation) => !conversation.assigned_to);
+    else if (assignTab === "waiting") items = items.filter(isUnassignedConversation);
     if (queueFilter === "breached") items = items.filter((conversation) => conversation.sla_status === "breached");
     if (queueFilter === "human") items = items.filter((conversation) => conversation.requires_human);
     if (queueFilter === "unanswered") items = items.filter(isUnanswered);
@@ -632,7 +646,11 @@ export function WhatsappServiceCenter() {
       }
       const firstId = selectedConversationId || sorted[0]?.id || "";
       setSelectedConversationId(firstId);
-      if (firstId) await loadMessages(firstId);
+      if (firstId) {
+        const firstConversation = sorted.find((item) => item.id === firstId) || null;
+        await loadMessages(firstId);
+        await loadNotes(firstConversation);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao carregar conversas");
     } finally {
@@ -758,6 +776,32 @@ export function WhatsappServiceCenter() {
     setAiEditMode(false);
     setAiEditBody("");
     await loadMessages(conversationId);
+    const conversation = conversations.find((item) => item.id === conversationId) || null;
+    await loadNotes(conversation);
+  }
+
+  async function saveInternalNote() {
+    if (!selectedConversation?.id || !noteBody.trim()) return;
+    setAssigning(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await readJson("/api/inbox/contact-notes", {
+        method: "POST",
+        body: JSON.stringify({
+          contactId: selectedConversation.crm_contacts?.id || null,
+          conversationId: selectedConversation.id,
+          note: noteBody.trim(),
+        }),
+      });
+      setNoteBody("");
+      await loadNotes(selectedConversation);
+      setNotice("Nota interna salva. Ela não foi enviada ao WhatsApp.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao salvar nota interna");
+    } finally {
+      setAssigning(false);
+    }
   }
 
   async function syncSelectedHistory() {
@@ -923,6 +967,8 @@ export function WhatsappServiceCenter() {
 
   async function sendReply() {
     if (!selectedConversation?.id || !replyBody.trim()) return;
+    if (sendingRef.current) return;
+    sendingRef.current = true;
     setSending(true);
     setError(null);
     setNotice(null);
@@ -938,7 +984,42 @@ export function WhatsappServiceCenter() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao enviar mensagem");
     } finally {
+      sendingRef.current = false;
       setSending(false);
+    }
+  }
+
+  async function loadNotes(conversation: Conversation | null) {
+    if (!conversation) {
+      setNotes([]);
+      return;
+    }
+    const contactId = conversation.crm_contacts?.id;
+    const query = contactId ? `contactId=${encodeURIComponent(contactId)}` : `conversationId=${encodeURIComponent(conversation.id)}`;
+    try {
+      const data = await readJson<{ ok: boolean; notes: ContactNote[] }>(`/api/inbox/contact-notes?${query}`);
+      setNotes(data.notes || []);
+    } catch {
+      setNotes([]);
+    }
+  }
+
+  async function updateConversationStatus(status: "resolved" | "closed" | "waiting") {
+    if (!selectedConversation?.id) return;
+    setAssigning(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await readJson(`/api/inbox/conversations/${selectedConversation.id}/status`, {
+        method: "POST",
+        body: JSON.stringify({ status }),
+      });
+      setNotice(status === "resolved" ? "Atendimento encerrado." : status === "waiting" ? "Atendimento reaberto para a fila." : "Conversa fechada.");
+      await loadConversations();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao atualizar atendimento");
+    } finally {
+      setAssigning(false);
     }
   }
 
@@ -991,24 +1072,30 @@ export function WhatsappServiceCenter() {
             <div className="flex flex-wrap gap-2">
               <Button onClick={attendNext} disabled={filteredConversations.length === 0} className="bg-emerald-700 hover:bg-emerald-800"><UserPlus className="mr-2 h-4 w-4" />Atender próximo</Button>
               <Button onClick={loadConversations} disabled={loading} variant="outline"><RefreshCcw className="mr-2 h-4 w-4" />Atualizar</Button>
-              <Button onClick={runWatchdog} disabled={watchdogRunning} variant="outline"><Clock className="mr-2 h-4 w-4" />Verificar pendências</Button>
+              <Button onClick={runWatchdog} disabled={watchdogRunning} variant="outline" className="hidden"><Clock className="mr-2 h-4 w-4" />Verificar pendências</Button>
               <Button onClick={enableSound} disabled={soundEnabled} variant="outline">{soundEnabled ? "Som ativo" : "Ativar som"}</Button>
-              <Button asChild variant="outline"><Link href="/whatsapp-import"><Download className="mr-2 h-4 w-4" />Importar WhatsApp</Link></Button>
+              <Button asChild variant="outline" className="hidden"><Link href="/whatsapp-import"><Download className="mr-2 h-4 w-4" />Importar WhatsApp</Link></Button>
             </div>
           </div>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             <div className="rounded-2xl border bg-white p-4"><p className="text-xs text-muted-foreground">Conversas</p><p className="text-2xl font-semibold">{conversations.length}</p></div>
-            <div className="rounded-2xl border bg-white p-4"><p className="text-xs text-muted-foreground">Grupos</p><p className="text-2xl font-semibold">{conversations.filter((item) => item.is_group).length}</p></div>
+              <div className="rounded-2xl border bg-white p-4"><p className="text-xs text-muted-foreground">Não atribuídas</p><p className="text-2xl font-semibold">{queueStats.unassigned}</p></div>
+              <div className="rounded-2xl border bg-white p-4"><p className="text-xs text-muted-foreground">Minhas conversas</p><p className="text-2xl font-semibold">{queueStats.mine}</p></div>
             <div className="rounded-2xl border border-red-200 bg-red-50 p-4"><p className="text-xs text-red-700">Atrasadas</p><p className="text-2xl font-semibold text-red-800">{queueStats.breached}</p></div>
             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4"><p className="text-xs text-amber-700">Precisam de você</p><p className="text-2xl font-semibold text-amber-800">{queueStats.requiresHuman}</p></div>
             <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4"><p className="text-xs text-orange-700">Sem resposta</p><p className="text-2xl font-semibold text-orange-800">{queueStats.unanswered}</p></div>
-            <div className="rounded-2xl border bg-white p-4"><p className="text-xs text-muted-foreground">Espera mais longa</p><p className="text-2xl font-semibold">{queueStats.oldestWaitingLabel}</p></div>
+              <div className="rounded-2xl border bg-white p-4"><p className="text-xs text-muted-foreground">Espera mais longa</p><p className="text-2xl font-semibold">{queueStats.oldestWaitingLabel}</p></div>
           </div>
           <p className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground"><RefreshCcw className="h-3 w-3" />A fila e as conversas se atualizam sozinhas a cada poucos segundos.</p>
           {error ? <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</div> : null}
           {notice ? <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">{notice}</div> : null}
+          {me && !me.isSupervisor && !me.departmentId ? (
+            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              Seu usuário ainda está sem setor. Você consegue atender conversas não atribuídas; peça ao supervisor para vincular seu departamento antes do início do turno.
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -1023,7 +1110,7 @@ export function WhatsappServiceCenter() {
 
             {/* Abas por atribuição */}
             <div className="mt-3 inline-flex rounded-xl bg-slate-100 p-0.5 text-xs font-bold">
-              {([["mine", "Minha fila"], ["waiting", "Aguardando"], ...(me?.isSupervisor ? [["all", "Todas"]] : [])] as [typeof assignTab, string][]).map(([key, label]) => (
+              {([["mine", "Minhas conversas"], ["waiting", "Não atribuídas"], ...(me?.isSupervisor ? [["all", "Todas"]] : [])] as [typeof assignTab, string][]).map(([key, label]) => (
                 <button
                   key={key}
                   onClick={() => setAssignTab(key)}
@@ -1096,6 +1183,7 @@ export function WhatsappServiceCenter() {
                 const lastInboundIsLatest = conversation.latest_message?.direction === "inbound";
                 const waitingRef = conversation.last_inbound_at || (lastInboundIsLatest ? conversation.latest_message?.created_at : null);
                 const waitLabel = formatWaiting(waitingRef);
+                const queueStatus = normalizeQueueStatus(conversation.queue_status);
 
                 let rowBg = selected ? "bg-emerald-50" : "bg-white";
                 if (isBreached) rowBg = selected ? "bg-red-100" : "bg-red-50";
@@ -1127,6 +1215,8 @@ export function WhatsappServiceCenter() {
                           {conversation.assigned_to === me?.appUserId ? "Você" : conversation.assigned_name || "Em atendimento"}
                         </span>
                       ) : null}
+                      {isUnassignedConversation(conversation) ? <Badge variant="outline" className="border-slate-300 text-slate-700">Não atribuída</Badge> : null}
+                      {queueStatus === "resolved" ? <Badge variant="outline" className="border-emerald-300 text-emerald-700">Encerrada</Badge> : null}
                       {conversation.channels && (
                         <span
                           className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold"
@@ -1179,7 +1269,7 @@ export function WhatsappServiceCenter() {
                     : "Selecione uma conversa"}
                 </CardDescription>
               </div>
-              <Button onClick={syncSelectedHistory} disabled={syncing || !selectedConversation} variant="outline"><Download className="mr-2 h-4 w-4" />Sincronizar histórico</Button>
+              <Button onClick={syncSelectedHistory} disabled={syncing || !selectedConversation} variant="outline" className="hidden"><Download className="mr-2 h-4 w-4" />Sincronizar histórico</Button>
             </div>
 
             {selectedConversation && !selectedConversation.is_group && (
@@ -1223,6 +1313,11 @@ export function WhatsappServiceCenter() {
                     {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
                   </select>
                 )}
+                {normalizeQueueStatus(selectedConversation.queue_status) === "resolved" ? (
+                  <Button size="sm" variant="outline" onClick={() => updateConversationStatus("waiting")} disabled={assigning}>Reabrir</Button>
+                ) : (
+                  <Button size="sm" variant="outline" onClick={() => updateConversationStatus("resolved")} disabled={assigning || !selectedConversation.assigned_to}>Encerrar</Button>
+                )}
               </div>
             )}
           </CardHeader>
@@ -1258,12 +1353,11 @@ export function WhatsappServiceCenter() {
                   </div>
                 );
               })}
-              {messages.length === 0 ? <div className="rounded-2xl border border-dashed bg-white p-8 text-center text-sm text-muted-foreground">Nenhuma mensagem salva para esta conversa. Use “Sincronizar histórico”.</div> : null}
+              {messages.length === 0 ? <div className="rounded-2xl border border-dashed bg-white p-8 text-center text-sm text-muted-foreground">Nenhuma mensagem salva para esta conversa ainda. Aguarde a próxima entrada ou use Atualizar.</div> : null}
             </div>
             <div className="mt-4 rounded-2xl border bg-white p-3">
               <div className="flex items-center justify-between gap-2">
                 <label className="text-xs font-medium text-muted-foreground">Responder pela central</label>
-                <Link href="/quick-replies" className="text-xs font-medium text-emerald-700">Gerenciar respostas</Link>
               </div>
               <textarea value={replyBody} onChange={(event) => setReplyBody(event.target.value)} rows={4} maxLength={4000} placeholder="Digite a mensagem para enviar pelo WhatsApp conectado..." className="mt-2 w-full resize-none rounded-xl border bg-white p-3 text-sm outline-none focus:ring-2 focus:ring-emerald-200" />
               <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -1285,7 +1379,7 @@ export function WhatsappServiceCenter() {
               <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Motivo</p><p className="font-medium">{getPendingReasonLabel(selectedConversation?.pending_reason)}</p></div>
               <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Última mensagem do cliente</p><p className="font-medium">{formatDate(selectedConversation?.last_inbound_at)}</p></div>
               <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Sua última resposta</p><p className="font-medium">{formatDate(selectedConversation?.last_outbound_at)}</p></div>
-              <Button onClick={runWatchdog} disabled={watchdogRunning} variant="outline" className="w-full"><Clock className="mr-2 h-4 w-4" />Verificar pendências</Button>
+              <Button onClick={runWatchdog} disabled={watchdogRunning} variant="outline" className="hidden w-full"><Clock className="mr-2 h-4 w-4" />Verificar pendências</Button>
             </CardContent>
           </Card>
 
@@ -1303,11 +1397,35 @@ export function WhatsappServiceCenter() {
                   <UserPlus className="mr-2 h-4 w-4" />Salvar contato
                 </Button>
               )}
-              <Button asChild variant="outline" className="w-full"><Link href="/contacts"><UserPlus className="mr-2 h-4 w-4" />Abrir contatos</Link></Button>
+              <Button asChild variant="outline" className="hidden w-full"><Link href="/contacts"><UserPlus className="mr-2 h-4 w-4" />Abrir contatos</Link></Button>
             </CardContent>
           </Card>
 
           <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base"><FileText className="h-5 w-5" />Notas internas</CardTitle>
+              <CardDescription>Visíveis apenas para a equipe. Não são enviadas ao WhatsApp.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <textarea
+                value={noteBody}
+                onChange={(event) => setNoteBody(event.target.value)}
+                className="min-h-24 w-full resize-none rounded-2xl border px-4 py-3 text-sm"
+                placeholder="Ex.: Cliente pediu orçamento de pastilha para Gol 2015. Aguardando confirmação da motorização."
+              />
+              <Button onClick={saveInternalNote} disabled={assigning || !noteBody.trim() || !selectedConversation} className="w-full">Salvar nota interna</Button>
+              <div className="space-y-2">
+                {notes.length === 0 ? <p className="text-sm text-muted-foreground">Nenhuma nota interna ainda.</p> : notes.map((note) => (
+                  <div key={note.id} className="rounded-xl border bg-slate-50 p-3 text-sm">
+                    <p>{note.note}</p>
+                    <p className="mt-2 text-xs text-muted-foreground">{formatDate(note.created_at)}{note.created_by ? ` · ${note.created_by}` : ""}</p>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="hidden">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base"><GitBranch className="h-5 w-5" />Fluxos de conversa</CardTitle>
               <CardDescription>Aplique etapas do fluxo no campo de resposta.</CardDescription>
@@ -1362,7 +1480,7 @@ export function WhatsappServiceCenter() {
               ))}
               {filteredQuickReplies.length === 0 ? <div className="rounded-2xl border border-dashed p-4 text-center text-xs text-muted-foreground">Nenhuma resposta rápida encontrada.</div> : null}
               {/* Supervised AI block */}
-              {selectedConversation?.is_group ? (
+              {false && (selectedConversation?.is_group ? (
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs text-muted-foreground">
                   <Bot className="mb-1.5 h-4 w-4" />
                   IA desativada em grupos. Grupos são usados apenas para captação de leads.
@@ -1390,7 +1508,7 @@ export function WhatsappServiceCenter() {
                       <p className="text-[10px] text-amber-700 font-medium">IA supervisionada: revise antes de enviar.</p>
                       <div className="flex flex-wrap gap-1.5">
                         <Button size="sm" onClick={() => sendAiReply(false)} disabled={sending} className="bg-emerald-700 hover:bg-emerald-800 text-xs h-7 px-3">Enviar sugestão</Button>
-                        <Button size="sm" variant="outline" onClick={() => { setAiEditMode(true); setAiEditBody(aiSuggestion); }} className="text-xs h-7 px-3">Editar</Button>
+                        <Button size="sm" variant="outline" onClick={() => { setAiEditMode(true); setAiEditBody(aiSuggestion || ""); }} className="text-xs h-7 px-3">Editar</Button>
                         <Button size="sm" variant="ghost" onClick={ignoreAiReply} className="text-xs h-7 px-3 text-muted-foreground">Ignorar</Button>
                       </div>
                     </div>
@@ -1406,7 +1524,7 @@ export function WhatsappServiceCenter() {
                     </div>
                   )}
                 </div>
-              )}
+              ))}
 
               {/* Chamar humano — sempre visível: o paciente nunca fica preso na IA. */}
               {selectedConversation && (
@@ -1434,7 +1552,7 @@ export function WhatsappServiceCenter() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="hidden">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">Catálogo inteligente</CardTitle>
               <CardDescription>Analise a mensagem do cliente e encontre peças ou serviços no catálogo.</CardDescription>

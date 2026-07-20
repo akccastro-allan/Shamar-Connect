@@ -34,7 +34,7 @@ export async function POST(_: Request, { params }: Params) {
       .eq("organization_id", context.organizationId)
       .is("assigned_user_id", null)
       .is("assigned_to", null)
-      .eq("queue_status", "waiting")
+      .or("queue_status.is.null,queue_status.eq.waiting")
       .select("id, assigned_user_id, assigned_to, queue_status")
       .maybeSingle();
     if (error) throw error;

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getRequiredAppContext, isUnauthorizedError } from "@/lib/auth/app-context";
 import { createSupabaseWriteClient } from "@/lib/supabase/server-write";
 import { ACTIVE_QUEUE_STATUSES, isSupervisorRole, slaStatusFromDueAt } from "@/lib/queues/lips-queue";
+import { normalizeQueueStatus } from "@/lib/lips/day-one-readiness";
 
 export async function GET(request: Request) {
   try {
@@ -33,11 +34,11 @@ export async function GET(request: Request) {
       .limit(150);
 
     if (filter === "mine") query = query.or(`assigned_user_id.eq.${context.appUserId},assigned_to.eq.${context.appUserId}`).in("queue_status", ACTIVE_QUEUE_STATUSES);
-    else if (filter === "unassigned") query = query.is("assigned_user_id", null).is("assigned_to", null).eq("queue_status", "waiting");
+    else if (filter === "unassigned") query = query.is("assigned_user_id", null).is("assigned_to", null).or("queue_status.is.null,queue_status.eq.waiting");
     else if (filter === "critical") query = query.eq("sla_status", "breached");
     else if (filter === "awaiting_customer") query = query.eq("queue_status", "awaiting_customer");
     else if (filter === "resolved") query = query.eq("queue_status", "resolved");
-    else query = query.in("queue_status", [...ACTIVE_QUEUE_STATUSES, "resolved"]);
+    else query = query.or(`queue_status.is.null,queue_status.in.(${[...ACTIVE_QUEUE_STATUSES, "resolved"].join(",")})`);
 
     if (departmentId) query = query.eq("department_id", departmentId);
     if (!isSupervisor) {
@@ -80,6 +81,7 @@ export async function GET(request: Request) {
       conversations: (data ?? []).map((conversation) => ({
         ...conversation,
         assigned_to: conversation.assigned_user_id ?? conversation.assigned_to,
+        queue_status: normalizeQueueStatus(conversation.queue_status),
         sla_status: slaStatusFromDueAt(conversation.sla_due_at, conversation.sla_status, conversation.sla_started_at),
         assigned_name: conversation.assigned_user_id || conversation.assigned_to ? nameById.get(conversation.assigned_user_id ?? conversation.assigned_to) ?? null : null,
         latest_message: latestByConversation.get(conversation.id) ?? null,
