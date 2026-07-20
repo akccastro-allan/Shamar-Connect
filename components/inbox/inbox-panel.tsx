@@ -5,6 +5,7 @@ import { Inbox, MessageCircle, RefreshCcw, Send, Tags, StickyNote, Save, RotateC
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { isUnassignedConversation, normalizeQueueStatus } from "@/lib/lips/day-one-readiness";
 
 type Contact = {
   id: string;
@@ -188,9 +189,9 @@ export function InboxPanel() {
   );
 
   const queueStats = useMemo(() => ({
-    unassigned: conversations.filter((conversation) => !(conversation.assigned_user_id ?? conversation.assigned_to) && conversation.queue_status === "waiting").length,
+    unassigned: conversations.filter(isUnassignedConversation).length,
     critical: conversations.filter((conversation) => conversation.sla_status === "breached").length,
-    active: conversations.filter((conversation) => ["waiting", "in_progress", "awaiting_customer"].includes(conversation.queue_status || "")).length,
+    active: conversations.filter((conversation) => ["waiting", "in_progress", "awaiting_customer"].includes(normalizeQueueStatus(conversation.queue_status))).length,
     resolved: conversations.filter((conversation) => conversation.queue_status === "resolved").length,
   }), [conversations]);
 
@@ -533,7 +534,7 @@ export function InboxPanel() {
                       </div>
                       <div className="mt-2 flex flex-wrap gap-2">
                         <Badge variant={conversation.is_group ? "secondary" : "outline"}>{conversation.is_group ? "Grupo" : "Contato"}</Badge>
-                        <Badge variant="outline">{queueStatusToLabel(conversation.queue_status || conversation.status)}</Badge>
+                        <Badge variant="outline">{queueStatusToLabel(normalizeQueueStatus(conversation.queue_status) || conversation.status)}</Badge>
                         <Badge variant="secondary">{conversation.priority || "normal"}</Badge>
                         <Badge variant={conversation.sla_status === "breached" ? "destructive" : "outline"}>SLA {conversation.sla_status || "on_time"}</Badge>
                         {conversation.requires_human ? <Badge variant="destructive">humano</Badge> : null}
