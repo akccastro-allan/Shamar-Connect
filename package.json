@@ -9,7 +9,14 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "node scripts/run-tests.mjs"
+    "test": "node scripts/run-tests.mjs",
+    "e2e:auth": "node scripts/e2e/operations-auth.mjs",
+    "e2e:auth:clear": "node scripts/e2e/clear-operations-auth.mjs",
+    "e2e:operations:read": "playwright test tests/e2e/operations/read.spec.ts --project=chromium",
+    "e2e:operations:visual": "playwright test tests/e2e/operations/visual.spec.ts --project=chromium",
+    "e2e:lips:readiness": "playwright test tests/e2e/operations/lips-readiness.spec.ts --project=chromium",
+    "e2e:operations:all-readonly": "npm run e2e:operations:read && npm run e2e:operations:visual && npm run e2e:lips:readiness",
+    "e2e:operations:write": "node scripts/e2e/run-operations-write.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",
@@ -27,6 +34,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
